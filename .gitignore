@@ -1,0 +1,10 @@
+/build/
+/build-*/
+/out/
+/.vs/
+/.vscode/
+/.idea/
+/research/upstream/
+*.user
+.DS_Store
+/cache/
