@@ -15,6 +15,32 @@ struct Engine::Impl {
     bool dirty = true;
     float dpiScale = 1.0f;
 
+    bool pickGround(double sx, double sy, Vec3& out) const {
+        Vec3 d = camera.rayDirection(sx, sy);
+        double h = camera.focus.alt;
+        for (int i = 0; i < 6; ++i) {
+            double t;
+            if (!rayEllipsoid(camera.eye(), d, h, t)) {
+                if (i == 0 && rayEllipsoid(camera.eye(), d, 0.0, t)) h = 0.0;
+                else return false;
+            }
+            out = camera.eye() + d * t;
+            GeoPoint g = ecefToGeodetic(out);
+            double nh = globe.elevationAt(g.lat, g.lon);
+            if (std::abs(nh - h) < 0.5) break;
+            h = nh;
+        }
+        return true;
+    }
+
+    void followTerrain() {
+        double h = globe.elevationAt(camera.focus.lat, camera.focus.lon);
+        if (std::abs(h - camera.focus.alt) > 0.01) {
+            camera.focus.alt = h;
+            camera.update();
+        }
+    }
+
     void moveCamera(Vec3 from, Vec3 to) {
         Vec3 axis = cross(from, to);
         double len = length(axis);
@@ -33,6 +59,7 @@ Engine::Engine() : impl_(std::make_unique<Impl>()) {}
 Engine::~Engine() { shutdown(); }
 
 bool Engine::init() {
+    impl_->camera.groundHeight = [this](double lat, double lon) { return impl_->globe.elevationAt(lat, lon); };
     impl_->camera.update();
     return impl_->globe.init();
 }
@@ -83,6 +110,28 @@ DownloadStatus Engine::downloadStatus(int id) const { return impl_->globe.loader
 
 void Engine::cancelDownload(int id) { impl_->globe.loader().cancelDownload(id); }
 
+void Engine::setElevation(const std::vector<ElevationLayer>& layers) {
+    impl_->globe.setElevation(layers);
+    impl_->dirty = true;
+}
+
+void Engine::setTerrainEnabled(bool enabled) {
+    impl_->globe.setTerrainEnabled(enabled);
+    impl_->dirty = true;
+}
+
+void Engine::setTerrainExaggeration(double factor) {
+    impl_->globe.setTerrainExaggeration(factor);
+    impl_->dirty = true;
+}
+
+void Engine::setDepthPerception(bool enabled) {
+    impl_->globe.setDepthPerception(enabled);
+    impl_->dirty = true;
+}
+
+double Engine::elevationAt(double lat, double lon) const { return impl_->globe.elevationAt(lat, lon); }
+
 void Engine::setImageryScale(double scale) {
     impl_->globe.setImageryScale(scale);
     impl_->dirty = true;
@@ -105,7 +154,7 @@ void Engine::setView(const View& v) {
 
 bool Engine::pick(double sx, double sy, double& lat, double& lon) const {
     Vec3 p;
-    if (!impl_->camera.screenToEcef(sx, sy, p)) return false;
+    if (!impl_->pickGround(sx, sy, p)) return false;
     GeoPoint g = ecefToGeodetic(p);
     lat = g.lat;
     lon = g.lon;
@@ -115,7 +164,7 @@ bool Engine::pick(double sx, double sy, double& lat, double& lon) const {
 void Engine::pan(double x0, double y0, double x1, double y1) {
     Camera& c = impl_->camera;
     Vec3 p0, p1;
-    if (c.screenToEcef(x0, y0, p0) && c.screenToEcef(x1, y1, p1)) {
+    if (impl_->pickGround(x0, y0, p0) && impl_->pickGround(x1, y1, p1)) {
         impl_->moveCamera(p1, p0);
     } else {
         Vec3 e, n, u;
@@ -134,11 +183,11 @@ void Engine::pan(double x0, double y0, double x1, double y1) {
 void Engine::zoomAt(double sx, double sy, double factor) {
     Camera& c = impl_->camera;
     Vec3 before;
-    bool hit = c.screenToEcef(sx, sy, before);
+    bool hit = impl_->pickGround(sx, sy, before);
     c.gsd *= factor;
     c.update();
     Vec3 after;
-    if (hit && c.screenToEcef(sx, sy, after)) impl_->moveCamera(after, before);
+    if (hit && impl_->pickGround(sx, sy, after)) impl_->moveCamera(after, before);
     impl_->dirty = true;
 }
 
@@ -155,11 +204,13 @@ void Engine::tiltBy(double degrees) {
 }
 
 void Engine::frame(const sg_swapchain& swapchain) {
+    impl_->followTerrain();
     impl_->globe.render(impl_->camera, &swapchain, nullptr, swapchain.width, swapchain.height);
     impl_->dirty = false;
 }
 
 void Engine::frameOffscreen(const sg_attachments& attachments, int width, int height) {
+    impl_->followTerrain();
     impl_->globe.render(impl_->camera, nullptr, &attachments, width, height);
     impl_->dirty = false;
 }
@@ -175,6 +226,14 @@ void configureGfx(sg_desc& desc) {
     desc.sampler_pool_size = 64;
     desc.shader_pool_size = 64;
     desc.pipeline_pool_size = 128;
+}
+
+std::vector<ElevationLayer> defaultElevation() {
+    ElevationLayer t;
+    t.name = "Terrain Tiles";
+    t.url = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png";
+    t.maxZoom = 15;
+    return {t};
 }
 
 std::vector<ImageryLayer> defaultLayers() {

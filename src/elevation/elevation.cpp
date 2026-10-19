@@ -332,8 +332,8 @@ const HeightGrid* ElevationManager::best(int source, int z, double px, double py
 }
 
 bool ElevationManager::gridFor(double west, double south, double east, double north, int posts, double priority,
-                               std::vector<float>& heights) {
-    heights.assign(static_cast<size_t>(posts) * posts, kNaN);
+                               std::vector<float>& heights, bool sampleHeights) {
+    heights.assign(sampleHeights ? static_cast<size_t>(posts) * posts : 0, kNaN);
     bool complete = true;
     ++tick_;
     for (int s = 0; s < static_cast<int>(providers_.size()); ++s) {
@@ -356,6 +356,9 @@ bool ElevationManager::gridFor(double west, double south, double east, double no
                     complete = false;
                     requests_.push_back({k, priority});
                 }
+        if (!sampleHeights) continue;
+        const HeightGrid* last = nullptr;
+        bool lastExact = false;
         for (int j = 0; j < posts; ++j) {
             double lat = south + (north - south) * j / (posts - 1);
             double py = projectY(m.srid, lat);
@@ -365,8 +368,11 @@ bool ElevationManager::gridFor(double west, double south, double east, double no
                 double lon = west + (east - west) * i / (posts - 1);
                 if (std::abs(lat) > maxLat) continue;
                 double px = projectX(m.srid, lon);
-                bool exact = false;
-                if (const HeightGrid* g = best(s, z, px, py, exact)) h = g->sample(px, py);
+                if (!(last && lastExact && px >= last->minX && px <= last->maxX && py >= last->minY &&
+                      py <= last->maxY)) {
+                    last = best(s, z, px, py, lastExact);
+                }
+                if (last) h = last->sample(px, py);
             }
         }
     }

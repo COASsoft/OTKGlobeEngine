@@ -39,18 +39,27 @@ void Camera::update() {
     focusEcef_ = geodeticToEcef(focus);
     eye_ = computeEye(tilt);
     GeoPoint eg = ecefToGeodetic(eye_);
-    if (eg.alt < kCollideRadius && tilt > 0) {
+    double g = ground(eg);
+    if (eg.alt < g + kCollideRadius && tilt > 0) {
         double lo = 0, hi = tilt;
         for (int i = 0; i < 30; ++i) {
             double mid = 0.5 * (lo + hi);
-            if (ecefToGeodetic(computeEye(mid)).alt < kCollideRadius) hi = mid;
+            GeoPoint m = ecefToGeodetic(computeEye(mid));
+            if (m.alt < ground(m) + kCollideRadius) hi = mid;
             else lo = mid;
         }
         tilt = lo;
         eye_ = computeEye(tilt);
         eg = ecefToGeodetic(eye_);
+        g = ground(eg);
+    }
+    if (eg.alt < g + kCollideRadius) {
+        setRange(range() + (g + kCollideRadius - eg.alt));
+        eye_ = computeEye(tilt);
+        eg = ecefToGeodetic(eye_);
     }
     eyeAlt_ = eg.alt;
+    eyeAboveGround_ = std::max(eg.alt - g, 1.0);
 
     Vec3 e, n, u;
     enuFrame(focus.lat, focus.lon, e, n, u);
@@ -61,8 +70,8 @@ void Camera::update() {
     viewRel_ = lookDirection(dir, up);
 
     double h = std::max(eyeAlt_, 1.0);
-    double horizon = std::sqrt(h * (2.0 * kWgs84A + h));
-    near_ = std::clamp(h * 0.05, 0.5, 1.0e6);
+    double horizon = std::sqrt(h * (2.0 * kWgs84A + h)) + std::sqrt(9000.0 * (2.0 * kWgs84A + 9000.0));
+    near_ = std::clamp(eyeAboveGround_ * 0.05, 0.5, 1.0e6);
     far_ = std::max(horizon * 1.05 + 1000.0, range() * 1.5);
     double aspect = static_cast<double>(width) / std::max(height, 1);
     proj_ = perspective(fovY, aspect, near_, far_, zeroToOneDepth);

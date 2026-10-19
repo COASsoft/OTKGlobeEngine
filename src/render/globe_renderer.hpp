@@ -73,6 +73,7 @@ private:
         bool complete = false;
         int version = -1;
         std::uint64_t used = 0;
+        std::vector<TileId> missing;
     };
     struct ImageryTexture {
         sg_image image{};
@@ -101,12 +102,14 @@ private:
     struct SurfaceJob {
         QuadKey key;
         std::vector<SurfaceDraw> draws;
+        std::vector<TileId> missing;
         bool complete = false;
     };
 
     static Bounds bounds(const QuadKey& k);
     NodeInfo info(const Camera& cam, const QuadKey& k) const;
     bool ready(const QuadKey& k) const;
+    bool progressed(const SurfaceTile& s) const;
     void need(const QuadKey& k, double priority);
     void traverse(const Camera& cam, const QuadKey& k, std::vector<DrawTile>& out);
     TerrainTile& terrain(const QuadKey& k);

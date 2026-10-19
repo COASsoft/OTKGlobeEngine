@@ -7,6 +7,7 @@ add_library(opentakengine STATIC
     raster/tile_cache.cpp
     raster/tile_provider.cpp
     raster/mobac.cpp
+    elevation/elevation.cpp
     render/globe_renderer.cpp
     render/gfx_impl.cpp)
 

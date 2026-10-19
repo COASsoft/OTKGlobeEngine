@@ -2,6 +2,8 @@
 
 #include "core/geo.hpp"
 
+#include <functional>
+
 namespace ote {
 
 class Camera {
@@ -14,6 +16,7 @@ public:
     int height = 1;
     double fovY = 45.0 * kDegToRad;
     bool zeroToOneDepth = false;
+    std::function<double(double, double)> groundHeight;
 
     static constexpr double kMinGsd = 0.02;
     static constexpr double kMaxRange = 4.0e7;
@@ -35,6 +38,7 @@ public:
     double nearPlane() const { return near_; }
     double farPlane() const { return far_; }
     double eyeAltitude() const { return eyeAlt_; }
+    double eyeAboveGround() const { return eyeAboveGround_; }
     double pixelSizeAt(double distance) const { return 2.0 * distance * std::tan(fovY * 0.5) / height; }
 
     Vec3 rayDirection(double sx, double sy) const;
@@ -53,6 +57,8 @@ private:
     double near_ = 1.0;
     double far_ = 1.0;
     double eyeAlt_ = 0.0;
+    double eyeAboveGround_ = 0.0;
+    double ground(const GeoPoint& g) const { return groundHeight ? groundHeight(g.lat, g.lon) : 0.0; }
 };
 
 }

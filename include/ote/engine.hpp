@@ -35,6 +35,17 @@ struct ImageryLayer {
     std::string userAgent;
 };
 
+enum class ElevationType { Terrarium, Directory };
+
+struct ElevationLayer {
+    std::string name;
+    ElevationType type = ElevationType::Terrarium;
+    std::string url;
+    std::string path;
+    int maxZoom = 15;
+    bool cache = true;
+};
+
 struct View {
     double lat = 20.0;
     double lon = -40.0;
@@ -83,6 +94,11 @@ public:
     void setImageryScale(double scale);
     void setCacheDirectory(const std::string& dir);
     void setOffline(bool offline);
+    void setElevation(const std::vector<ElevationLayer>& layers);
+    void setTerrainEnabled(bool enabled);
+    void setTerrainExaggeration(double factor);
+    void setDepthPerception(bool enabled);
+    double elevationAt(double lat, double lon) const;
 
     View view() const;
     void setView(const View& v);
@@ -109,6 +125,7 @@ private:
 };
 
 std::vector<ImageryLayer> defaultLayers();
+std::vector<ElevationLayer> defaultElevation();
 std::vector<ImageryLayer> loadMobac(const std::string& xmlOrPath);
 void configureGfx(sg_desc& desc);
 

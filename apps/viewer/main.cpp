@@ -47,6 +47,10 @@ struct ViewerState {
     ote::Region download;
     int downloadMin = 0, downloadMax = 0;
     int downloadId = 0;
+    bool terrain = true;
+    bool depth = true;
+    double exaggeration = 1.0;
+    std::string elevationDir;
     int width = 1600;
     int height = 900;
     float t0x = 0, t0y = 0, t1x = 0, t1y = 0;
@@ -106,6 +110,20 @@ void init() {
         state->engine.setCacheDirectory(cache);
     }
     state->engine.setOffline(state->offline);
+    {
+        std::vector<ote::ElevationLayer> elev;
+        if (!state->elevationDir.empty()) {
+            ote::ElevationLayer d;
+            d.type = ote::ElevationType::Directory;
+            d.path = state->elevationDir;
+            d.maxZoom = 14;
+            elev.push_back(d);
+        }
+        for (auto& e : ote::defaultElevation()) elev.push_back(e);
+        state->engine.setElevation(elev);
+        state->engine.setTerrainEnabled(state->terrain);
+        state->engine.setTerrainExaggeration(state->exaggeration);
+    }
     state->engine.setLayers(state->customLayers.empty() ? preset(state->preset) : state->customLayers);
     if (state->hasDownload)
         state->downloadId = state->engine.downloadRegion(0, state->download, state->downloadMin, state->downloadMax);
@@ -269,6 +287,15 @@ void event(const sapp_event* e) {
         if (e->key_code >= SAPP_KEYCODE_1 && e->key_code <= SAPP_KEYCODE_3) {
             state->preset = e->key_code - SAPP_KEYCODE_1;
             eng.setLayers(preset(state->preset));
+        } else if (e->key_code == SAPP_KEYCODE_T) {
+            state->terrain = !state->terrain;
+            eng.setTerrainEnabled(state->terrain);
+        } else if (e->key_code == SAPP_KEYCODE_D) {
+            state->depth = !state->depth;
+            eng.setDepthPerception(state->depth);
+        } else if (e->key_code == SAPP_KEYCODE_E) {
+            state->exaggeration = state->exaggeration >= 3.0 ? 1.0 : state->exaggeration + 0.5;
+            eng.setTerrainExaggeration(state->exaggeration);
         } else if (e->key_code == SAPP_KEYCODE_R) {
             ote::View v = eng.view();
             v.azimuth = 0;
@@ -331,6 +358,12 @@ sapp_desc sokol_main(int argc, char* argv[]) {
             ote::Region& r = state->download;
             state->hasDownload = std::sscanf(argv[++i], "%lf,%lf,%lf,%lf,%d,%d", &r.west, &r.south, &r.east, &r.north,
                                              &state->downloadMin, &state->downloadMax) == 6;
+        } else if (a == "--terrain") {
+            state->terrain = std::atoi(argv[++i]) != 0;
+        } else if (a == "--exaggeration") {
+            state->exaggeration = std::atof(argv[++i]);
+        } else if (a == "--elevation-dir") {
+            state->elevationDir = argv[++i];
         } else if (a == "--preset") {
             state->preset = std::atoi(argv[++i]);
         }

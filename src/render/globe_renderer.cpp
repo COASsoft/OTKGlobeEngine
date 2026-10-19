@@ -408,6 +408,10 @@ GlobeRenderer::NodeInfo GlobeRenderer::info(const Camera& cam, const QuadKey& k)
     }
     double d = std::max(dist - r, 1.0);
     double texel = spanDeg(k.level) * kDegToRad * kWgs84A / kSurfaceSize;
+    if (dist > r) {
+        double facing = std::abs(dot(rel * (1.0 / dist), normalize(c)));
+        texel *= std::max(facing, 0.35);
+    }
     double threshold = std::max(1.0, dpiScale_ * 0.6) / std::max(imageryScale_, 0.1);
     ni.refine = k.level < kMinLevel || (k.level < kMaxLevel && visits_ < 20000 && texel > cam.pixelSizeAt(d) * threshold);
     return ni;
@@ -420,6 +424,17 @@ bool GlobeRenderer::ready(const QuadKey& k) const {
     return t != terrain_.end() && t->second.complete;
 }
 
+bool GlobeRenderer::progressed(const SurfaceTile& s) const {
+    if (s.missing.empty()) return true;
+    double t = now();
+    for (const TileId& id : s.missing) {
+        if (imagery_.count(id)) return true;
+        auto f = failed_.find(id);
+        if (f != failed_.end() && (f->second == std::numeric_limits<double>::infinity() || f->second <= t)) return true;
+    }
+    return false;
+}
+
 void GlobeRenderer::need(const QuadKey& k, double priority) { needs_.push_back({k, priority}); }
 
 void GlobeRenderer::traverse(const Camera& cam, const QuadKey& k, std::vector<DrawTile>& out) {
@@ -430,14 +445,23 @@ void GlobeRenderer::traverse(const Camera& cam, const QuadKey& k, std::vector<Dr
     for (int i = 0; i < 4; ++i) kids[i] = {k.level + 1, k.x * 2 + (i & 1), k.y * 2 + (i >> 1)};
     if (ni.refine) {
         bool allReady = true;
+        bool allDrawable = true;
         NodeInfo ci[4];
         for (int i = 0; i < 4; ++i) {
             ci[i] = info(cam, kids[i]);
             if (!ci[i].visible) continue;
             need(kids[i], ci[i].distance * 2.0);
             if (!ready(kids[i])) allReady = false;
+            if (terrain_.find(kids[i]) == terrain_.end()) allDrawable = false;
         }
-        if (allReady || k.level < kMinLevel || !ready(k)) {
+        if (k.level < kMinLevel) {
+            for (int i = 0; i < 4; ++i) {
+                if (ci[i].visible) terrain(kids[i]);
+                traverse(cam, kids[i], out);
+            }
+            return;
+        }
+        if (allDrawable && (allReady || !ready(k))) {
             for (int i = 0; i < 4; ++i) traverse(cam, kids[i], out);
             return;
         }
@@ -606,7 +630,10 @@ bool GlobeRenderer::buildSurfaceJob(const QuadKey& k, double priority, SurfaceJo
                 bool missing = false;
                 TileId src;
                 ImageryTexture* tex = findTexture(id, m, priority, missing, src);
-                if (missing) complete = false;
+                if (missing) {
+                    complete = false;
+                    if (job) job->missing.push_back(id);
+                }
                 if (!tex) continue;
                 tex->used = frame_;
                 if (!job) continue;
@@ -682,6 +709,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
 
     std::vector<DrawTile> tiles;
     visits_ = 0;
+    terrain({0, 0, 0});
+    terrain({0, 1, 0});
     traverse(cam, {0, 0, 0}, tiles);
     traverse(cam, {0, 1, 0}, tiles);
     std::sort(tiles.begin(), tiles.end(), [](const DrawTile& a, const DrawTile& b) { return a.distance < b.distance; });
@@ -720,7 +749,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             Bounds b = bounds(n.key);
             double cell = (b.north - b.south) / kGrid;
             elevation_.gridFor(b.west - cell, std::max(b.south - cell, -90.0), b.east + cell,
-                               std::min(b.north + cell, 90.0), 2, n.priority, scratch);
+                               std::min(b.north + cell, 90.0), kPosts + 2, n.priority, scratch, false);
         }
     }
     elevation_.submit();
@@ -732,7 +761,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             work.push_back({0, i});
         } else {
             it->second.used = frame_;
-            if (!it->second.complete && it->second.version != imageryVersion_) work.push_back({1, i});
+            if (!it->second.complete && progressed(it->second)) work.push_back({1, i});
             else if (!it->second.complete) buildSurfaceJob(needs_[i].key, needs_[i].priority, nullptr, nullptr);
         }
     }
@@ -803,6 +832,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         sg_end_pass();
         s->complete = job.complete;
         s->version = imageryVersion_;
+        s->missing = std::move(job.missing);
     }
 
     sg_pass main{};

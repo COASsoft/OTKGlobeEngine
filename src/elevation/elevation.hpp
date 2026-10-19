@@ -48,7 +48,7 @@ public:
     int version() const { return version_; }
 
     bool gridFor(double west, double south, double east, double north, int posts, double priority,
-                 std::vector<float>& heights);
+                 std::vector<float>& heights, bool sampleHeights = true);
     double sample(double lat, double lon) const;
     void beginFrame() { requests_.clear(); }
     void submit();
