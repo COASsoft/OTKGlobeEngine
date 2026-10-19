@@ -63,27 +63,14 @@ void TileLoader::setLayers(const std::vector<ImageryLayer>& layers) {
     ++generation_;
 }
 
-void TileLoader::beginFrame(std::uint64_t frame) {
+void TileLoader::submit(std::vector<std::pair<TileId, double>>& requests) {
+    std::sort(requests.begin(), requests.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
     std::lock_guard lock(mutex_);
-    frame_ = frame;
-    for (auto it = queue_.begin(); it != queue_.end();) {
-        if (it->second.wanted + 2 < frame) it = queue_.erase(it);
-        else ++it;
-    }
-}
-
-void TileLoader::request(const TileId& id, double priority) {
-    std::lock_guard lock(mutex_);
-    if (inflight_.count(id)) return;
-    auto& r = queue_[id];
-    r.priority = r.wanted == frame_ ? std::min(r.priority, priority) : priority;
-    r.wanted = frame_;
-    cv_.notify_one();
-}
-
-bool TileLoader::inFlight(const TileId& id) const {
-    std::lock_guard lock(mutex_);
-    return inflight_.count(id) || queue_.count(id);
+    queue_.clear();
+    queue_.reserve(requests.size());
+    for (const auto& r : requests)
+        if (!inflight_.count(r.first)) queue_.push_back(r.first);
+    if (!queue_.empty()) cv_.notify_all();
 }
 
 std::vector<DecodedTile> TileLoader::take(size_t max) {
@@ -110,11 +97,8 @@ void TileLoader::run() {
             std::unique_lock lock(mutex_);
             cv_.wait(lock, [this] { return stop_ || !queue_.empty(); });
             if (stop_) return;
-            auto best = queue_.end();
-            for (auto it = queue_.begin(); it != queue_.end(); ++it)
-                if (best == queue_.end() || it->second.priority < best->second.priority) best = it;
-            id = best->first;
-            queue_.erase(best);
+            id = queue_.back();
+            queue_.pop_back();
             if (id.layer < 0 || id.layer >= static_cast<int>(layers_.size())) continue;
             layer = layers_[id.layer];
             gen = generation_;

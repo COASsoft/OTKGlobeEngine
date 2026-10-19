@@ -5,6 +5,7 @@
 #include "surface.glsl.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 
@@ -247,6 +248,7 @@ GlobeRenderer::SurfaceTile* GlobeRenderer::acquireSurface(const QuadKey& k) {
 }
 
 void GlobeRenderer::traverse(const Camera& cam, const QuadKey& k, std::vector<DrawTile>& out) {
+    ++visits_;
     Bounds b = bounds(k);
     double clat = 0.5 * (b.south + b.north), clon = 0.5 * (b.west + b.east);
     Vec3 c = geodeticToEcef(clat, clon, 0.0);
@@ -274,7 +276,8 @@ void GlobeRenderer::traverse(const Camera& cam, const QuadKey& k, std::vector<Dr
     double tileMeters = spanDeg(k.level) * kDegToRad * kWgs84A;
     double texel = tileMeters / kSurfaceSize;
     double threshold = std::max(1.0, dpiScale_ * 0.6) / std::max(imageryScale_, 0.1);
-    bool refine = k.level < kMinLevel || (k.level < kMaxLevel && texel > cam.pixelSizeAt(d) * threshold);
+    bool refine = k.level < kMinLevel ||
+                  (k.level < kMaxLevel && visits_ < 20000 && texel > cam.pixelSizeAt(d) * threshold);
     if (refine) {
         for (int dy = 0; dy < 2; ++dy)
             for (int dx = 0; dx < 2; ++dx) traverse(cam, {k.level + 1, k.x * 2 + dx, k.y * 2 + dy}, out);
@@ -315,7 +318,7 @@ void GlobeRenderer::evict() {
     if (imagery_.size() > kImageryCapacity) {
         std::vector<std::pair<std::uint64_t, TileId>> c;
         for (auto& [k, t] : imagery_)
-            if (k.z > kBaseZoom && t.used < frame_) c.push_back({t.used, k});
+            if (k.z > kBaseZoom && t.used + 1 < frame_) c.push_back({t.used, k});
         std::sort(c.begin(), c.end(), [](auto& a, auto& b) { return a.first < b.first; });
         for (size_t i = 0; i < c.size() && imagery_.size() > kImageryCapacity; ++i) {
             auto it = imagery_.find(c[i].second);
@@ -327,7 +330,7 @@ void GlobeRenderer::evict() {
     if (surface_.size() > kSurfaceCapacity) {
         std::vector<std::pair<std::uint64_t, QuadKey>> c;
         for (auto& [k, s] : surface_)
-            if (s.used < frame_) c.push_back({s.used, k});
+            if (s.used + 1 < frame_) c.push_back({s.used, k});
         std::sort(c.begin(), c.end(), [](auto& a, auto& b) { return a.first < b.first; });
         for (size_t i = 0; i < c.size() && surface_.size() > kSurfaceCapacity; ++i) {
             auto it = surface_.find(c[i].second);
@@ -354,19 +357,25 @@ void GlobeRenderer::evict() {
     }
 }
 
+void GlobeRenderer::want(const TileId& id, double priority) {
+    requests_.emplace_back(id, priority);
+}
+
 void GlobeRenderer::requestBase() {
     double t = now();
-    for (int l = 0; l < static_cast<int>(layers_.size()); ++l) {
-        if (layers_[l].minZoom > kBaseZoom) continue;
-        for (int z = layers_[l].minZoom; z <= kBaseZoom; ++z)
-            for (int y = 0; y < (1 << z); ++y)
-                for (int x = 0; x < (1 << z); ++x) {
-                    TileId id{l, z, x, y};
-                    if (imagery_.count(id)) continue;
-                    auto f = failed_.find(id);
-                    if (f != failed_.end() && f->second > t) continue;
-                    loader_.request(id, -1.0 + z * 0.01);
-                }
+    const int layerCount = static_cast<int>(layers_.size());
+    for (int l = 0; l < layerCount; ++l) {
+        const int first = std::max(layers_[l].minZoom, 0);
+        for (int z = first; z <= kBaseZoom; ++z) {
+            const int n = 1 << z;
+            for (int i = 0; i < n * n; ++i) {
+                TileId id{l, z, i % n, i / n};
+                if (imagery_.find(id) != imagery_.end()) continue;
+                auto f = failed_.find(id);
+                if (f != failed_.end() && f->second > t) continue;
+                want(id, -1.0 + z * 0.01);
+            }
+        }
     }
 }
 
@@ -401,7 +410,7 @@ bool GlobeRenderer::buildSurfaceJob(const QuadKey& k, double priority, SurfaceJo
                     bool failedNow = f != failed_.end();
                     if (!failedNow || f->second <= t) {
                         complete = false;
-                        if (!failedNow || f->second <= t) loader_.request(id, priority);
+                        want(id, priority);
                     } else if (f->second != std::numeric_limits<double>::infinity()) {
                         complete = false;
                     }
@@ -415,8 +424,9 @@ bool GlobeRenderer::buildSurfaceJob(const QuadKey& k, double priority, SurfaceJo
                         }
                     }
                 }
-                if (!tex || !job) continue;
+                if (!tex) continue;
                 tex->used = frame_;
+                if (!job) continue;
 
                 int sn = 1 << src.z;
                 double sw = src.x * 360.0 / sn - 180.0, se = (src.x + 1) * 360.0 / sn - 180.0;
@@ -457,17 +467,30 @@ bool GlobeRenderer::buildSurfaceJob(const QuadKey& k, double priority, SurfaceJo
 void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_attachments* attachments, int width,
                            int height) {
     if (!ready_) return;
+    if (!trace_)
+        if (const char* path = std::getenv("OTE_TRACE")) trace_ = std::fopen(path, "w");
+    auto mark = [&](const char* m) {
+        if (trace_) {
+            std::fprintf(trace_, "%s %.3f lat %g lon %g gsd %g tilt %g az %g w %d h %d\n", m, now(), cam.focus.lat, cam.focus.lon, cam.gsd, cam.tilt, cam.azimuth, cam.width, cam.height);
+            std::fflush(trace_);
+        }
+    };
+    mark("begin");
     ++frame_;
-    loader_.beginFrame(frame_);
+    requests_.clear();
     processLoads();
+    mark("loads");
     evict();
+    mark("evict");
     requestBase();
+    mark("base");
 
     cam.width = std::max(width, 1);
     cam.height = std::max(height, 1);
     sg_backend backend = sg_query_backend();
     cam.zeroToOneDepth = backend != SG_BACKEND_GLCORE && backend != SG_BACKEND_GLES3;
     cam.update();
+    mark("camera");
 
     const Mat4& m = cam.viewProjRel();
     for (int p = 0; p < 4; ++p) {
@@ -485,6 +508,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     }
 
     std::vector<DrawTile> tiles;
+    visits_ = 0;
+    auto tTraverse = now();
     traverse(cam, {0, 0, 0}, tiles);
     traverse(cam, {0, 1, 0}, tiles);
     std::sort(tiles.begin(), tiles.end(), [](const DrawTile& a, const DrawTile& b) { return a.distance < b.distance; });
@@ -502,6 +527,12 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     }
     std::stable_sort(work.begin(), work.end(), [](auto& a, auto& b) { return a.first < b.first; });
 
+    if (trace_) {
+        std::fprintf(trace_, "frame %llu visits %d tiles %zu work %zu traverse %.4f eye %.0f near %.1f far %.0f\n",
+                     static_cast<unsigned long long>(frame_), visits_, tiles.size(), work.size(), now() - tTraverse,
+                     cam.eyeAltitude(), cam.nearPlane(), cam.farPlane());
+        std::fflush(trace_);
+    }
     std::vector<SurfaceJob> jobs;
     std::vector<float> verts;
     int renders = 0;
@@ -515,6 +546,21 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         buildSurfaceJob(job.key, tiles[i].distance, &job, &verts);
         jobs.push_back(std::move(job));
         ++renders;
+    }
+    {
+        std::sort(requests_.begin(), requests_.end(), [](const auto& a, const auto& b) {
+            const TileId& x = a.first;
+            const TileId& y = b.first;
+            if (x.layer != y.layer) return x.layer < y.layer;
+            if (x.z != y.z) return x.z < y.z;
+            if (x.x != y.x) return x.x < y.x;
+            if (x.y != y.y) return x.y < y.y;
+            return a.second < b.second;
+        });
+        requests_.erase(std::unique(requests_.begin(), requests_.end(),
+                                    [](const auto& a, const auto& b) { return a.first == b.first; }),
+                        requests_.end());
+        loader_.submit(requests_);
     }
     if (verts.size() * sizeof(float) > kSurfaceBufferBytes) verts.resize(kSurfaceBufferBytes / sizeof(float));
 

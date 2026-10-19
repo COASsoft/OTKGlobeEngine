@@ -6,6 +6,7 @@
 #include <sokol_gfx.h>
 
 #include <chrono>
+#include <cstdio>
 #include <unordered_map>
 #include <vector>
 
@@ -86,6 +87,7 @@ private:
     bool buildSurfaceJob(const QuadKey& k, double priority, SurfaceJob* job, std::vector<float>* verts);
     void requestBase();
     double now() const;
+    void want(const TileId& id, double priority);
 
     TileLoader loader_{6};
     std::vector<ImageryLayer> layers_;
@@ -94,6 +96,7 @@ private:
     std::unordered_map<TileId, ImageryTexture, TileIdHash> imagery_;
     std::unordered_map<TileId, double, TileIdHash> failed_;
     std::vector<SurfaceTile> freeSurfaces_;
+    std::vector<std::pair<TileId, double>> requests_;
 
     sg_buffer indexBuffer_{};
     sg_buffer skyBuffer_{};
@@ -111,6 +114,8 @@ private:
 
     std::array<double, 16> frustum_{};
     std::uint64_t frame_ = 0;
+    int visits_ = 0;
+    FILE* trace_ = nullptr;
     int imageryVersion_ = 0;
     double imageryScale_ = 1.0;
     double dpiScale_ = 1.0;

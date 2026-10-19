@@ -5,6 +5,8 @@
 #include "core/camera.hpp"
 #include "render/globe_renderer.hpp"
 
+#include <sokol_gfx.h>
+
 namespace ote {
 
 struct Engine::Impl {
@@ -137,6 +139,15 @@ void Engine::frameOffscreen(const sg_attachments& attachments, int width, int he
 bool Engine::needsRedraw() const { return impl_->dirty || impl_->globe.busy(); }
 
 Stats Engine::stats() const { return impl_->globe.stats(); }
+
+void configureGfx(sg_desc& desc) {
+    desc.buffer_pool_size = 4096;
+    desc.image_pool_size = 4096;
+    desc.view_pool_size = 8192;
+    desc.sampler_pool_size = 64;
+    desc.shader_pool_size = 64;
+    desc.pipeline_pool_size = 128;
+}
 
 std::vector<ImageryLayer> defaultLayers() {
     ImageryLayer imagery;

@@ -12,6 +12,7 @@
 
 #include "ote/engine.hpp"
 #include "shot.hpp"
+#include "watchdog.hpp"
 
 #include <cmath>
 #include <cstdio>
@@ -45,6 +46,14 @@ struct ViewerState {
 };
 
 ViewerState* state = nullptr;
+FILE* logFile = nullptr;
+
+void fileLog(const char* tag, uint32_t level, uint32_t item, const char* msg, uint32_t line, const char* file, void*) {
+    if (!logFile) return;
+    std::fprintf(logFile, "[%s] level %u item %u line %u %s: %s\n", tag ? tag : "", level, item, line, file ? file : "",
+                 msg ? msg : "");
+    std::fflush(logFile);
+}
 
 std::vector<ote::ImageryLayer> preset(int i) {
     std::vector<ote::ImageryLayer> layers = ote::defaultLayers();
@@ -69,6 +78,12 @@ void init() {
     sg_desc desc{};
     desc.environment = sglue_environment();
     desc.logger.func = slog_func;
+    if (const char* lp = std::getenv("OTE_LOG")) {
+        logFile = std::fopen(lp, "w");
+        desc.logger.func = fileLog;
+    }
+    ote::configureGfx(desc);
+    if (const char* wd = std::getenv("OTE_WATCHDOG")) watchdogStart(wd);
     sg_setup(&desc);
     state->engine.init();
     state->engine.setViewport(sapp_width(), sapp_height(), sapp_dpi_scale());
@@ -107,6 +122,7 @@ void init() {
 }
 
 void frame() {
+    watchdogBeat();
     if (!state->shotPath.empty()) {
         state->engine.setViewport(state->width, state->height, 1.0f);
         sg_attachments att{};
@@ -265,8 +281,8 @@ sapp_desc sokol_main(int argc, char* argv[]) {
             state->offscreen = std::atoi(argv[++i]) != 0;
         } else if (a == "--shot") {
             state->shotPath = argv[++i];
-        } else if (a == "--shot-frames") {
-            state->shotMaxFrames = std::atoi(argv[++i]);
+        } else if (a == "--shot-timeout") {
+            state->shotTimeout = std::atof(argv[++i]);
         } else if (a == "--size") {
             std::sscanf(argv[++i], "%dx%d", &state->width, &state->height);
         } else if (a == "--preset") {

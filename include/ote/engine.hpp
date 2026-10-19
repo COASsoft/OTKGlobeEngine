@@ -6,6 +6,7 @@
 
 struct sg_swapchain;
 struct sg_attachments;
+struct sg_desc;
 
 namespace ote {
 
@@ -70,5 +71,6 @@ private:
 };
 
 std::vector<ImageryLayer> defaultLayers();
+void configureGfx(sg_desc& desc);
 
 }

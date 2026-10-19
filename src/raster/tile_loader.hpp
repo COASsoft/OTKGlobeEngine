@@ -49,28 +49,20 @@ public:
 
     void setLayers(const std::vector<ImageryLayer>& layers);
     int generation() const { return generation_; }
-    void beginFrame(std::uint64_t frame);
-    void request(const TileId& id, double priority);
-    bool inFlight(const TileId& id) const;
+    void submit(std::vector<std::pair<TileId, double>>& requests);
     std::vector<DecodedTile> take(size_t max);
     int pending() const;
 
 private:
-    struct Request {
-        double priority = 0;
-        std::uint64_t wanted = 0;
-    };
-
     void run();
 
     mutable std::mutex mutex_;
     std::condition_variable cv_;
     std::vector<std::thread> workers_;
     std::vector<ImageryLayer> layers_;
-    std::unordered_map<TileId, Request, TileIdHash> queue_;
+    std::vector<TileId> queue_;
     std::unordered_set<TileId, TileIdHash> inflight_;
     std::deque<DecodedTile> done_;
-    std::uint64_t frame_ = 0;
     int generation_ = 0;
     bool stop_ = false;
 };
