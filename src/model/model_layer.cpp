@@ -4,6 +4,7 @@
 
 #define CGLTF_IMPLEMENTATION
 #include <cgltf.h>
+#include <json.hpp>
 #include <stb_image.h>
 
 #include <cmath>
@@ -13,12 +14,6 @@
 namespace ote {
 
 namespace {
-
-Mat4 fromFloat(const float m[16]) {
-    Mat4 r;
-    for (int i = 0; i < 16; ++i) r.m[i] = m[i];
-    return r;
-}
 
 Mat4 rotZ(double a) {
     Mat4 r = Mat4::identity();
@@ -56,42 +51,193 @@ Mat4 scaleMat(double s) {
     return r;
 }
 
-sg_image decodeImage(const cgltf_image* img, const std::filesystem::path& dir) {
-    std::vector<unsigned char> bytes;
-    if (img->buffer_view && img->buffer_view->buffer->data) {
-        const auto* p = static_cast<const unsigned char*>(img->buffer_view->buffer->data) + img->buffer_view->offset;
-        bytes.assign(p, p + img->buffer_view->size);
-    } else if (img->uri && std::strncmp(img->uri, "data:", 5) != 0) {
-        std::filesystem::path f = dir / std::filesystem::u8path(img->uri);
-        FILE* fp = nullptr;
+std::vector<std::uint8_t> readFile(const std::filesystem::path& f) {
+    std::vector<std::uint8_t> bytes;
 #if defined(_WIN32)
-        fp = _wfopen(f.wstring().c_str(), L"rb");
+    FILE* fp = _wfopen(f.wstring().c_str(), L"rb");
 #else
-        fp = std::fopen(f.string().c_str(), "rb");
+    FILE* fp = std::fopen(f.string().c_str(), "rb");
 #endif
-        if (fp) {
-            std::fseek(fp, 0, SEEK_END);
-            long n = std::ftell(fp);
-            std::fseek(fp, 0, SEEK_SET);
-            bytes.resize(n > 0 ? static_cast<size_t>(n) : 0);
-            if (std::fread(bytes.data(), 1, bytes.size(), fp) != bytes.size()) bytes.clear();
-            std::fclose(fp);
-        }
-    }
-    if (bytes.empty()) return {};
-    int w = 0, h = 0, c = 0;
-    unsigned char* px = stbi_load_from_memory(bytes.data(), static_cast<int>(bytes.size()), &w, &h, &c, 4);
-    if (!px) return {};
-    sg_image_desc d{};
-    d.width = w;
-    d.height = h;
-    d.pixel_format = SG_PIXELFORMAT_RGBA8;
-    d.data.mip_levels[0] = {px, static_cast<size_t>(w) * h * 4};
-    sg_image out = sg_make_image(&d);
-    stbi_image_free(px);
-    return out;
+    if (!fp) return bytes;
+    std::fseek(fp, 0, SEEK_END);
+    long n = std::ftell(fp);
+    std::fseek(fp, 0, SEEK_SET);
+    bytes.resize(n > 0 ? static_cast<size_t>(n) : 0);
+    if (std::fread(bytes.data(), 1, bytes.size(), fp) != bytes.size()) bytes.clear();
+    std::fclose(fp);
+    return bytes;
 }
 
+bool decodeImage(const cgltf_image* img, const std::string& baseDir, CpuPrimitive& p) {
+    std::vector<unsigned char> bytes;
+    if (img->buffer_view && img->buffer_view->buffer->data) {
+        const auto* b = static_cast<const unsigned char*>(img->buffer_view->buffer->data) + img->buffer_view->offset;
+        bytes.assign(b, b + img->buffer_view->size);
+    } else if (img->uri && std::strncmp(img->uri, "data:", 5) != 0 && !baseDir.empty()) {
+        bytes = readFile(std::filesystem::u8path(baseDir) / std::filesystem::u8path(img->uri));
+    }
+    if (bytes.empty()) return false;
+    int w = 0, h = 0, c = 0;
+    unsigned char* px = stbi_load_from_memory(bytes.data(), static_cast<int>(bytes.size()), &w, &h, &c, 4);
+    if (!px) return false;
+    p.imageWidth = w;
+    p.imageHeight = h;
+    p.image.assign(px, px + static_cast<size_t>(w) * h * 4);
+    stbi_image_free(px);
+    return true;
+}
+
+}
+
+Mat4 yUpToZUp() {
+    Mat4 m;
+    m.at(0, 0) = 1;
+    m.at(2, 1) = 1;
+    m.at(1, 2) = -1;
+    m.at(3, 3) = 1;
+    return m;
+}
+
+bool parseGltf(const std::uint8_t* bytes, std::size_t size, const std::string& baseDir, CpuModel& out) {
+    cgltf_options options{};
+    cgltf_data* data = nullptr;
+    if (cgltf_parse(&options, bytes, size, &data) != cgltf_result_success) return false;
+    std::string base = baseDir.empty() ? std::string() : (std::filesystem::u8path(baseDir) / "x").string();
+    if (cgltf_load_buffers(&options, data, base.empty() ? nullptr : base.c_str()) != cgltf_result_success) {
+        cgltf_free(data);
+        return false;
+    }
+    for (cgltf_size i = 0; i < data->extensions_count; ++i) {
+        if (data->extensions[i].name && std::strcmp(data->extensions[i].name, "CESIUM_RTC") == 0 && data->extensions[i].data) {
+            nlohmann::json j = nlohmann::json::parse(data->extensions[i].data, nullptr, false);
+            if (j.contains("center") && j["center"].is_array() && j["center"].size() == 3)
+                for (int k = 0; k < 3; ++k) out.rtc[k] = j["center"][k].get<double>();
+        }
+    }
+    for (cgltf_size ni = 0; ni < data->nodes_count; ++ni) {
+        cgltf_node* node = &data->nodes[ni];
+        if (!node->mesh) continue;
+        float world[16];
+        cgltf_node_transform_world(node, world);
+        for (cgltf_size pi = 0; pi < node->mesh->primitives_count; ++pi) {
+            const cgltf_primitive& prim = node->mesh->primitives[pi];
+            if (prim.type != cgltf_primitive_type_triangles) continue;
+            const cgltf_accessor *pos = nullptr, *nrm = nullptr, *tex = nullptr;
+            for (cgltf_size ai = 0; ai < prim.attributes_count; ++ai) {
+                const cgltf_attribute& a = prim.attributes[ai];
+                if (a.type == cgltf_attribute_type_position) pos = a.data;
+                else if (a.type == cgltf_attribute_type_normal) nrm = a.data;
+                else if (a.type == cgltf_attribute_type_texcoord && a.index == 0) tex = a.data;
+            }
+            if (!pos) continue;
+            CpuPrimitive p;
+            size_t n = pos->count;
+            p.vertices.assign(n * 8, 0.0f);
+            for (size_t i = 0; i < n; ++i) {
+                cgltf_accessor_read_float(pos, i, &p.vertices[i * 8], 3);
+                if (nrm) cgltf_accessor_read_float(nrm, i, &p.vertices[i * 8 + 3], 3);
+                else p.vertices[i * 8 + 4] = 1.0f;
+                if (tex) cgltf_accessor_read_float(tex, i, &p.vertices[i * 8 + 6], 2);
+            }
+            if (prim.indices) {
+                p.indices.resize(prim.indices->count);
+                for (size_t i = 0; i < p.indices.size(); ++i)
+                    p.indices[i] = static_cast<std::uint32_t>(cgltf_accessor_read_index(prim.indices, i));
+            } else {
+                p.indices.resize(n);
+                for (size_t i = 0; i < n; ++i) p.indices[i] = static_cast<std::uint32_t>(i);
+            }
+            if (prim.material) {
+                const auto& pbr = prim.material->pbr_metallic_roughness;
+                for (int k = 0; k < 4; ++k) p.color[k] = pbr.base_color_factor[k];
+                if (pbr.base_color_texture.texture && pbr.base_color_texture.texture->image)
+                    decodeImage(pbr.base_color_texture.texture->image, baseDir, p);
+            }
+            for (int k = 0; k < 16; ++k) p.matrix[k] = world[k];
+            out.bytes += p.vertices.size() * 4 + p.indices.size() * 4 + p.image.size();
+            out.primitives.push_back(std::move(p));
+        }
+    }
+    cgltf_free(data);
+    return !out.primitives.empty();
+}
+
+bool parseB3dm(const std::uint8_t* data, std::size_t size, CpuModel& out) {
+    if (size < 28 || std::memcmp(data, "b3dm", 4) != 0) {
+        if (size >= 4 && std::memcmp(data, "glTF", 4) == 0) return parseGltf(data, size, {}, out);
+        return false;
+    }
+    auto u32 = [&](size_t o) {
+        std::uint32_t v;
+        std::memcpy(&v, data + o, 4);
+        return v;
+    };
+    std::uint32_t ftJson = u32(12), ftBin = u32(16), btJson = u32(20), btBin = u32(24);
+    size_t header = 28;
+    if (btJson >= 570425344) {
+        header = 20;
+        btJson = ftBin;
+        btBin = ftJson;
+        ftJson = 0;
+        ftBin = 0;
+    }
+    size_t glb = header + ftJson + ftBin + btJson + btBin;
+    if (glb >= size) return false;
+    if (ftJson > 0) {
+        std::string json(reinterpret_cast<const char*>(data + header), ftJson);
+        nlohmann::json j = nlohmann::json::parse(json, nullptr, false);
+        if (!j.is_discarded() && j.contains("RTC_CENTER") && j["RTC_CENTER"].is_array() && j["RTC_CENTER"].size() == 3)
+            for (int k = 0; k < 3; ++k) out.rtc[k] = j["RTC_CENTER"][k].get<double>();
+    }
+    std::array<double, 3> rtc = out.rtc;
+    bool ok = parseGltf(data + glb, size - glb, {}, out);
+    if (rtc[0] != 0 || rtc[1] != 0 || rtc[2] != 0) out.rtc = rtc;
+    return ok;
+}
+
+GpuMesh::~GpuMesh() {
+    if (!sg_isvalid()) return;
+    for (auto& p : primitives) {
+        sg_destroy_buffer(p.vertices);
+        sg_destroy_buffer(p.indices);
+        if (p.image.id) {
+            sg_destroy_view(p.texture);
+            sg_destroy_image(p.image);
+        }
+    }
+}
+
+std::shared_ptr<GpuMesh> ModelLayer::upload(const CpuModel& model) {
+    auto mesh = std::make_shared<GpuMesh>();
+    mesh->rtc = model.rtc;
+    mesh->bytes = model.bytes;
+    for (const CpuPrimitive& c : model.primitives) {
+        GpuMesh::Primitive p;
+        sg_buffer_desc vb{};
+        vb.usage.vertex_buffer = true;
+        vb.data = {c.vertices.data(), c.vertices.size() * sizeof(float)};
+        p.vertices = sg_make_buffer(&vb);
+        sg_buffer_desc ib{};
+        ib.usage.index_buffer = true;
+        ib.data = {c.indices.data(), c.indices.size() * sizeof(std::uint32_t)};
+        p.indices = sg_make_buffer(&ib);
+        p.count = static_cast<int>(c.indices.size());
+        p.color = c.color;
+        p.matrix = c.matrix;
+        if (!c.image.empty()) {
+            sg_image_desc d{};
+            d.width = c.imageWidth;
+            d.height = c.imageHeight;
+            d.pixel_format = SG_PIXELFORMAT_RGBA8;
+            d.data.mip_levels[0] = {c.image.data(), c.image.size()};
+            p.image = sg_make_image(&d);
+            sg_view_desc tv{};
+            tv.texture.image = p.image;
+            p.texture = sg_make_view(&tv);
+        }
+        mesh->primitives.push_back(p);
+    }
+    return mesh;
 }
 
 bool ModelLayer::init() {
@@ -143,91 +289,16 @@ void ModelLayer::shutdown() {
     ready_ = false;
 }
 
-std::shared_ptr<ModelLayer::Mesh> ModelLayer::load(const std::string& path) {
+std::shared_ptr<GpuMesh> ModelLayer::load(const std::string& path) {
     auto cached = meshes_.find(path);
     if (cached != meshes_.end())
         if (auto m = cached->second.lock()) return m;
-    cgltf_options options{};
-    cgltf_data* data = nullptr;
-    if (cgltf_parse_file(&options, path.c_str(), &data) != cgltf_result_success) return nullptr;
-    if (cgltf_load_buffers(&options, data, path.c_str()) != cgltf_result_success) {
-        cgltf_free(data);
-        return nullptr;
-    }
-    std::filesystem::path dir = std::filesystem::u8path(path).parent_path();
-    auto mesh = std::shared_ptr<Mesh>(new Mesh, [](Mesh* m) {
-        if (sg_isvalid())
-            for (auto& p : m->primitives) {
-                sg_destroy_buffer(p.vertices);
-                sg_destroy_buffer(p.indices);
-                if (p.image.id) {
-                    sg_destroy_view(p.texture);
-                    sg_destroy_image(p.image);
-                }
-            }
-        delete m;
-    });
-    for (cgltf_size ni = 0; ni < data->nodes_count; ++ni) {
-        cgltf_node* node = &data->nodes[ni];
-        if (!node->mesh) continue;
-        float world[16];
-        cgltf_node_transform_world(node, world);
-        for (cgltf_size pi = 0; pi < node->mesh->primitives_count; ++pi) {
-            const cgltf_primitive& prim = node->mesh->primitives[pi];
-            if (prim.type != cgltf_primitive_type_triangles) continue;
-            const cgltf_accessor *pos = nullptr, *nrm = nullptr, *tex = nullptr;
-            for (cgltf_size ai = 0; ai < prim.attributes_count; ++ai) {
-                const cgltf_attribute& a = prim.attributes[ai];
-                if (a.type == cgltf_attribute_type_position) pos = a.data;
-                else if (a.type == cgltf_attribute_type_normal) nrm = a.data;
-                else if (a.type == cgltf_attribute_type_texcoord && a.index == 0) tex = a.data;
-            }
-            if (!pos) continue;
-            size_t n = pos->count;
-            std::vector<float> v(n * 8, 0.0f);
-            for (size_t i = 0; i < n; ++i) {
-                cgltf_accessor_read_float(pos, i, &v[i * 8], 3);
-                if (nrm) cgltf_accessor_read_float(nrm, i, &v[i * 8 + 3], 3);
-                else v[i * 8 + 4] = 1.0f;
-                if (tex) cgltf_accessor_read_float(tex, i, &v[i * 8 + 6], 2);
-            }
-            std::vector<std::uint32_t> idx;
-            if (prim.indices) {
-                idx.resize(prim.indices->count);
-                for (size_t i = 0; i < idx.size(); ++i) idx[i] = static_cast<std::uint32_t>(cgltf_accessor_read_index(prim.indices, i));
-            } else {
-                idx.resize(n);
-                for (size_t i = 0; i < n; ++i) idx[i] = static_cast<std::uint32_t>(i);
-            }
-            Primitive p;
-            sg_buffer_desc vb{};
-            vb.usage.vertex_buffer = true;
-            vb.data = {v.data(), v.size() * sizeof(float)};
-            p.vertices = sg_make_buffer(&vb);
-            sg_buffer_desc ib{};
-            ib.usage.index_buffer = true;
-            ib.data = {idx.data(), idx.size() * sizeof(std::uint32_t)};
-            p.indices = sg_make_buffer(&ib);
-            p.count = static_cast<int>(idx.size());
-            if (prim.material) {
-                const auto& pbr = prim.material->pbr_metallic_roughness;
-                for (int k = 0; k < 4; ++k) p.color[k] = pbr.base_color_factor[k];
-                if (pbr.base_color_texture.texture && pbr.base_color_texture.texture->image) {
-                    p.image = decodeImage(pbr.base_color_texture.texture->image, dir);
-                    if (p.image.id) {
-                        sg_view_desc tv{};
-                        tv.texture.image = p.image;
-                        p.texture = sg_make_view(&tv);
-                    }
-                }
-            }
-            Mat4 m = fromFloat(world);
-            p.matrix = m.m;
-            mesh->primitives.push_back(p);
-        }
-    }
-    cgltf_free(data);
-    if (mesh->primitives.empty()) return nullptr;
+    std::filesystem::path p = std::filesystem::u8path(path);
+    std::vector<std::uint8_t> bytes = readFile(p);
+    if (bytes.empty()) return nullptr;
+    CpuModel cpu;
+    if (!parseGltf(bytes.data(), bytes.size(), p.parent_path().u8string(), cpu)) return nullptr;
+    auto mesh = upload(cpu);
     meshes_[path] = mesh;
     return mesh;
 }
@@ -249,14 +320,36 @@ bool ModelLayer::update(std::uint64_t id, const ModelPlacement& placement) {
 
 bool ModelLayer::remove(std::uint64_t id) { return instances_.erase(id) > 0; }
 
+void ModelLayer::begin() { sg_apply_pipeline(pipeline_); }
+
+void ModelLayer::drawMesh(const Camera& cam, const GpuMesh& mesh, const Mat4& model, const Mat4& orientation, Vec3 light) {
+    for (const GpuMesh::Primitive& p : mesh.primitives) {
+        Mat4 node;
+        node.m = p.matrix;
+        model_vs_params_t vs{};
+        toFloat(cam.viewProjRel() * model * node, vs.mvp);
+        toFloat(orientation * node, vs.rotation);
+        model_fs_params_t fs{};
+        for (int k = 0; k < 4; ++k) fs.base_color[k] = p.color[k];
+        fs.light[0] = static_cast<float>(light.x);
+        fs.light[1] = static_cast<float>(light.y);
+        fs.light[2] = static_cast<float>(light.z);
+        sg_bindings b{};
+        b.vertex_buffers[0] = p.vertices;
+        b.index_buffer = p.indices;
+        b.views[VIEW_tex] = p.image.id ? p.texture : whiteView_;
+        b.samplers[SMP_smp] = sampler_;
+        sg_apply_bindings(&b);
+        sg_apply_uniforms(UB_model_vs_params, SG_RANGE(vs));
+        sg_apply_uniforms(UB_model_fs_params, SG_RANGE(fs));
+        sg_draw(0, p.count, 1);
+    }
+}
+
 void ModelLayer::draw(const Camera& cam, const GroundFn& ground) {
     if (!ready_ || instances_.empty()) return;
-    Mat4 yUp;
-    yUp.at(0, 0) = 1;
-    yUp.at(2, 1) = 1;
-    yUp.at(1, 2) = -1;
-    yUp.at(3, 3) = 1;
-    sg_apply_pipeline(pipeline_);
+    Mat4 yUp = yUpToZUp();
+    begin();
     for (auto& [id, inst] : instances_) {
         const ModelPlacement& pl = inst.placement;
         double h = pl.position.alt;
@@ -271,29 +364,8 @@ void ModelLayer::draw(const Camera& cam, const GroundFn& ground) {
         frame.at(0, 2) = u.x; frame.at(1, 2) = u.y; frame.at(2, 2) = u.z;
         Mat4 orient = frame * rotZ(-pl.heading * kDegToRad) * rotX(pl.pitch * kDegToRad) * rotY(pl.roll * kDegToRad);
         Mat4 base = translation(origin - cam.eye()) * orient * scaleMat(pl.scale) * yUp;
-        Vec3 toEye = normalize(cam.eye() - origin);
-        Vec3 light = normalize(toEye + u * 0.8);
-        for (const Primitive& p : inst.mesh->primitives) {
-            Mat4 node;
-            node.m = p.matrix;
-            model_vs_params_t vs{};
-            toFloat(cam.viewProjRel() * base * node, vs.mvp);
-            toFloat(orient * yUp * node, vs.rotation);
-            model_fs_params_t fs{};
-            for (int k = 0; k < 4; ++k) fs.base_color[k] = p.color[k];
-            fs.light[0] = static_cast<float>(light.x);
-            fs.light[1] = static_cast<float>(light.y);
-            fs.light[2] = static_cast<float>(light.z);
-            sg_bindings b{};
-            b.vertex_buffers[0] = p.vertices;
-            b.index_buffer = p.indices;
-            b.views[VIEW_tex] = p.image.id ? p.texture : whiteView_;
-            b.samplers[SMP_smp] = sampler_;
-            sg_apply_bindings(&b);
-            sg_apply_uniforms(UB_model_vs_params, SG_RANGE(vs));
-            sg_apply_uniforms(UB_model_fs_params, SG_RANGE(fs));
-            sg_draw(0, p.count, 1);
-        }
+        Vec3 light = normalize(normalize(cam.eye() - origin) + u * 0.8);
+        drawMesh(cam, *inst.mesh, base, orient * yUp, light);
     }
 }
 
