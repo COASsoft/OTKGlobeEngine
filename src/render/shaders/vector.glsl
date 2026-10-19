@@ -43,11 +43,8 @@ void main() {
     vec2 a = vec2(position.x * line.x, position.y);
     vec2 b = vec2(other.x * line.x, other.y);
     vec2 d = b - a;
-    float len = max(length(d), 1e-12);
-    vec2 n = vec2(-d.y, d.x) / len;
-    vec2 e = d / len;
-    float half_width = extra.y * line.y;
-    vec2 p = a + n * extra.x * half_width - e * half_width * sign(extra.x * 0.0 + 1.0) * line.z;
+    vec2 n = vec2(-d.y, d.x) / max(length(d), 1e-12);
+    vec2 p = a + n * (extra.x * extra.y * line.y);
     p.x /= line.x;
     gl_Position = vec4(p * xform.xy + xform.zw, 0.0, 1.0);
     color = color0;
