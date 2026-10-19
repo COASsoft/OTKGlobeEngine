@@ -8,3 +8,7 @@
 *.user
 .DS_Store
 /cache/
+/tests/dotnet/bin/
+/tests/dotnet/obj/
+/bindings/dotnet/bin/
+/bindings/dotnet/obj/

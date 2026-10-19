@@ -2,6 +2,12 @@
 
 The engine never owns a window. A host app creates a GPU surface with its own toolkit, creates the engine once for that device, and calls a frame function whenever the surface needs drawing. `ote_needs_redraw` tells the host when tiles are still arriving, so a host can render on demand instead of continuously.
 
+Packages:
+
+- Android: `python scripts/android_aar.py` builds `build/opentakengine-<version>.aar` (arm64-v8a, armeabi-v7a, x86_64) containing `com.opentakengine.OpenTakView`, a ready-made `GLSurfaceView` with ATAK-style gestures, and `OpenTakEngine` with the full native API.
+- iOS, iPadOS, macOS: `bash scripts/apple_xcframework.sh` (on a Mac; CI publishes it as an artifact) builds `OpenTAKEngine.xcframework` with the `OpenTAKEngineC` module. Add `bindings/apple/OpenTAKView.swift` for a ready-made `MTKView` with gestures.
+- .NET: `bindings/dotnet/OpenTakEngine.csproj` wraps the C ABI (`Engine`, `Native`); ship `opentakengine_c.dll`/`.so`/`.dylib` next to the app.
+
 Two APIs are available:
 
 - C++: `include/ote/engine.hpp` (`ote::Engine`), linked against the `opentakengine` static library. The host calls `sg_setup` itself with `ote::configureGfx(desc)` applied, as `apps/viewer` does.
