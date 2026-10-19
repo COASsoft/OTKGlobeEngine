@@ -13,5 +13,6 @@ struct Response {
 };
 
 Response get(const std::string& url, const std::string& userAgent);
+void setJavaVm(void* vm);
 
 }

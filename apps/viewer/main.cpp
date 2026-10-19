@@ -1,3 +1,6 @@
+#if defined(__ANDROID__)
+#include <android/native_activity.h>
+#endif
 #if defined(_WIN32)
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
@@ -104,6 +107,13 @@ void init() {
     sg_setup(&desc);
     state->engine.init();
     state->engine.setViewport(sapp_width(), sapp_height(), sapp_dpi_scale());
+#if defined(__ANDROID__)
+    {
+        auto* activity = static_cast<const ANativeActivity*>(sapp_android_get_native_activity());
+        ote::setAndroidJavaVm(activity->vm);
+        if (state->cacheDir.empty() && activity->internalDataPath) state->cacheDir = activity->internalDataPath;
+    }
+#endif
     std::string cache = state->cacheDir;
     if (cache.empty()) {
         if (const char* la = std::getenv("LOCALAPPDATA")) cache = std::string(la) + "/OpenTAKEngine";

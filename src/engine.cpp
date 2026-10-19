@@ -5,6 +5,8 @@
 #include "core/camera.hpp"
 #include "render/globe_renderer.hpp"
 
+#include "net/http.hpp"
+
 #include <sokol_gfx.h>
 
 namespace ote {
@@ -263,6 +265,8 @@ void Engine::frameOffscreen(const sg_attachments& attachments, int width, int he
 bool Engine::needsRedraw() const { return impl_->dirty || impl_->globe.busy(); }
 
 Stats Engine::stats() const { return impl_->globe.stats(); }
+
+void setAndroidJavaVm(void* vm) { net::setJavaVm(vm); }
 
 void configureGfx(sg_desc& desc) {
     desc.buffer_pool_size = 4096;

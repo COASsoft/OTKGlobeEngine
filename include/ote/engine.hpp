@@ -139,5 +139,6 @@ std::vector<ImageryLayer> defaultLayers();
 std::vector<ElevationLayer> defaultElevation();
 std::vector<ImageryLayer> loadMobac(const std::string& xmlOrPath);
 void configureGfx(sg_desc& desc);
+void setAndroidJavaVm(void* vm);
 
 }

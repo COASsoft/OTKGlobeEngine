@@ -40,4 +40,6 @@ Response get(const std::string& url, const std::string& userAgent) {
     return res;
 }
 
+void setJavaVm(void*) {}
+
 }
