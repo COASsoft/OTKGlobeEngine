@@ -27,12 +27,12 @@ constexpr int kMinLevel = 2;
 constexpr int kMaxLevel = 22;
 constexpr int kKeepLevel = 3;
 constexpr size_t kTerrainCapacity = 2500;
-constexpr size_t kSurfaceCapacity = 700;
-constexpr size_t kImageryCapacity = 800;
+constexpr size_t kSurfaceCapacity = 900;
+constexpr size_t kImageryCapacity = 1200;
 constexpr size_t kFreeSurfacePool = 64;
-constexpr int kSurfaceRendersPerFrame = 16;
+constexpr int kSurfaceRendersPerFrame = 32;
 constexpr int kTerrainBuildsPerFrame = 32;
-constexpr size_t kUploadsPerFrame = 24;
+constexpr size_t kUploadsPerFrame = 48;
 constexpr size_t kSurfaceBufferBytes = 4 * 1024 * 1024;
 constexpr double kRetrySeconds = 30.0;
 constexpr int kBaseZoom = 2;
@@ -547,7 +547,9 @@ GlobeRenderer::NodeInfo GlobeRenderer::info(const Camera& cam, const QuadKey& k)
         texel *= std::max(facing, 0.35);
     }
     double threshold = std::max(1.0, dpiScale_ * 0.6) / std::max(imageryScale_, 0.1);
-    ni.refine = k.level < kMinLevel || (k.level < kMaxLevel && visits_ < 20000 && texel > cam.pixelSizeAt(d) * threshold);
+    double ratio = texel / (cam.pixelSizeAt(d) * threshold);
+    ni.refine = k.level < kMinLevel || (k.level < kMaxLevel && visits_ < 20000 && ratio > 1.0);
+    ni.nearRefine = k.level < kMaxLevel && ratio > 0.7;
     return ni;
 }
 
@@ -569,7 +571,7 @@ bool GlobeRenderer::progressed(const SurfaceTile& s) const {
     return false;
 }
 
-void GlobeRenderer::need(const QuadKey& k, double priority) { needs_.push_back({k, priority}); }
+void GlobeRenderer::need(const QuadKey& k, double priority) { needs_.push_back({k, priority * needScale_}); }
 
 void GlobeRenderer::traverse(const Camera& cam, const QuadKey& k, std::vector<DrawTile>& out) {
     ++visits_;
@@ -617,6 +619,13 @@ void GlobeRenderer::traverse(const Camera& cam, const QuadKey& k, std::vector<Dr
         }
     }
     need(k, ni.distance);
+    if (k.level > kMinLevel) {
+        QuadKey parent{k.level - 1, k.x / 2, k.y / 2};
+        need(parent, ni.distance * 3.0);
+        if (k.level > kMinLevel + 1) need({k.level - 2, k.x / 4, k.y / 4}, ni.distance * 6.0);
+    }
+    if (ni.nearRefine && ready(k))
+        for (int i = 0; i < 4; ++i) need(kids[i], ni.distance * 4.0);
     out.push_back({k, ni.distance});
 }
 
@@ -934,6 +943,36 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     terrain({0, 1, 0});
     traverse(cam, {0, 0, 0}, tiles);
     traverse(cam, {0, 1, 0}, tiles);
+    if (viewComplete_) {
+        Camera wide = cam;
+        wide.gsd = cam.gsd * 2.5;
+        wide.update();
+        std::array<double, 16> saved = frustum_;
+        Vec3 savedEye = eye_;
+        eye_ = wide.eye();
+        const Mat4& wm = wide.viewProjRel();
+        for (int p = 0; p < 4; ++p) {
+            int row = p / 2;
+            double sign = (p % 2 == 0) ? 1.0 : -1.0;
+            double a = wm.at(3, 0) + sign * wm.at(row, 0), b = wm.at(3, 1) + sign * wm.at(row, 1);
+            double c = wm.at(3, 2) + sign * wm.at(row, 2), d = wm.at(3, 3) + sign * wm.at(row, 3);
+            double len = std::sqrt(a * a + b * b + c * c);
+            frustum_[p * 4 + 0] = a / len;
+            frustum_[p * 4 + 1] = b / len;
+            frustum_[p * 4 + 2] = c / len;
+            frustum_[p * 4 + 3] = d / len;
+        }
+        std::vector<DrawTile> ignored;
+        needScale_ = 20.0;
+        int savedVisits = visits_;
+        visits_ = 0;
+        traverse(wide, {0, 0, 0}, ignored);
+        traverse(wide, {0, 1, 0}, ignored);
+        visits_ = savedVisits;
+        needScale_ = 1.0;
+        frustum_ = saved;
+        eye_ = savedEye;
+    }
     std::sort(tiles.begin(), tiles.end(), [](const DrawTile& a, const DrawTile& b) { return a.distance < b.distance; });
 
     std::sort(needs_.begin(), needs_.end(), [](const Need& a, const Need& b) {
@@ -975,14 +1014,14 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     }
     elevation_.submit();
 
-    std::vector<std::pair<int, size_t>> work;
+    std::vector<std::pair<double, size_t>> work;
     for (size_t i = 0; i < needs_.size(); ++i) {
         auto it = surface_.find(needs_[i].key);
         if (it == surface_.end()) {
-            work.push_back({0, i});
+            work.push_back({needs_[i].priority, i});
         } else {
             it->second.used = frame_;
-            if (!it->second.complete && progressed(it->second)) work.push_back({1, i});
+            if (!it->second.complete && progressed(it->second)) work.push_back({needs_[i].priority * 1.5, i});
             else if (!it->second.complete) buildSurfaceJob(needs_[i].key, needs_[i].priority, nullptr, nullptr);
         }
     }
@@ -1163,34 +1202,81 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     gfs.heat[2] = heatmap_ ? heatOpacity_ : 0.0f;
     sg_apply_uniforms(UB_globe_fs_params, SG_RANGE(gfs));
     int maxLevel = 0;
+    int incomplete = 0;
+    bool fading = false;
+    double tnow = now();
+    auto source = [&](const QuadKey& key, int startLevel, sg_view& view, float uvx[4]) {
+        for (int k = std::max(0, key.level - startLevel); k <= key.level; ++k) {
+            QuadKey a{key.level - k, key.x >> k, key.y >> k};
+            auto it = surface_.find(a);
+            if (it == surface_.end() || it->second.version < 0) continue;
+            it->second.used = frame_;
+            view = it->second.texture;
+            double sc = 1.0 / (1 << k);
+            int rx = key.x - (a.x << k), ry = key.y - (a.y << k);
+            uvx[0] = static_cast<float>(sc);
+            uvx[1] = static_cast<float>(sc);
+            uvx[2] = static_cast<float>(rx * sc);
+            uvx[3] = static_cast<float>(((1 << k) - 1 - ry) * sc);
+            return a;
+        }
+        return QuadKey{-1, 0, 0};
+    };
+    for (auto& dt : tiles) {
+        auto prev = drawn_.find(dt.key);
+        if (prev == drawn_.end() || prev->second + 1 < frame_) {
+            for (int up = 1; up <= 4 && dt.key.level - up >= 0; ++up) {
+                QuadKey a{dt.key.level - up, dt.key.x >> up, dt.key.y >> up};
+                auto pa = drawn_.find(a);
+                if (pa != drawn_.end() && pa->second + 1 >= frame_) {
+                    fades_[dt.key] = {tnow, a};
+                    break;
+                }
+            }
+        }
+    }
+    for (auto& dt : tiles) drawn_[dt.key] = frame_;
+    if (drawn_.size() > 20000)
+        for (auto it = drawn_.begin(); it != drawn_.end();) it = it->second + 2 < frame_ ? drawn_.erase(it) : std::next(it);
     for (auto& dt : tiles) {
         TerrainTile& tt = terrain(dt.key);
         tt.used = frame_;
         maxLevel = std::max(maxLevel, dt.key.level);
         sg_view view = fallbackView_;
         float uvx[4] = {1, 1, 0, 0};
-        for (int k = 0; k <= dt.key.level; ++k) {
-            QuadKey a{dt.key.level - k, dt.key.x >> k, dt.key.y >> k};
-            auto it = surface_.find(a);
-            if (it == surface_.end() || it->second.version < 0) continue;
-            it->second.used = frame_;
-            view = it->second.texture;
-            double sc = 1.0 / (1 << k);
-            int rx = dt.key.x - (a.x << k), ry = dt.key.y - (a.y << k);
-            uvx[0] = static_cast<float>(sc);
-            uvx[1] = static_cast<float>(sc);
-            uvx[2] = static_cast<float>(rx * sc);
-            uvx[3] = static_cast<float>(((1 << k) - 1 - ry) * sc);
-            break;
+        QuadKey src = source(dt.key, 0, view, uvx);
+        auto own = surface_.find(dt.key);
+        if (own == surface_.end() || !own->second.complete) ++incomplete;
+        sg_view view2 = view;
+        float uvx2[4] = {uvx[0], uvx[1], uvx[2], uvx[3]};
+        float blend = 1.0f;
+        auto fd = fades_.find(dt.key);
+        if (fd != fades_.end()) {
+            double t = (tnow - fd->second.start) / 0.35;
+            if (t >= 1.0 || src.level < 0) {
+                fades_.erase(fd);
+            } else {
+                QuadKey from = fd->second.from;
+                int up = dt.key.level - from.level;
+                QuadKey got = source(dt.key, -up, view2, uvx2);
+                if (got.level >= 0 && got.level < src.level) {
+                    blend = static_cast<float>(t * t * (3 - 2 * t));
+                    fading = true;
+                }
+            }
         }
         Mat4 mvp = cam.viewProjRel() * translation(tt.center - cam.eye());
         globe_vs_params_t vsp{};
         toFloat(mvp, vsp.mvp);
         std::memcpy(vsp.uv_xform, uvx, sizeof(uvx));
+        std::memcpy(vsp.uv_xform2, uvx2, sizeof(uvx2));
+        gfs.flags[2] = blend;
+        sg_apply_uniforms(UB_globe_fs_params, SG_RANGE(gfs));
         sg_bindings bind{};
         bind.vertex_buffers[0] = tt.vbuf;
         bind.index_buffer = indexBuffer_;
         bind.views[VIEW_tex] = view;
+        bind.views[VIEW_tex2] = view2;
         bind.samplers[SMP_smp] = sampler_;
         sg_apply_bindings(&bind);
         sg_apply_uniforms(UB_globe_vs_params, SG_RANGE(vsp));
@@ -1211,11 +1297,24 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     stats_.imageryTextures = static_cast<int>(imagery_.size());
     stats_.pendingRequests = loader_.pending() + elevation_.pending();
     stats_.maxLevel = maxLevel;
-    busy_ = pending || stats_.pendingRequests > 0 || renders > 0 || builds > 0 || elevationChanged;
+    stats_.incompleteTiles = incomplete;
+    viewComplete_ = incomplete == 0;
+    busy_ = pending || fading || stats_.pendingRequests > 0 || renders > 0 || builds > 0 || elevationChanged;
     if (trace_) {
-        std::fprintf(trace_, "frame %llu tiles %zu needs %zu renders %d builds %d pending %d\n",
-                     static_cast<unsigned long long>(frame_), tiles.size(), needs_.size(), renders, builds,
-                     stats_.pendingRequests);
+        int waitImagery = 0, waitTerrain = 0, unrendered = 0;
+        for (auto& dt : tiles) {
+            auto sf = surface_.find(dt.key);
+            auto tf = terrain_.find(dt.key);
+            if (sf == surface_.end()) ++unrendered;
+            else if (!sf->second.complete) ++waitImagery;
+            if (tf == terrain_.end() || !tf->second.complete) ++waitTerrain;
+        }
+        std::fprintf(trace_,
+                     "frame %llu tiles %zu needs %zu work %zu renders %d builds %d loader %d elev %d incomplete %d "
+                     "waitimg %d unrendered %d waitterrain %d L%d gsd %.1f\n",
+                     static_cast<unsigned long long>(frame_), tiles.size(), needs_.size(), work.size(), renders, builds,
+                     loader_.pending(), elevation_.pending(), incomplete, waitImagery, unrendered, waitTerrain, maxLevel,
+                     cam.gsd);
         std::fflush(trace_);
     }
 }
