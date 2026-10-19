@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 
 #include "core/geo.hpp"
 
@@ -68,7 +69,10 @@ private:
     double far_ = 1.0;
     double eyeAlt_ = 0.0;
     double eyeAboveGround_ = 0.0;
-    double ground(const GeoPoint& g) const { return groundHeight ? groundHeight(g.lat, g.lon) : 0.0; }
+    double ground(const GeoPoint& g) const {
+        double h = groundHeight ? groundHeight(g.lat, g.lon) : 0.0;
+        return std::isfinite(h) ? h : (std::isfinite(focus.alt) ? focus.alt : 0.0);
+    }
 };
 
 }

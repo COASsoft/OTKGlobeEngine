@@ -85,6 +85,7 @@ struct Stats {
     int retainedTiles = 0;
     int elevationPending = 0;
     int terrainMeshes = 0;
+    int invalidResources = 0;
     double gpuMegabytes = 0;
     long long surfaceEvictions = 0;
     long long imageryEvictions = 0;

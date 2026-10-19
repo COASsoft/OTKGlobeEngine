@@ -55,6 +55,9 @@ public:
     bool remote() const override { return true; }
     bool vector() const override { return layer_.type == SourceType::Mvt; }
     bool cached(int z, int x, int y) override { return cache_ && layer_.cache && cache_->has(key_, z, x, y); }
+    void invalidate(int z, int x, int y) override {
+        if (cache_ && cache_->isOpen() && layer_.cache) cache_->remove(key_, z, x, y);
+    }
 
     void resolveTileJson() {
         std::lock_guard lock(resolveMutex_);

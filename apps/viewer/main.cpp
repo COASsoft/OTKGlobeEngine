@@ -74,6 +74,10 @@ struct ViewerState {
     bool mouseDown = false;
     sapp_mousebutton mouseButton = SAPP_MOUSEBUTTON_LEFT;
     bool diag = false;
+    bool holes = false;
+    int holeChecks = 0;
+    int holeFrames = 0;
+    int holeMax = 0;
     double zoomStartAfter = 0;
     struct ScriptStep {
         double at = 0;
@@ -274,6 +278,44 @@ void init() {
 #endif
 }
 
+void checkHoles() {
+    std::vector<unsigned char> px;
+    if (!readImageRgba(state->shotColor, state->width, state->height,
+#if defined(SOKOL_D3D11)
+                       sg_d3d11_device(), sg_d3d11_device_context(),
+#else
+                       nullptr, nullptr,
+#endif
+                       px))
+        return;
+    int blocks = 0;
+    for (int by = 0; by + 8 <= state->height; by += 8)
+        for (int bx = 0; bx + 8 <= state->width; bx += 8) {
+            int n = 0;
+            for (int y = by; y < by + 8; ++y)
+                for (int x = bx; x < bx + 8; ++x) {
+                    const unsigned char* p = &px[(static_cast<size_t>(y) * state->width + x) * 4];
+                    if (p[0] > 240 && p[1] < 16 && p[2] > 240) ++n;
+                }
+            if (n > 32) ++blocks;
+        }
+    ++state->holeChecks;
+    if (blocks == 0) return;
+    ++state->holeFrames;
+    ote::View v = state->engine.view();
+    if (const char* dp = std::getenv("OTE_DIAG"))
+        if (FILE* df = std::fopen(dp, "a")) {
+            ote::Stats hs = state->engine.stats();
+            std::fprintf(df, "holes frame %d t=%.2f blocks %d tiles %d L%d cov %d ret %d inc %d hollow %d ph %d surf %d free %d alt %.1f | view %.5f %.5f gsd %.2f tilt %.1f az %.1f\n", state->frames, state->shotElapsed, blocks, hs.terrainTiles,
+                         hs.maxLevel, hs.coverageOnlyTiles, hs.retainedTiles, hs.incompleteTiles, hs.hollowSkipped, hs.placeholders, hs.surfaces, hs.freeSurfaces, v.alt, v.lat, v.lon, v.gsd, v.tilt, v.azimuth);
+            std::fclose(df);
+        }
+    if (blocks > state->holeMax) {
+        state->holeMax = blocks;
+        writePng((state->shotPath + ".holes.png").c_str(), state->width, state->height, px);
+    }
+}
+
 void frame() {
     watchdogBeat();
     if (!state->shotPath.empty()) {
@@ -287,6 +329,7 @@ void frame() {
         double benchMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - benchStart).count();
         ++state->frames;
         state->shotElapsed += sapp_frame_duration();
+        if (state->holes && state->frames % 3 == 0) checkHoles();
         if (state->shotViewshed && !state->viewshed && state->shotElapsed > 1.0 && !state->engine.needsRedraw()) {
             ote::View v = state->engine.view();
             state->viewshed = state->engine.computeViewshed({v.lat, v.lon, 0}, 2.0, 5000.0);
@@ -332,6 +375,9 @@ void frame() {
             ote::Stats s = state->engine.stats();
             std::string logPath = state->shotPath + ".txt";
             if (FILE* f = std::fopen(logPath.c_str(), "w")) {
+                std::fprintf(f, "resources invalid=%d terrain=%d surfaces=%d free=%d imagery=%d gpu_mb=%.0f\n", s.invalidResources, s.terrainMeshes, s.surfaces,
+                             s.freeSurfaces, s.imageryTextures, s.gpuMegabytes);
+                if (state->holes) std::fprintf(f, "holes checked=%d frames=%d max_blocks=%d\n", state->holeChecks, state->holeFrames, state->holeMax);
                 std::fprintf(f, "%s frames=%d seconds=%.1f settled=%d tiles=%d L%d imagery=%d pending=%d img_pending=%d elev_pending=%d\n",
                              ok ? "saved" : "failed", state->frames, state->shotElapsed, settled ? 1 : 0,
                              s.terrainTiles, s.maxLevel, s.imageryTextures, s.pendingRequests, s.imageryPending, s.elevationPending);
@@ -709,6 +755,13 @@ void parseArgs(int argc, char** argv) {
             state->zoomStartAfter = std::atof(argv[++i]);
         } else if (a == "--diag") {
             state->diag = std::atoi(argv[++i]) != 0;
+        } else if (a == "--holes") {
+            state->holes = std::atoi(argv[++i]) != 0;
+#if defined(_WIN32)
+            if (state->holes) _putenv_s("OTE_HOLES", "1");
+#else
+            if (state->holes) setenv("OTE_HOLES", "1", 1);
+#endif
         } else if (a == "--preset") {
             state->preset = std::atoi(argv[++i]);
         }

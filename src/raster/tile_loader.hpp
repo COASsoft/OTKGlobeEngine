@@ -108,6 +108,7 @@ private:
     std::unordered_set<TileId, TileIdHash> inflight_;
     std::deque<DecodedTile> done_;
     std::unordered_set<TileId, TileIdHash> doneIds_;
+    std::unordered_map<TileId, int, TileIdHash> decodeFailures_;
     struct ContentSeen {
         std::vector<TileId> ids;
         bool placeholder = false;

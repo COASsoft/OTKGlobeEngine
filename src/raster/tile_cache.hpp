@@ -16,6 +16,7 @@ public:
     bool get(const std::string& source, int z, int x, int y, std::vector<std::uint8_t>& data, std::int64_t& expires);
     bool has(const std::string& source, int z, int x, int y);
     void put(const std::string& source, int z, int x, int y, const std::vector<std::uint8_t>& data, std::int64_t expires);
+    void remove(const std::string& source, int z, int x, int y);
 
     static std::int64_t now();
 
@@ -25,6 +26,7 @@ private:
     db::Statement get_;
     db::Statement has_;
     db::Statement put_;
+    db::Statement del_;
 };
 
 }

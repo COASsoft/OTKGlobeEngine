@@ -192,10 +192,16 @@ void TileLoader::finish(const TileId& id, int gen, const std::shared_ptr<TilePro
     DecodedTile tile;
     tile.id = id;
     tile.generation = gen;
+    auto undecodable = [&]() {
+        provider->invalidate(id.z, id.x, id.y);
+        std::lock_guard lock(mutex_);
+        if (decodeFailures_.size() > 20000) decodeFailures_.clear();
+        tile.permanent = ++decodeFailures_[id] >= 3;
+    };
     if (res.status == 200 && provider->vector()) {
         tile.vector = decodeVectorTile(res.data, id.z, id.x, id.y);
         tile.ok = tile.vector != nullptr;
-        tile.permanent = !tile.ok;
+        if (!tile.ok) undecodable();
     } else if (res.status == 200 && res.raw) {
         tile.ok = true;
         tile.width = res.width;
@@ -254,7 +260,7 @@ void TileLoader::finish(const TileId& id, int gen, const std::shared_ptr<TilePro
             tile.rgba.assign(px, px + static_cast<size_t>(w) * h * 4);
             stbi_image_free(px);
         } else {
-            tile.permanent = true;
+            undecodable();
         }
     } else if (res.status == 404 || res.status == 204 || res.status == 400 || res.status == -2 || (res.status == 200 && res.data.empty())) {
         tile.permanent = true;

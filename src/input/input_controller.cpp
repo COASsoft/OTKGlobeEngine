@@ -144,7 +144,7 @@ void InputController::pointerMove(int id, double x, double y, int modifiers) {
     } else if (mode_ == Mode::RotateTilt) {
         double dx = x - prevX, dy = y - prevY;
         if (settings_.rotate && dx != 0)
-            engine_.rotateAt(width_ * 0.5, height_ * 0.5, -dx / width_ * settings_.rotateDegreesPerScreen);
+            engine_.rotate(-dx / width_ * settings_.rotateDegreesPerScreen);
         if (settings_.tilt && dy != 0) engine_.tiltBy(-dy / height_ * settings_.tiltDegreesPerScreen);
     } else if (mode_ == Mode::ZoomDrag) {
         if (!moved_ && std::hypot(x - p->startX, y - p->startY) <= threshold) return;
@@ -312,7 +312,7 @@ void InputController::wheel(double x, double y, double dx, double dy, bool preci
         return;
     }
     if ((modifiers & ModAlt) && settings_.rotate) {
-        engine_.rotateAt(width_ * 0.5, height_ * 0.5, dy * (precise ? 0.3 : 7.5));
+        engine_.rotate(dy * (precise ? 0.3 : 7.5));
         return;
     }
     if (precise && !(modifiers & ModCtrl)) {
@@ -414,7 +414,7 @@ void InputController::update() {
         double step = settings_.keyPanScreensPerSecond * std::min(width_, height_) * dt;
         engine_.pan(cx, cy, cx - h * step, cy - v * step);
     }
-    if (r != 0 && settings_.rotate) engine_.rotateAt(cx, cy, r * settings_.keyRotateDegreesPerSecond * dt);
+    if (r != 0 && settings_.rotate) engine_.rotate(r * settings_.keyRotateDegreesPerSecond * dt);
     if (t != 0 && settings_.tilt) engine_.tiltBy(t * settings_.keyTiltDegreesPerSecond * dt);
 }
 

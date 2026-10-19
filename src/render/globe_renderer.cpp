@@ -994,6 +994,7 @@ void GlobeRenderer::processLoads() {
             if (old != imagery_.end()) dropImagery(old->second);
             imagery_[t.id] = tex;
             failed_.erase(t.id);
+            failCount_.erase(t.id);
         } else if (t.ok) {
             sg_image_desc d{};
             d.width = t.width;
@@ -1017,8 +1018,12 @@ void GlobeRenderer::processLoads() {
             if (old != imagery_.end()) dropImagery(old->second);
             imagery_[t.id] = tex;
             failed_.erase(t.id);
+            failCount_.erase(t.id);
         } else {
-            failed_[t.id] = t.permanent ? std::numeric_limits<double>::infinity() : now() + kRetrySeconds;
+            if (failCount_.size() > 50000) failCount_.clear();
+            int attempts = ++failCount_[t.id];
+            double backoff = std::min(kRetrySeconds, 0.5 * static_cast<double>(1 << std::min(attempts - 1, 6)));
+            failed_[t.id] = t.permanent ? std::numeric_limits<double>::infinity() : now() + backoff;
             auto old = imagery_.find(t.id);
             if (old != imagery_.end() && t.permanent) {
                 dropImagery(old->second);

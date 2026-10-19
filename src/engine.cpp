@@ -1,3 +1,6 @@
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
 #include "ote/engine.hpp"
 #include "ote/formats.hpp"
 
@@ -114,6 +117,23 @@ struct Engine::Impl {
         if (c.firstPerson) return;
         GeoPoint eg = ecefToGeodetic(eye);
         double g = globe.elevationAt(eg.lat, eg.lon);
+        if (sanityFrame % 30 == 0)
+            if (const char* pr = std::getenv("OTE_PROBE")) {
+                double px = 0, py = 0;
+                Vec3 ph;
+                if (std::sscanf(pr, "%lf,%lf", &px, &py) == 2 && pickGround(px, py, ph)) {
+                    GeoPoint pg = ecefToGeodetic(ph);
+                    globe.explain(c, pg.lat, pg.lon, "probe");
+                }
+            }
+        if (sanityFrame % 30 == 0)
+            for (double fx : {0.1, 0.5, 0.9}) {
+                Vec3 bh;
+                if (pickGround(c.width * fx, c.height - 4.0, bh)) {
+                    GeoPoint bg = ecefToGeodetic(bh);
+                    globe.explain(c, bg.lat, bg.lon, fx < 0.3 ? "bottom-left" : fx < 0.7 ? "bottom-centre" : "bottom-right");
+                }
+            }
         if (sanityFrame % 15 == 0) {
             Vec3 ch;
             bool centre = pickGround(c.width * 0.5, c.height * 0.5, ch);
@@ -822,9 +842,15 @@ void setAndroidJavaVm(void* vm) { net::setJavaVm(vm); }
 double geoidOffset(double lat, double lon) { return geoidHeight(lat, lon); }
 
 void configureGfx(sg_desc& desc) {
-    desc.buffer_pool_size = 4096;
+#if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
+    desc.buffer_pool_size = 6144;
     desc.image_pool_size = 4096;
-    desc.view_pool_size = 32768;
+    desc.view_pool_size = 40960;
+#else
+    desc.buffer_pool_size = 12288;
+    desc.image_pool_size = 6144;
+    desc.view_pool_size = 65536;
+#endif
     desc.sampler_pool_size = 64;
     desc.shader_pool_size = 64;
     desc.pipeline_pool_size = 128;

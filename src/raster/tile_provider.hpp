@@ -33,6 +33,7 @@ public:
     }
     virtual bool remote() const { return false; }
     virtual bool cached(int, int, int) { return false; }
+    virtual void invalidate(int, int, int) {}
     virtual bool vector() const { return false; }
 
 protected:

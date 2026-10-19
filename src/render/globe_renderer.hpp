@@ -49,11 +49,16 @@ public:
     void setCacheDirectory(const std::string& dir);
     void setOffline(bool offline);
     void setMemoryBudget(int megabytes);
+    void fitPools();
+    void poolPressure(const char* what);
     void setElevation(const std::vector<ElevationLayer>& layers);
     void setTerrainEnabled(bool enabled);
     void setTerrainExaggeration(double factor);
     void setDepthPerception(bool enabled) { depthPerception_ = enabled; }
     void setDiagnostics(bool enabled) { diagnostics_ = enabled; }
+    bool diagnostics() const { return diagnostics_; }
+    template <typename... A>
+    void log(const char* fmt, A... args) const { diag(fmt, args...); }
     void setTerrainAlpha(float alpha) { terrainAlpha_ = std::clamp(alpha, 0.0f, 1.0f); }
     void setHeatmap(bool enabled, double minHeight, double maxHeight, float opacity) {
         heatmap_ = enabled;
@@ -65,6 +70,7 @@ public:
     std::uint64_t addOverlay(const GeoRect& rect, int width, int height, const std::vector<std::uint8_t>& rgba, float opacity);
     bool removeOverlay(std::uint64_t id);
     double elevationAt(double lat, double lon) const;
+    void explain(const Camera& cam, double lat, double lon, const char* tag) const;
     TileLoader& loader() { return loader_; }
     FeatureLayer& features() { return features_; }
     ModelLayer& models() { return models_; }
@@ -211,6 +217,7 @@ private:
     std::unordered_map<QuadKey, SurfaceTile, QuadKeyHash> surface_;
     std::unordered_map<TileId, ImageryTexture, TileIdHash> imagery_;
     std::unordered_map<TileId, double, TileIdHash> failed_;
+    std::unordered_map<TileId, int, TileIdHash> failCount_;
     std::vector<SurfaceTile> freeSurfaces_;
     std::vector<std::pair<TileId, double>> requests_;
     std::vector<Need> needs_;
@@ -282,6 +289,7 @@ private:
     sg_pipeline globeBlendPipeline_{};
     sg_pipeline surfacePipeline_{};
     sg_pipeline skyPipeline_{};
+    bool holeMarker_ = false;
     sg_shader vfillShader_{};
     sg_shader vlineShader_{};
     sg_pipeline vfillPipeline_{};
@@ -319,6 +327,7 @@ private:
     bool busy_ = true;
     bool ready_ = false;
     Stats stats_;
+    int invalidResources_ = 0;
     std::chrono::steady_clock::time_point start_ = std::chrono::steady_clock::now();
 };
 

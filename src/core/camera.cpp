@@ -110,8 +110,11 @@ void Camera::update() {
 
     double h = std::max(eyeAlt_, 1.0);
     double horizon = std::sqrt(h * (2.0 * kWgs84A + h)) + std::sqrt(9000.0 * (2.0 * kWgs84A + 9000.0));
+    if (!std::isfinite(eyeAboveGround_)) eyeAboveGround_ = std::max(eyeAlt_, 1.0);
     near_ = std::clamp(eyeAboveGround_ * 0.05, 0.5, 1.0e6);
     far_ = std::max(horizon * 1.05 + 1000.0, range() * 1.5);
+    if (!std::isfinite(near_)) near_ = 0.5;
+    if (!std::isfinite(far_)) far_ = 1.0e8;
     double aspect = static_cast<double>(width) / std::max(height, 1);
     proj_ = perspective(fovY, aspect, near_, far_, zeroToOneDepth);
     viewProjRel_ = proj_ * viewRel_;

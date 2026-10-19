@@ -19,6 +19,7 @@ bool TileCache::open(const std::string& path) {
     get_ = db_.prepare("SELECT data, expires FROM tiles WHERE source=? AND z=? AND x=? AND y=?");
     has_ = db_.prepare("SELECT 1 FROM tiles WHERE source=? AND z=? AND x=? AND y=?");
     put_ = db_.prepare("INSERT OR REPLACE INTO tiles (source, z, x, y, data, fetched, expires) VALUES (?,?,?,?,?,?,?)");
+    del_ = db_.prepare("DELETE FROM tiles WHERE source=? AND z=? AND x=? AND y=?");
     return get_.valid() && has_.valid() && put_.valid();
 }
 
@@ -67,6 +68,18 @@ void TileCache::put(const std::string& source, int z, int x, int y, const std::v
     put_.bind(7, expires);
     put_.exec();
     put_.reset();
+}
+
+void TileCache::remove(const std::string& source, int z, int x, int y) {
+    std::lock_guard lock(mutex_);
+    if (!del_.valid()) return;
+    del_.reset();
+    del_.bind(1, source);
+    del_.bind(2, z);
+    del_.bind(3, x);
+    del_.bind(4, y);
+    del_.exec();
+    del_.reset();
 }
 
 }

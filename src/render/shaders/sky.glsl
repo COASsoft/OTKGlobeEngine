@@ -45,7 +45,12 @@ void main() {
         return;
     }
     a0 = max(a0, 0.0);
-    if (sphere(vec3(0.0), dir, c, radii.x, e0, e1) && e0 > 0.0) a1 = min(a1, e0);
+    bool ground = sphere(vec3(0.0), dir, c, radii.x, e0, e1) && e0 > 0.0;
+    if (ground && radii.w > 0.5) {
+        frag_color = vec4(1.0, 0.0, 1.0, 1.0);
+        return;
+    }
+    if (ground) a1 = min(a1, e0);
     float len = max(a1 - a0, 0.0);
     vec3 mid = dir * (0.5 * (a0 + a1)) - c;
     float mu = dot(dir, normalize(mid));
