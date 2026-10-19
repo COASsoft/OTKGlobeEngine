@@ -75,7 +75,7 @@ struct ViewerState {
     int perfFrames = 0;
     double perfFrameMs = 0, perfFrameMax = 0, perfCpuMs = 0, perfCpuMax = 0;
     long long perfRenders = 0, perfBuilds = 0, perfUploads = 0;
-    int perfIncompleteFrames = 0, perfIncompleteMax = 0, perfBlankMax = 0;
+    int perfIncompleteFrames = 0, perfIncompleteMax = 0, perfBlankMax = 0, perfCoarseFrames = 0, perfMaxDepth = 0;
     float xray = 1.0f;
     int benchDone = 0;
     double benchTotal = 0, benchMax = 0;
@@ -85,7 +85,7 @@ struct ViewerState {
     ote::View zoomTarget;
     double zoomSeconds = 4.0;
     bool zoomStarted = false;
-    long long zoomFrames = 0, zoomIncomplete = 0, zoomMaxIncomplete = 0, zoomBadFrames = 0;
+    long long zoomFrames = 0, zoomIncomplete = 0, zoomMaxIncomplete = 0, zoomBadFrames = 0, zoomCoarseFrames = 0, zoomMaxDepth = 0;
     bool depth = true;
     double exaggeration = 1.0;
     std::string elevationDir;
@@ -289,6 +289,8 @@ void frame() {
                 ++state->zoomFrames;
                 state->zoomIncomplete += inc;
                 state->zoomMaxIncomplete = std::max<long long>(state->zoomMaxIncomplete, inc);
+                if (state->engine.stats().coarseTiles > 0) ++state->zoomCoarseFrames;
+                state->zoomMaxDepth = std::max<long long>(state->zoomMaxDepth, state->engine.stats().maxFallbackDepth);
                 if (inc > 0) ++state->zoomBadFrames;
             }
         }
@@ -328,6 +330,8 @@ void frame() {
                                  state->zoomFrames, state->zoomBadFrames,
                                  state->zoomFrames ? static_cast<double>(state->zoomIncomplete) / state->zoomFrames : 0.0,
                                  state->zoomMaxIncomplete);
+                if (state->zoomTest)
+                    std::fprintf(f, "zoom coarse_frames=%lld max_fallback_depth=%lld\n", state->zoomCoarseFrames, state->zoomMaxDepth);
                 std::fprintf(f, "features %zu viewshed %llu", state->engine.featureIds().size(),
                              static_cast<unsigned long long>(state->viewshed));
                 std::fputc(10, f);
@@ -365,20 +369,23 @@ void frame() {
         state->perfIncompleteMax = std::max(state->perfIncompleteMax, ps.incompleteTiles);
         state->perfBlankMax = std::max(state->perfBlankMax, ps.blankTiles);
         if (ps.incompleteTiles > 0) state->perfIncompleteFrames++;
+        if (ps.coarseTiles > 0) state->perfCoarseFrames++;
+        state->perfMaxDepth = std::max(state->perfMaxDepth, ps.maxFallbackDepth);
         state->perfBuilds += ps.terrainBuilds;
         state->perfUploads += ps.uploads;
         if (state->perfFrames >= 30) {
-            char line[512];
+            char line[768];
             ote::View pv = state->engine.view();
             std::snprintf(line, sizeof(line),
                           "perf frame avg %.1f max %.1f ms | cpu avg %.2f max %.2f | surf %.1f terr %.1f up %.1f | tiles %d L%d | "
-                          "incomplete frames %d max %d blank max %d | surfaces %d evict s %lld i %lld t %lld loads %lld | view %.4f %.4f gsd %.1f az %.0f tilt %.0f",
+                          "incomplete frames %d max %d blank max %d coarse frames %d depth %d pre %d | surfaces %d+%d img %d terr %d est %.0fMB | evict s %lld i %lld t %lld loads %lld | view %.4f %.4f gsd %.1f az %.0f tilt %.0f",
                           state->perfFrameMs / state->perfFrames, state->perfFrameMax, state->perfCpuMs / state->perfFrames,
                           state->perfCpuMax, state->perfRenders / double(state->perfFrames), state->perfBuilds / double(state->perfFrames),
                           state->perfUploads / double(state->perfFrames), ps.terrainTiles, ps.maxLevel, state->perfIncompleteFrames,
-                          state->perfIncompleteMax, state->perfBlankMax, ps.surfaces, ps.surfaceEvictions, ps.imageryEvictions,
+                          state->perfIncompleteMax, state->perfBlankMax, state->perfCoarseFrames, state->perfMaxDepth, ps.prefetched, ps.surfaces, ps.freeSurfaces, ps.imageryTextures, ps.terrainMeshes, ps.gpuMegabytes, ps.surfaceEvictions, ps.imageryEvictions,
                           ps.terrainEvictions, ps.imageryLoads, pv.lat, pv.lon, pv.gsd, pv.azimuth, pv.tilt);
             state->perfIncompleteFrames = state->perfIncompleteMax = state->perfBlankMax = 0;
+            state->perfCoarseFrames = state->perfMaxDepth = 0;
 #if defined(__ANDROID__)
             __android_log_write(ANDROID_LOG_INFO, "OpenTAKEngine", line);
 #else

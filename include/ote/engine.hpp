@@ -68,7 +68,13 @@ struct Stats {
     int maxLevel = 0;
     int incompleteTiles = 0;
     int blankTiles = 0;
+    int coarseTiles = 0;
+    int maxFallbackDepth = 0;
     int surfaces = 0;
+    int freeSurfaces = 0;
+    int prefetched = 0;
+    int terrainMeshes = 0;
+    double gpuMegabytes = 0;
     long long surfaceEvictions = 0;
     long long imageryEvictions = 0;
     long long terrainEvictions = 0;

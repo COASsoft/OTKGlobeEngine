@@ -186,6 +186,43 @@ void TileLoader::finish(const TileId& id, int gen, const std::shared_ptr<TilePro
         tile.height = res.height;
         tile.rgba = std::move(res.data);
     } else if (res.status == 200 && !res.data.empty()) {
+        if (id.z >= 9) {
+            std::uint64_t hash = 1469598103934665603ull;
+            for (unsigned char c : res.data) hash = (hash ^ c) * 1099511628211ull;
+            hash ^= static_cast<std::uint64_t>(id.layer) << 56;
+            std::vector<TileId> revoke;
+            bool placeholder = false;
+            {
+                std::lock_guard lock(mutex_);
+                if (content_.size() > 50000) content_.clear();
+                ContentSeen& seen = content_[hash];
+                if (!seen.placeholder && std::find(seen.ids.begin(), seen.ids.end(), id) == seen.ids.end()) {
+                    seen.ids.push_back(id);
+                    if (seen.ids.size() >= 3) {
+                        seen.placeholder = true;
+                        revoke = seen.ids;
+                        seen.ids.clear();
+                        seen.ids.shrink_to_fit();
+                    }
+                }
+                placeholder = seen.placeholder;
+                for (const TileId& r : revoke) {
+                    if (r == id) continue;
+                    DecodedTile gone;
+                    gone.id = r;
+                    gone.generation = gen;
+                    gone.permanent = true;
+                    if (doneIds_.insert(r).second) done_.push_back(std::move(gone));
+                }
+            }
+            if (placeholder) {
+                std::lock_guard lock(mutex_);
+                inflight_.erase(id);
+                tile.permanent = true;
+                if (doneIds_.insert(id).second) done_.push_back(std::move(tile));
+                return;
+            }
+        }
         int w = 0, h = 0, n = 0;
         unsigned char* px = stbi_load_from_memory(res.data.data(), static_cast<int>(res.data.size()), &w, &h, &n, 4);
         if (px) {

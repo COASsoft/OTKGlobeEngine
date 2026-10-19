@@ -3,6 +3,25 @@
 #if defined(__ANDROID__)
 #include <android/log.h>
 #endif
+#if defined(SOKOL_GLES3)
+#include <GLES3/gl3.h>
+#define OTE_GL_MIPS 1
+#elif defined(SOKOL_GLCORE) && defined(__linux__)
+#define GL_GLEXT_PROTOTYPES
+#include <GL/gl.h>
+#include <GL/glext.h>
+#define OTE_GL_MIPS 1
+#endif
+#if defined(_WIN32)
+#define NOMINMAX
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#elif defined(__APPLE__)
+#include <sys/sysctl.h>
+#include <sys/types.h>
+#else
+#include <unistd.h>
+#endif
 
 #include "feature/grid.hpp"
 
@@ -68,7 +87,19 @@ GlobeRenderer::Bounds GlobeRenderer::bounds(const QuadKey& k) {
 
 bool GlobeRenderer::init() {
     if (ready_) return true;
+    if (!budgetSet_) {
+        double ram = physicalMemoryMb();
+#if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
+        if (ram > 0) setMemoryBudget(static_cast<int>(std::clamp(ram * 0.10, 192.0, 768.0)));
+#else
+        if (ram > 0) setMemoryBudget(static_cast<int>(std::clamp(ram * 0.06, 384.0, 1536.0)));
+#endif
+    }
     sg_backend backend = sg_query_backend();
+#if defined(OTE_GL_MIPS)
+    glMips_ = backend == SG_BACKEND_GLES3 || backend == SG_BACKEND_GLCORE;
+    if (const char* v = std::getenv("OTE_BOX_MIPS")) glMips_ = glMips_ && std::atoi(v) == 0;
+#endif
     flipSurface_ = backend == SG_BACKEND_D3D11 || backend == SG_BACKEND_METAL_IOS ||
                    backend == SG_BACKEND_METAL_MACOS || backend == SG_BACKEND_METAL_SIMULATOR ||
                    backend == SG_BACKEND_WGPU;
@@ -297,9 +328,10 @@ void GlobeRenderer::setCacheDirectory(const std::string& dir) {
 }
 
 void GlobeRenderer::setMemoryBudget(int megabytes) {
+    budgetSet_ = true;
     double mb = std::clamp(megabytes, 96, 8192);
-    surfaceCapacity_ = static_cast<size_t>(mb * 0.55 / 0.35);
-    imageryCapacity_ = static_cast<size_t>(mb * 0.25 / 0.262);
+    surfaceCapacity_ = static_cast<size_t>(mb * 0.60 / 0.35);
+    imageryCapacity_ = static_cast<size_t>(mb * 0.20 / 0.262);
     terrainCapacity_ = static_cast<size_t>(mb * 0.20 / 0.034);
     freeSurfacePool_ = std::max<size_t>(16, surfaceCapacity_ / 16);
 }
@@ -329,10 +361,28 @@ void GlobeRenderer::setLayers(const std::vector<ImageryLayer>& layers) {
     failed_.clear();
     for (auto& [k, s] : surface_) {
         s.complete = false;
-        s.version = -1;
+        s.missing.clear();
     }
+    usefulLevel_ = kMaxLevel;
+    int best = -1;
+    bool vectorOnly = true;
+    for (size_t l = 0; l < matrices_.size() && l < layers_.size(); ++l) {
+        const TileMatrix& m = matrices_[l];
+        if (m.levels.empty()) continue;
+        if (l < vectorLayers_.size() && vectorLayers_[l]) continue;
+        vectorOnly = false;
+        double deg = m.levels.back().resolutionX / m.unitsPerDegree();
+        if (deg <= 0) continue;
+        best = std::max(best, static_cast<int>(std::ceil(std::log2(180.0 / kSurfaceSize / deg))) + 1);
+    }
+    if (!vectorOnly && best > 0) usefulLevel_ = std::clamp(best, kMinLevel + 1, kMaxLevel);
     ++imageryVersion_;
     busy_ = true;
+}
+
+int GlobeRenderer::maxRefine() const {
+    bool needsDetail = !features_.empty() || grid_ || !overlays_.empty();
+    return needsDetail ? kMaxLevel : usefulLevel_;
 }
 
 void GlobeRenderer::setElevation(const std::vector<ElevationLayer>& layers) {
@@ -593,8 +643,9 @@ GlobeRenderer::NodeInfo GlobeRenderer::info(const Camera& cam, const QuadKey& k)
     double threshold = std::max(1.0, dpiScale_ * 0.6) / std::max(imageryScale_, 0.1);
     double ratio = texel / (cam.pixelSizeAt(d) * threshold);
     bool sticky = wasRefined(k);
-    ni.refine = k.level < kMinLevel || (k.level < kMaxLevel && visits_ < 20000 && (ratio > 1.0 || (sticky && ratio > 0.8)));
-    ni.nearRefine = k.level < kMaxLevel && ratio > 0.7;
+    int top = maxRefine();
+    ni.refine = k.level < kMinLevel || (k.level < top && visits_ < 20000 && (ratio > 1.0 || (sticky && ratio > 0.8)));
+    ni.nearRefine = k.level < top && ratio > 0.7;
     return ni;
 }
 
@@ -668,7 +719,7 @@ void GlobeRenderer::traverse(const Camera& cam, const QuadKey& k, std::vector<Dr
             for (int i = 0; i < 4; ++i) traverse(cam, kids[i], out);
             return;
         }
-    } else if (!ready(k) && k.level < kMaxLevel) {
+    } else if (!ready(k) && k.level < maxRefine()) {
         if (!prefetching_ && wasRefined(k)) {
             bool drawable = true;
             for (int i = 0; i < 4 && drawable; ++i)
@@ -762,6 +813,17 @@ void GlobeRenderer::processLoads() {
             failed_.erase(t.id);
         } else {
             failed_[t.id] = t.permanent ? std::numeric_limits<double>::infinity() : now() + kRetrySeconds;
+            auto old = imagery_.find(t.id);
+            if (old != imagery_.end() && t.permanent) {
+                dropImagery(old->second);
+                imagery_.erase(old);
+                if (t.id.layer < static_cast<int>(matrices_.size())) {
+                    const TileMatrix& m = matrices_[t.id.layer];
+                    double x0, y0, x1, y1;
+                    m.tileBounds(t.id.z, t.id.x, t.id.y, x0, y0, x1, y1);
+                    markDirty({unprojectX(m.srid, x0), unprojectY(m.srid, y0), unprojectX(m.srid, x1), unprojectY(m.srid, y1)});
+                }
+            }
         }
         ++imageryVersion_;
     }
@@ -971,6 +1033,39 @@ bool GlobeRenderer::buildSurfaceJob(const QuadKey& k, double priority, SurfaceJo
     return complete;
 }
 
+void GlobeRenderer::generateMips(const std::vector<sg_image>& images) {
+#if defined(OTE_GL_MIPS)
+    for (const sg_image& img : images) {
+        sg_gl_image_info info = sg_gl_query_image_info(img);
+        GLuint tex = info.tex[info.active_slot];
+        if (!tex) continue;
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glGenerateMipmap(GL_TEXTURE_2D);
+    }
+    glBindTexture(GL_TEXTURE_2D, 0);
+    sg_reset_state_cache();
+#else
+    (void)images;
+#endif
+}
+
+double GlobeRenderer::physicalMemoryMb() {
+#if defined(_WIN32)
+    MEMORYSTATUSEX m{};
+    m.dwLength = sizeof(m);
+    if (GlobalMemoryStatusEx(&m)) return static_cast<double>(m.ullTotalPhys) / 1048576.0;
+    return 0;
+#elif defined(__APPLE__)
+    std::uint64_t bytes = 0;
+    size_t len = sizeof(bytes);
+    if (sysctlbyname("hw.memsize", &bytes, &len, nullptr, 0) == 0) return static_cast<double>(bytes) / 1048576.0;
+    return 0;
+#else
+    long pages = sysconf(_SC_PHYS_PAGES), size = sysconf(_SC_PAGE_SIZE);
+    return pages > 0 && size > 0 ? static_cast<double>(pages) * static_cast<double>(size) / 1048576.0 : 0;
+#endif
+}
+
 void GlobeRenderer::diag(const char* fmt, ...) const {
     if (!diagnostics_) return;
     char buf[1024];
@@ -1079,9 +1174,12 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     terrain({0, 1, 0});
     traverse(cam, {0, 0, 0}, tiles);
     traverse(cam, {0, 1, 0}, tiles);
-    if (viewComplete_ && loader_.pending() < 24) {
+    auto overview = [&](double gsdScale, double scale) {
         Camera wide = cam;
-        wide.gsd = cam.gsd * 2.5;
+        int side = static_cast<int>(std::hypot(static_cast<double>(cam.width), static_cast<double>(cam.height)));
+        wide.width = side;
+        wide.height = side;
+        wide.gsd = cam.gsd * gsdScale;
         wide.update();
         std::array<double, 16> saved = frustum_;
         Vec3 savedEye = eye_;
@@ -1099,7 +1197,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             frustum_[p * 4 + 3] = d / len;
         }
         std::vector<DrawTile> ignored;
-        needScale_ = 20.0;
+        needScale_ = scale;
         prefetching_ = true;
         int savedVisits = visits_;
         visits_ = 0;
@@ -1110,21 +1208,37 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         prefetching_ = false;
         frustum_ = saved;
         eye_ = savedEye;
-    }
+    };
+    overview(2.0, 3.0);
+    overview(4.0, 6.0);
     std::sort(tiles.begin(), tiles.end(), [](const DrawTile& a, const DrawTile& b) { return a.distance < b.distance; });
 
     {
+        std::unordered_set<QuadKey, QuadKeyHash> seen;
+        seen.reserve(needs_.size() * 2 + prefetch_.size());
+        for (const Need& n : needs_) seen.insert(n.key);
         size_t activeImagery = 0;
         for (const auto& [id, t] : imagery_)
             if (t.used + 1 >= frame_) ++activeImagery;
-        size_t visible = needs_.size();
-        double room = std::min(1.0 - static_cast<double>(activeImagery) / imageryCapacity_,
-                               1.0 - static_cast<double>(visible) / surfaceCapacity_);
-        if (room > 0.35) {
-            size_t budget = static_cast<size_t>(std::min(256.0, (room - 0.35) * surfaceCapacity_));
-            std::sort(prefetch_.begin(), prefetch_.end(), [](const Need& a, const Need& b) { return a.priority < b.priority; });
-            for (size_t i = 0; i < prefetch_.size() && i < budget; ++i) needs_.push_back(prefetch_[i]);
+        double imageryRoom = static_cast<double>(imageryCapacity_) * 0.85 - static_cast<double>(activeImagery);
+        double surfaceRoom = static_cast<double>(surfaceCapacity_) * 0.92 - static_cast<double>(seen.size());
+        int freshBudget = std::max(4, static_cast<int>(imageryRoom / 2.0));
+        int fresh = 0;
+        size_t admitted = 0;
+        std::sort(prefetch_.begin(), prefetch_.end(), [](const Need& a, const Need& b) { return a.priority < b.priority; });
+        for (const Need& n : prefetch_) {
+            if (static_cast<double>(admitted) >= surfaceRoom) break;
+            if (!seen.insert(n.key).second) continue;
+            auto sf = surface_.find(n.key);
+            bool done = sf != surface_.end() && sf->second.complete;
+            if (!done) {
+                if (fresh >= freshBudget) continue;
+                ++fresh;
+            }
+            needs_.push_back(n);
+            ++admitted;
         }
+        stats_.prefetched = static_cast<int>(admitted);
     }
     std::sort(needs_.begin(), needs_.end(), [](const Need& a, const Need& b) {
         if (!(a.key == b.key)) {
@@ -1166,26 +1280,39 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     }
     elevation_.submit();
 
-    std::vector<std::pair<double, size_t>> work;
+    struct Work {
+        double priority;
+        size_t index;
+        bool render;
+    };
+    std::vector<Work> work;
     for (size_t i = 0; i < needs_.size(); ++i) {
         auto it = surface_.find(needs_[i].key);
         if (it == surface_.end()) {
-            work.push_back({needs_[i].priority, i});
+            work.push_back({needs_[i].priority, i, true});
         } else {
             it->second.used = frame_;
-            if (!it->second.complete && progressed(it->second)) work.push_back({needs_[i].priority * 1.5, i});
-            else if (!it->second.complete) buildSurfaceJob(needs_[i].key, needs_[i].priority, nullptr, nullptr);
+            if (!it->second.complete && progressed(it->second)) work.push_back({needs_[i].priority * 1.5, i, true});
+            else if (!it->second.complete) work.push_back({needs_[i].priority, i, false});
         }
     }
-    std::stable_sort(work.begin(), work.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    std::stable_sort(work.begin(), work.end(), [](const Work& a, const Work& b) { return a.priority < b.priority; });
+    int rasterLayers = 0;
+    for (size_t l = 0; l < matrices_.size() && l < layers_.size(); ++l)
+        if (!(l < vectorLayers_.size() && vectorLayers_[l])) ++rasterLayers;
+    const int maxTouched = std::max(16, static_cast<int>(imageryCapacity_ * 0.8 / (2.5 * std::max(rasterLayers, 1))));
+    int touched = 0;
 
     std::vector<SurfaceJob> jobs;
     std::vector<float> verts;
     std::vector<float> fverts;
     std::unordered_map<QuadKey, double, QuadKeyHash> jobTexel;
     int renders = 0;
-    for (auto& [kind, i] : work) {
-        if (renders >= kSurfaceRendersPerFrame || verts.size() * sizeof(float) > kSurfaceBufferBytes / 2 ||
+    for (const Work& w : work) {
+        size_t i = w.index;
+        if (touched >= maxTouched) break;
+        ++touched;
+        if (!w.render || renders >= kSurfaceRendersPerFrame || verts.size() * sizeof(float) > kSurfaceBufferBytes / 2 ||
             (renders > 0 && elapsedMs() > budgetMs)) {
             buildSurfaceJob(needs_[i].key, needs_[i].priority, nullptr, nullptr);
             continue;
@@ -1247,6 +1374,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         sg_write_buffer_transient(&wd);
     }
 
+    std::vector<sg_image> mipQueue;
     for (auto& job : jobs) {
         SurfaceTile* s = acquireSurface(job.key);
         s->used = frame_;
@@ -1254,7 +1382,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         pass.action.colors[0].load_action = SG_LOADACTION_CLEAR;
         if (job.background) pass.action.colors[0].clear_value = {242 / 255.0f, 239 / 255.0f, 233 / 255.0f, 1.0f};
         else pass.action.colors[0].clear_value = {10 / 255.0f, 30 / 255.0f, 62 / 255.0f, 1.0f};
-        pass.attachments.colors[0] = scratchAttachment_;
+        pass.attachments.colors[0] = glMips_ ? s->levels[0] : scratchAttachment_;
         sg_begin_pass(&pass);
         if (!job.draws.empty()) {
             sg_apply_pipeline(surfacePipeline_);
@@ -1295,6 +1423,13 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         if (job.featureCount > 0 && (job.featureFirst + job.featureCount) * 6 * sizeof(float) <= kSurfaceBufferBytes)
             features_.drawSurface(featureBuffer_, job.featureFirst, job.featureCount);
         sg_end_pass();
+        if (glMips_) {
+            mipQueue.push_back(s->image);
+            s->complete = job.complete;
+            s->version = imageryVersion_;
+            s->missing = std::move(job.missing);
+            continue;
+        }
         for (int level = 0; level < kMips; ++level) {
             sg_pass mp{};
             mp.action.colors[0].load_action = SG_LOADACTION_DONTCARE;
@@ -1320,6 +1455,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         s->version = imageryVersion_;
         s->missing = std::move(job.missing);
     }
+
+    if (!mipQueue.empty()) generateMips(mipQueue);
 
     sg_pass main{};
     main.action.colors[0].load_action = SG_LOADACTION_CLEAR;
@@ -1370,6 +1507,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     int maxLevel = 0;
     int incomplete = 0;
     int blank = 0;
+    int coarse = 0;
+    int maxDepth = 0;
     bool fading = false;
     double tnow = now();
     auto source = [&](const QuadKey& key, int minUp, sg_view& view, float uvx[4]) {
@@ -1413,6 +1552,13 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         float uvx[4] = {1, 1, 0, 0};
         QuadKey src = source(dt.key, 0, view, uvx);
         if (src.level < 0) ++blank;
+        else {
+            int depth = dt.key.level - src.level;
+            auto ownSurface = surface_.find(src);
+            if (ownSurface != surface_.end() && !ownSurface->second.complete) ++depth;
+            if (depth >= 2) ++coarse;
+            maxDepth = std::max(maxDepth, depth);
+        }
         auto own = surface_.find(dt.key);
         if (own == surface_.end() || !own->second.complete) ++incomplete;
         sg_view view2 = view;
@@ -1499,7 +1645,13 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     stats_.maxLevel = maxLevel;
     stats_.incompleteTiles = incomplete;
     stats_.blankTiles = blank;
+    stats_.coarseTiles = coarse;
+    stats_.maxFallbackDepth = maxDepth;
     stats_.surfaces = static_cast<int>(surface_.size());
+    stats_.freeSurfaces = static_cast<int>(freeSurfaces_.size());
+    stats_.terrainMeshes = static_cast<int>(terrain_.size());
+    stats_.gpuMegabytes = (surface_.size() + freeSurfaces_.size()) * (kSurfaceSize * kSurfaceSize * 4.0 * 4.0 / 3.0) / 1048576.0 +
+                          imagery_.size() * (256.0 * 256.0 * 4.0) / 1048576.0 + terrain_.size() * (kVertexCount * kStride * 4.0) / 1048576.0;
     viewComplete_ = incomplete == 0;
     busy_ = pending || fading || tilesBusy || stats_.pendingRequests > 0 || renders > 0 || builds > 0 || elevationChanged;
     if (trace_) {

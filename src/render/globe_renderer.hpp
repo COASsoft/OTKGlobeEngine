@@ -217,6 +217,12 @@ private:
     std::unordered_map<QuadKey, std::uint64_t, QuadKeyHash> drawn_;
     std::unordered_map<QuadKey, std::uint64_t, QuadKeyHash> refined_;
     int syncBuilds_ = 0;
+    int usefulLevel_ = 22;
+    bool budgetSet_ = false;
+    static double physicalMemoryMb();
+    bool glMips_ = false;
+    void generateMips(const std::vector<sg_image>& images);
+    int maxRefine() const;
     bool wasRefined(const QuadKey& k) const;
     struct Overlay {
         GeoRect rect;

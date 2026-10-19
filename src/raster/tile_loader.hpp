@@ -107,6 +107,11 @@ private:
     std::unordered_set<TileId, TileIdHash> inflight_;
     std::deque<DecodedTile> done_;
     std::unordered_set<TileId, TileIdHash> doneIds_;
+    struct ContentSeen {
+        std::vector<TileId> ids;
+        bool placeholder = false;
+    };
+    std::unordered_map<std::uint64_t, ContentSeen> content_;
     std::map<int, Download> downloads_;
     int nextDownloadId_ = 1;
     TileCache* cache_ = nullptr;
