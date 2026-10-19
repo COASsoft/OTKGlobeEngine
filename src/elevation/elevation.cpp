@@ -1,7 +1,9 @@
 #include "elevation/elevation.hpp"
 
 #include "core/geoid.hpp"
+#include "elevation/quantized_mesh.hpp"
 #include "gdal/gdal_sources.hpp"
+#include "raster/vector_tile.hpp"
 #include "raster/tile_provider.hpp"
 
 #include <stb_image.h>
@@ -35,6 +37,33 @@ void applyGeoid(HeightGrid& g, int srid) {
         }
     }
 }
+
+class QuantizedMeshProvider : public ElevationProvider {
+public:
+    QuantizedMeshProvider(const ElevationLayer& layer, TileCache* cache, std::atomic<bool>* offline) {
+        ImageryLayer l;
+        l.name = layer.name;
+        l.url = layer.url;
+        l.maxZoom = layer.maxZoom;
+        l.cache = layer.cache;
+        l.srid = 4326;
+        l.tms = true;
+        inner_ = makeProvider(l, cache, offline);
+        matrix_ = TileMatrix::geographic(0, layer.maxZoom, 64);
+    }
+
+    int fetch(int z, int x, int y, HeightGrid& out) override {
+        FetchResult r = inner_->fetch(z, x, y);
+        if (r.status != 200 || r.data.empty()) return r.status;
+        double minX, minY, maxX, maxY;
+        matrix_.tileBounds(z, x, y, minX, minY, maxX, maxY);
+        if (!decodeQuantizedMesh(gunzip(r.data), minX, minY, maxX, maxY, 64, out)) return 404;
+        return 200;
+    }
+
+private:
+    std::shared_ptr<TileProvider> inner_;
+};
 
 class TerrariumProvider : public ElevationProvider {
 public:
@@ -322,6 +351,8 @@ void ElevationManager::setSources(const std::vector<ElevationLayer>& layers, Til
     for (const auto& l : layers) {
         if (l.type == ElevationType::Directory) {
             providers.push_back(std::make_shared<DirectoryProvider>(l));
+        } else if (l.type == ElevationType::QuantizedMesh) {
+            providers.push_back(std::make_shared<QuantizedMeshProvider>(l, cache, offline));
         } else if (l.type == ElevationType::Gdal) {
             if (auto p = makeGdalElevation(l)) providers.push_back(p);
         } else {

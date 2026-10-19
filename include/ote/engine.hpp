@@ -38,7 +38,7 @@ struct ImageryLayer {
     std::string userAgent;
 };
 
-enum class ElevationType { Terrarium, Directory, Gdal };
+enum class ElevationType { Terrarium, Directory, Gdal, QuantizedMesh };
 
 struct ElevationLayer {
     std::string name;

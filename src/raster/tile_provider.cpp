@@ -106,7 +106,27 @@ public:
             r.status = 0;
             return r;
         }
-        net::Response res = net::get(tileUrl(layer_, matrix_, z, x, y), ua_);
+        std::string url = tileUrl(layer_, matrix_, z, x, y);
+        net::Response res;
+        if (url.rfind("file://", 0) == 0) {
+            std::string path = url.substr(7);
+            if (path.size() > 2 && path[0] == '/' && path[2] == ':') path = path.substr(1);
+            FILE* f = std::fopen(path.c_str(), "rb");
+            if (f) {
+                std::fseek(f, 0, SEEK_END);
+                long n = std::ftell(f);
+                std::fseek(f, 0, SEEK_SET);
+                res.body.resize(n > 0 ? static_cast<size_t>(n) : 0);
+                res.status = std::fread(res.body.data(), 1, res.body.size(), f) == res.body.size() ? 200 : 500;
+                std::fclose(f);
+            } else {
+                res.status = 404;
+            }
+            r.status = res.status;
+            r.data = std::move(res.body);
+            return r;
+        }
+        res = net::get(url, ua_);
         if (res.status == 200 && !res.body.empty()) {
             if (useCache) cache_->put(key_, z, x, y, res.body, TileCache::now() + kMinExpirySeconds);
             r.status = 200;

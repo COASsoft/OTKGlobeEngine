@@ -14,6 +14,31 @@ namespace {
 
 constexpr double kPi = 3.14159265358979323846;
 
+}
+
+std::vector<std::uint8_t> gunzip(const std::vector<std::uint8_t>& in) {
+    if (in.size() < 18 || in[0] != 0x1F || in[1] != 0x8B) return in;
+    size_t pos = 10;
+    std::uint8_t flags = in[3];
+    if (flags & 4) pos += 2 + (in[10] | (in[11] << 8));
+    if (flags & 8)
+        while (pos < in.size() && in[pos++]) {
+        }
+    if (flags & 16)
+        while (pos < in.size() && in[pos++]) {
+        }
+    if (flags & 2) pos += 2;
+    if (pos >= in.size()) return {};
+    size_t outLen = 0;
+    void* out = tinfl_decompress_mem_to_heap(in.data() + pos, in.size() - pos - 8, &outLen, 0);
+    if (!out) return {};
+    std::vector<std::uint8_t> r(static_cast<std::uint8_t*>(out), static_cast<std::uint8_t*>(out) + outLen);
+    mz_free(out);
+    return r;
+}
+
+namespace {
+
 struct Reader {
     const std::uint8_t* p;
     const std::uint8_t* end;
@@ -45,27 +70,6 @@ struct Reader {
         else p = end;
     }
 };
-
-std::vector<std::uint8_t> gunzip(const std::vector<std::uint8_t>& in) {
-    if (in.size() < 18 || in[0] != 0x1F || in[1] != 0x8B) return in;
-    size_t pos = 10;
-    std::uint8_t flags = in[3];
-    if (flags & 4) pos += 2 + (in[10] | (in[11] << 8));
-    if (flags & 8)
-        while (pos < in.size() && in[pos++]) {
-        }
-    if (flags & 16)
-        while (pos < in.size() && in[pos++]) {
-        }
-    if (flags & 2) pos += 2;
-    if (pos >= in.size()) return {};
-    size_t outLen = 0;
-    void* out = tinfl_decompress_mem_to_heap(in.data() + pos, in.size() - pos - 8, &outLen, 0);
-    if (!out) return {};
-    std::vector<std::uint8_t> r(static_cast<std::uint8_t*>(out), static_cast<std::uint8_t*>(out) + outLen);
-    mz_free(out);
-    return r;
-}
 
 struct Rule {
     std::uint32_t color;

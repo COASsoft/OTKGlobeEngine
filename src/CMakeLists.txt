@@ -12,6 +12,7 @@ add_library(opentakengine STATIC
     raster/mobac.cpp
     raster/vector_tile.cpp
     elevation/elevation.cpp
+    elevation/quantized_mesh.cpp
     feature/parsers.cpp
     feature/text.cpp
     feature/feature_layer.cpp

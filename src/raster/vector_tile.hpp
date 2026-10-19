@@ -27,5 +27,6 @@ struct VectorTile {
 
 std::shared_ptr<VectorTile> decodeVectorTile(const std::vector<std::uint8_t>& data, int z, int x, int y);
 bool looksLikeVectorTile(const std::vector<std::uint8_t>& data);
+std::vector<std::uint8_t> gunzip(const std::vector<std::uint8_t>& data);
 
 }

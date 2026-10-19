@@ -75,6 +75,7 @@ struct ViewerState {
     double exaggeration = 1.0;
     std::string elevationDir;
     std::string gdalDem;
+    std::string quantizedMesh;
     int width = 1600;
     int height = 900;
     float t0x = 0, t0y = 0, t1x = 0, t1y = 0;
@@ -157,6 +158,13 @@ void init() {
             d.path = state->elevationDir;
             d.maxZoom = 14;
             elev.push_back(d);
+        }
+        if (!state->quantizedMesh.empty()) {
+            ote::ElevationLayer q;
+            q.type = ote::ElevationType::QuantizedMesh;
+            q.url = state->quantizedMesh;
+            q.maxZoom = 14;
+            elev.push_back(q);
         }
         if (!state->gdalDem.empty()) {
             ote::ElevationLayer g;
@@ -491,6 +499,8 @@ sapp_desc sokol_main(int argc, char* argv[]) {
             l.path = argv[++i];
             l.name = l.path;
             state->customLayers.push_back(l);
+        } else if (a == "--quantized-mesh") {
+            state->quantizedMesh = argv[++i];
         } else if (a == "--gdal-dem") {
             state->gdalDem = argv[++i];
         } else if (a == "--mobac") {
