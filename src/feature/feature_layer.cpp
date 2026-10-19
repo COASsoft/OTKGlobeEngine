@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 namespace ote {
 
@@ -14,6 +15,7 @@ namespace {
 constexpr size_t kOverlayBytes = 4 * 1024 * 1024;
 constexpr double kTessellateMeters = 100000.0;
 constexpr int kIconSize = 64;
+constexpr int kAtlasSize = 2048;
 
 void color4(std::uint32_t argb, float out[4]) {
     out[0] = ((argb >> 16) & 0xFF) / 255.0f;
@@ -69,6 +71,7 @@ bool FeatureLayer::init() {
     spriteShader_ = sg_make_shader(sprite_shader_desc(backend));
     textShader_ = sg_make_shader(text_shader_desc(backend));
     lineShader_ = sg_make_shader(line3d_shader_desc(backend));
+    imageShader_ = sg_make_shader(image_shader_desc(backend));
 
     auto blend = [](sg_color_target_state& c) {
         c.blend.enabled = true;
@@ -102,6 +105,8 @@ bool FeatureLayer::init() {
     spritePipeline_ = overlay(spriteShader_, false);
     textPipeline_ = overlay(textShader_, false);
     linePipeline_ = overlay(lineShader_, true);
+    imagePipeline_ = overlay(imageShader_, false);
+    iconPixels_.assign(static_cast<size_t>(kAtlasSize) * kAtlasSize * 4, 0);
 
     sg_buffer_desc bd{};
     bd.usage.vertex_buffer = true;
@@ -176,11 +181,61 @@ void FeatureLayer::uploadText() {
     atlas_.clean();
 }
 
+bool FeatureLayer::iconRect(const Image* img, float rect[4]) {
+    auto it = atlasRects_.find(img);
+    if (it != atlasRects_.end()) {
+        for (int i = 0; i < 4; ++i) rect[i] = it->second[i];
+        return true;
+    }
+    if (!img || img->width <= 0 || img->height <= 0) return false;
+    int w = std::min(img->width, 96), h = std::min(img->height, 96);
+    if (atlasX_ + w + 1 > kAtlasSize) {
+        atlasX_ = 0;
+        atlasY_ += atlasRow_ + 1;
+        atlasRow_ = 0;
+    }
+    if (atlasY_ + h + 1 > kAtlasSize) return false;
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) {
+            int sx = x * img->width / w, sy = y * img->height / h;
+            const std::uint8_t* s = &img->rgba[(static_cast<size_t>(sy) * img->width + sx) * 4];
+            std::uint8_t* d = &iconPixels_[(static_cast<size_t>(atlasY_ + y) * kAtlasSize + atlasX_ + x) * 4];
+            std::memcpy(d, s, 4);
+        }
+    std::array<float, 4> r{static_cast<float>(atlasX_) / kAtlasSize, static_cast<float>(atlasY_) / kAtlasSize,
+                           static_cast<float>(atlasX_ + w) / kAtlasSize, static_cast<float>(atlasY_ + h) / kAtlasSize};
+    atlasX_ += w + 1;
+    atlasRow_ = std::max(atlasRow_, h);
+    atlasRects_[img] = r;
+    atlasDirty_ = true;
+    for (int i = 0; i < 4; ++i) rect[i] = r[i];
+    return true;
+}
+
+void FeatureLayer::uploadIcons() {
+    if (!atlasDirty_ && atlasImage_.id) return;
+    if (atlasView_.id) sg_destroy_view(atlasView_);
+    if (atlasImage_.id) sg_destroy_image(atlasImage_);
+    sg_image_desc d{};
+    d.width = kAtlasSize;
+    d.height = kAtlasSize;
+    d.pixel_format = SG_PIXELFORMAT_RGBA8;
+    d.data.mip_levels[0] = {iconPixels_.data(), iconPixels_.size()};
+    atlasImage_ = sg_make_image(&d);
+    sg_view_desc v{};
+    v.texture.image = atlasImage_;
+    atlasView_ = sg_make_view(&v);
+    atlasDirty_ = false;
+}
+
 void FeatureLayer::shutdown() {
     if (!ready_) return;
     if (sg_isvalid()) {
         for (sg_pipeline p : {surfacePipeline_, spritePipeline_, textPipeline_, linePipeline_}) sg_destroy_pipeline(p);
-        for (sg_shader s : {surfaceShader_, spriteShader_, textShader_, lineShader_}) sg_destroy_shader(s);
+        for (sg_shader s : {surfaceShader_, spriteShader_, textShader_, lineShader_, imageShader_}) sg_destroy_shader(s);
+        sg_destroy_pipeline(imagePipeline_);
+        if (atlasView_.id) sg_destroy_view(atlasView_);
+        if (atlasImage_.id) sg_destroy_image(atlasImage_);
         sg_destroy_view(textView_);
         sg_destroy_image(textImage_);
         sg_destroy_view(iconView_);
@@ -378,8 +433,8 @@ void FeatureLayer::drawOverlay(const Camera& cam, const GroundFn& ground, double
     auto nx = [&](double x) { return static_cast<float>(x / W * 2.0 - 1.0); };
     auto ny = [&](double y) { return static_cast<float>(1.0 - y / H * 2.0); };
 
-    std::vector<float> lines, icons, text;
-    Writer lw{lines}, iw{icons}, tw{text};
+    std::vector<float> lines, icons, text, images;
+    Writer lw{lines}, iw{icons}, tw{text}, mw{images};
 
     struct Label {
         std::string text;
@@ -426,7 +481,23 @@ void FeatureLayer::drawOverlay(const Camera& cam, const GroundFn& ground, double
             if (!visible(e) || !project(e, sx, sy, sz) || sx < -64 || sy < -64 || sx > W + 64 || sy > H + 64) continue;
             double s = 22.0 * f.style.iconScale * dpi;
             double offset = 0;
-            if (f.style.icon != IconShape::Hidden) {
+            float rect[4];
+            if (f.style.iconImage && iconRect(f.style.iconImage.get(), rect)) {
+                if (std::find(atlasRefs_.begin(), atlasRefs_.end(), f.style.iconImage) == atlasRefs_.end())
+                    atlasRefs_.push_back(f.style.iconImage);
+                float c[4];
+                color4(f.style.iconColor, c);
+                double aspect = static_cast<double>(f.style.iconImage->width) / std::max(f.style.iconImage->height, 1);
+                double hh = s * 1.4, ww = hh * aspect;
+                float x0 = nx(sx - ww * 0.5), x1 = nx(sx + ww * 0.5), y0 = ny(sy - hh * 0.5), y1 = ny(sy + hh * 0.5);
+                mw.vertex(x0, y0, 0, rect[0], rect[1], c);
+                mw.vertex(x1, y0, 0, rect[2], rect[1], c);
+                mw.vertex(x1, y1, 0, rect[2], rect[3], c);
+                mw.vertex(x0, y0, 0, rect[0], rect[1], c);
+                mw.vertex(x1, y1, 0, rect[2], rect[3], c);
+                mw.vertex(x0, y1, 0, rect[0], rect[3], c);
+                offset = hh * 0.5 + 2;
+            } else if (f.style.icon != IconShape::Hidden) {
                 int shape = f.style.icon == IconShape::Circle ? 0 : f.style.icon == IconShape::Pin ? 1 : f.style.icon == IconShape::Square ? 2 : 3;
                 double cx = sx, cy = f.style.icon == IconShape::Pin ? sy - s * 0.5 : sy;
                 float c[4];
@@ -516,11 +587,13 @@ void FeatureLayer::drawOverlay(const Camera& cam, const GroundFn& ground, double
         }
     }
     uploadText();
+    uploadIcons();
 
     std::vector<float> all;
-    all.reserve(lines.size() + icons.size() + text.size());
+    all.reserve(lines.size() + icons.size() + images.size() + text.size());
     all.insert(all.end(), lines.begin(), lines.end());
     all.insert(all.end(), icons.begin(), icons.end());
+    all.insert(all.end(), images.begin(), images.end());
     all.insert(all.end(), text.begin(), text.end());
     if (all.empty()) return;
     if (all.size() * sizeof(float) > kOverlayBytes) all.resize(kOverlayBytes / sizeof(float) / 9 / 6 * 9 * 6);
@@ -531,7 +604,8 @@ void FeatureLayer::drawOverlay(const Camera& cam, const GroundFn& ground, double
     sg_write_buffer_transient(&wd);
 
     int nl = static_cast<int>(lines.size() / 9), ni = static_cast<int>(icons.size() / 9);
-    int nt = static_cast<int>(all.size() / 9) - nl - ni;
+    int nm = static_cast<int>(images.size() / 9);
+    int nt = static_cast<int>(all.size() / 9) - nl - ni - nm;
     (void)flip;
     if (nl > 0) {
         sg_apply_pipeline(linePipeline_);
@@ -551,6 +625,15 @@ void FeatureLayer::drawOverlay(const Camera& cam, const GroundFn& ground, double
         sg_apply_bindings(&b);
         sg_draw(nl, ni, 1);
     }
+    if (nm > 0) {
+        sg_apply_pipeline(imagePipeline_);
+        sg_bindings b{};
+        b.vertex_buffers[0] = overlayBuffer_;
+        b.views[VIEW_tex] = atlasView_;
+        b.samplers[SMP_smp] = sampler_;
+        sg_apply_bindings(&b);
+        sg_draw(nl + ni, nm, 1);
+    }
     if (nt > 0) {
         sg_apply_pipeline(textPipeline_);
         sg_bindings b{};
@@ -558,7 +641,7 @@ void FeatureLayer::drawOverlay(const Camera& cam, const GroundFn& ground, double
         b.views[VIEW_tex] = textView_;
         b.samplers[SMP_smp] = sampler_;
         sg_apply_bindings(&b);
-        sg_draw(nl + ni, nt, 1);
+        sg_draw(nl + ni + nm, nt, 1);
     }
 }
 

@@ -54,6 +54,8 @@ private:
     void prepare(Item& it);
     double altitude(const Item& it, double lat, double lon, double alt, const GroundFn& ground) const;
     void uploadText();
+    void uploadIcons();
+    bool iconRect(const Image* img, float rect[4]);
 
     std::unordered_map<std::uint64_t, Item> items_;
     std::uint64_t nextId_ = 1;
@@ -69,6 +71,15 @@ private:
     sg_shader spriteShader_{};
     sg_shader textShader_{};
     sg_shader lineShader_{};
+    sg_shader imageShader_{};
+    sg_pipeline imagePipeline_{};
+    sg_image atlasImage_{};
+    sg_view atlasView_{};
+    std::vector<std::uint8_t> iconPixels_;
+    std::unordered_map<const Image*, std::array<float, 4>> atlasRects_;
+    std::vector<std::shared_ptr<const Image>> atlasRefs_;
+    int atlasX_ = 0, atlasY_ = 0, atlasRow_ = 0;
+    bool atlasDirty_ = true;
     sg_pipeline surfacePipeline_{};
     sg_pipeline spritePipeline_{};
     sg_pipeline textPipeline_{};

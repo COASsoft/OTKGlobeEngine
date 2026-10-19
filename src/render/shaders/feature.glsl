@@ -83,3 +83,18 @@ void main() {
 @end
 
 @program line3d sprite_vs line3d_fs
+
+@fs image_fs
+layout(binding=0) uniform texture2D tex;
+layout(binding=0) uniform sampler smp;
+
+in vec2 uv;
+in vec4 color;
+out vec4 frag_color;
+
+void main() {
+    frag_color = texture(sampler2D(tex, smp), uv) * color;
+}
+@end
+
+@program image sprite_vs image_fs

@@ -85,7 +85,9 @@ struct KmlStyle {
     bool hasLine = false, hasPoly = false, hasIcon = false, hasLabel = false, fill = true, outline = true;
 };
 
-void readKmlStyle(const pugi::xml_node& n, KmlStyle& k) {
+using IconLoader = std::function<std::shared_ptr<const Image>(const std::string&)>;
+
+void readKmlStyle(const pugi::xml_node& n, KmlStyle& k, const IconLoader& icons) {
     if (auto ls = n.child("LineStyle")) {
         k.hasLine = true;
         if (auto c = ls.child("color")) k.style.strokeColor = kmlColor(c.text().as_string());
@@ -99,8 +101,12 @@ void readKmlStyle(const pugi::xml_node& n, KmlStyle& k) {
     }
     if (auto is = n.child("IconStyle")) {
         k.hasIcon = true;
-        if (auto c = is.child("color")) k.style.iconColor = kmlColor(c.text().as_string());
+        bool hasColor = static_cast<bool>(is.child("color"));
+        if (hasColor) k.style.iconColor = kmlColor(is.child("color").text().as_string());
         if (auto s = is.child("scale")) k.style.iconScale = s.text().as_float(1.0f);
+        std::string href = is.child("Icon").child_value("href");
+        if (!href.empty() && icons) k.style.iconImage = icons(href);
+        if (k.style.iconImage && !hasColor) k.style.iconColor = 0xFFFFFFFF;
     }
     if (auto lb = n.child("LabelStyle")) {
         k.hasLabel = true;
@@ -122,6 +128,7 @@ void applyKmlStyle(const KmlStyle& k, Style& s) {
     if (k.hasIcon) {
         s.iconColor = k.style.iconColor;
         s.iconScale = k.style.iconScale;
+        s.iconImage = k.style.iconImage;
     }
     if (k.hasLabel) {
         s.labelColor = k.style.labelColor;
@@ -211,10 +218,31 @@ std::vector<Feature> parseKmlText(const char* text, size_t size, const Resolver&
     if (overlays) kmlGroundOverlays(doc, resolve, *overlays);
     std::map<std::string, KmlStyle> styles;
     std::map<std::string, std::string> maps;
+    std::map<std::string, std::shared_ptr<const Image>> iconCache;
+    IconLoader icons = [&](const std::string& href) -> std::shared_ptr<const Image> {
+        auto it = iconCache.find(href);
+        if (it != iconCache.end()) return it->second;
+        std::shared_ptr<const Image> img;
+        if (resolve) {
+            std::vector<std::uint8_t> bytes = resolve(href);
+            int w = 0, h = 0, c = 0;
+            unsigned char* px = bytes.empty() ? nullptr : stbi_load_from_memory(bytes.data(), static_cast<int>(bytes.size()), &w, &h, &c, 4);
+            if (px) {
+                auto im = std::make_shared<Image>();
+                im->width = w;
+                im->height = h;
+                im->rgba.assign(px, px + static_cast<size_t>(w) * h * 4);
+                stbi_image_free(px);
+                img = im;
+            }
+        }
+        iconCache[href] = img;
+        return img;
+    };
     for (auto n : doc.select_nodes("//Style")) {
         std::string id = n.node().attribute("id").as_string();
         if (id.empty()) continue;
-        readKmlStyle(n.node(), styles["#" + id]);
+        readKmlStyle(n.node(), styles["#" + id], icons);
     }
     for (auto n : doc.select_nodes("//StyleMap")) {
         std::string id = n.node().attribute("id").as_string();
@@ -232,7 +260,7 @@ std::vector<Feature> parseKmlText(const char* text, size_t size, const Resolver&
         if (styles.count(url)) applyKmlStyle(styles[url], f.style);
         if (auto s = pm.child("Style")) {
             KmlStyle k;
-            readKmlStyle(s, k);
+            readKmlStyle(s, k, icons);
             applyKmlStyle(k, f.style);
         }
         for (auto c : pm.children()) kmlGeometry(c, f);

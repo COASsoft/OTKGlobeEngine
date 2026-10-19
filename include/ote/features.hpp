@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -24,6 +25,12 @@ struct Geometry {
     std::vector<std::vector<Coord>> holes;
 };
 
+struct Image {
+    int width = 0;
+    int height = 0;
+    std::vector<std::uint8_t> rgba;
+};
+
 struct Style {
     std::uint32_t strokeColor = 0xFFFFFFFF;
     float strokeWidth = 2.0f;
@@ -31,6 +38,7 @@ struct Style {
     IconShape icon = IconShape::Circle;
     std::uint32_t iconColor = 0xFF00A0FF;
     float iconScale = 1.0f;
+    std::shared_ptr<const Image> iconImage;
     std::uint32_t labelColor = 0xFFFFFFFF;
     float labelScale = 1.0f;
     bool showLabel = true;
