@@ -38,7 +38,7 @@ bool check(JNIEnv* e) {
 
 void setJavaVm(void* vm) { javaVm = static_cast<JavaVM*>(vm); }
 
-Response get(const std::string& url, const std::string& userAgent) {
+Response getBackend(const std::string& url, const std::string& userAgent) {
     Response res;
     thread_local Env holder;
     JNIEnv* e = holder.env;

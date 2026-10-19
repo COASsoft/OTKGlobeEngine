@@ -83,6 +83,12 @@ void TileLoader::submit(std::vector<std::pair<TileId, double>>& requests) {
         netPriority_[r.first] = r.second;
         if (!inflight_.count(r.first) && !doneIds_.count(r.first)) queue_.push_back(r.first);
     }
+    auto stale = std::remove_if(netQueue_.begin(), netQueue_.end(), [this](const TileId& t) {
+        if (wanted_.count(t)) return false;
+        inflight_.erase(t);
+        return true;
+    });
+    netQueue_.erase(stale, netQueue_.end());
     if (!queue_.empty()) cv_.notify_all();
 }
 

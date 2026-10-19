@@ -46,7 +46,7 @@ struct Handle {
 
 }
 
-Response get(const std::string& url, const std::string& userAgent) {
+Response getBackend(const std::string& url, const std::string& userAgent) {
     Response res;
     HINTERNET s = session(userAgent);
     if (!s) {

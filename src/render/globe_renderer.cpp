@@ -687,8 +687,21 @@ bool GlobeRenderer::progressed(const SurfaceTile& s) const {
 
 void GlobeRenderer::need(const QuadKey& k, double priority) {
     if (retaining_ > 0) return;
-    if (prefetching_) prefetch_.push_back({k, priority * needScale_, true});
-    else needs_.push_back({k, priority});
+    if (prefetching_) {
+        prefetch_.push_back({k, priority * needScale_, true});
+        return;
+    }
+    int depth = 0;
+    auto s = surface_.find(k);
+    if (s == surface_.end() || !s->second.complete) {
+        depth = 1;
+        for (int up = 1; up <= 8 && k.level - up >= 0; ++up) {
+            auto a = surface_.find({k.level - up, k.x >> up, k.y >> up});
+            if (a != surface_.end() && a->second.version >= 0) break;
+            ++depth;
+        }
+    }
+    needs_.push_back({k, priority / (1.0 + depth * depth)});
 }
 
 void GlobeRenderer::traverse(const Camera& cam, const QuadKey& k, std::vector<DrawTile>& out) {
@@ -750,7 +763,7 @@ void GlobeRenderer::traverse(const Camera& cam, const QuadKey& k, std::vector<Dr
                     auto d = drawn_.find(kids[i]);
                     bool shown = d != drawn_.end() && d->second + 2 >= frame_;
                     if (shown || wasRefined(kids[i])) traverse(cam, kids[i], out);
-                    else out.push_back({kids[i], kin[i].distance});
+                    else out.push_back({kids[i], kin[i].distance, 1});
                 }
                 --retaining_;
                 return;
@@ -780,7 +793,7 @@ void GlobeRenderer::traverse(const Camera& cam, const QuadKey& k, std::vector<Dr
     }
     if (ni.nearRefine && ready(k))
         for (int i = 0; i < 4; ++i) prefetch(kids[i], ni.distance * 4.0);
-    out.push_back({k, ni.distance});
+    out.push_back({k, ni.distance, retaining_ > 0 ? 2 : 0});
 }
 
 void GlobeRenderer::processLoads() {
@@ -1336,13 +1349,13 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         zoomClock_ = tnowZoom;
         zoomGsd_ = cam.gsd;
         bool zoomingOut = zoomRate_ > 0.3;
+        urgentPrefetch_ = zoomingOut;
         overviewReused_ = !(moved || frame_ % 8 == 0 || overviewCache_.empty());
         if (!overviewReused_) {
             overview(2.0, zoomingOut ? 1.2 : 3.0);
             overview(4.0, zoomingOut ? 2.0 : 6.0);
             if (zoomRate_ > 1.5) overview(8.0, 3.0);
-            if (zoomingOut)
-                for (size_t i = own; i < prefetch_.size(); ++i) prefetch_[i].prefetch = false;
+
             overviewCache_.assign(prefetch_.begin() + static_cast<std::ptrdiff_t>(own), prefetch_.end());
             for (int i = 0; i < 6; ++i) lastOverviewKey_[i] = camKey[i];
         } else {
@@ -1379,7 +1392,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         double imageryRoom = static_cast<double>(imageryCapacity_) * 0.85 - static_cast<double>(activeImagery);
         double surfaceRoom = std::min(static_cast<double>(surfaceCapacity_) * 0.92 - static_cast<double>(seen.size()),
                                       2.5 * static_cast<double>(seen.size()) + 64.0);
-        int freshBudget = std::clamp(static_cast<int>(imageryRoom / 2.0), 4, zoomRate_ > 0.3 ? 96 : 32);
+        int freshBudget = std::clamp(static_cast<int>(imageryRoom / 2.0), 4, urgentPrefetch_ ? 96 : 32);
         int fresh = 0;
         size_t admitted = 0;
         std::sort(prefetch_.begin(), prefetch_.end(), [](const Need& a, const Need& b) { return a.priority < b.priority; });
@@ -1444,20 +1457,25 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         double priority;
         size_t index;
         bool render;
+        bool prefetch;
     };
     double visibleDone = -1;
     std::vector<Work> work;
     for (size_t i = 0; i < needs_.size(); ++i) {
         auto it = surface_.find(needs_[i].key);
+        bool pf = needs_[i].prefetch;
         if (it == surface_.end()) {
-            work.push_back({needs_[i].priority, i, true});
+            work.push_back({needs_[i].priority, i, true, pf});
         } else {
             it->second.used = frame_;
-            if (!it->second.complete && progressed(it->second)) work.push_back({needs_[i].priority * 1.5, i, true});
-            else if (!it->second.complete) work.push_back({needs_[i].priority, i, false});
+            if (!it->second.complete && progressed(it->second)) work.push_back({needs_[i].priority * 1.5, i, true, pf});
+            else if (!it->second.complete) work.push_back({needs_[i].priority, i, false, pf});
         }
     }
-    std::stable_sort(work.begin(), work.end(), [](const Work& a, const Work& b) { return a.priority < b.priority; });
+    std::stable_sort(work.begin(), work.end(), [](const Work& a, const Work& b) {
+        if (a.prefetch != b.prefetch) return !a.prefetch;
+        return a.priority < b.priority;
+    });
     int rasterLayers = 0;
     for (size_t l = 0; l < matrices_.size() && l < layers_.size(); ++l)
         if (!(l < vectorLayers_.size() && vectorLayers_[l])) ++rasterLayers;
@@ -1471,11 +1489,14 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     int renders = 0;
     for (const Work& w : work) {
         size_t i = w.index;
-        if (touched >= maxTouched) break;
-        ++touched;
-        bool speculative = needs_[i].prefetch;
-        if (speculative && visibleDone < 0) visibleDone = elapsedMs();
-        bool overBudget = renders > 0 && (elapsedMs() > budgetMs || (speculative && elapsedMs() - visibleDone > prefetchBudgetMs));
+        bool speculative = w.prefetch;
+        if (speculative) {
+            if (touched >= maxTouched) break;
+            ++touched;
+            if (visibleDone < 0) visibleDone = elapsedMs();
+        }
+        double specBudget = prefetchBudgetMs * (urgentPrefetch_ ? 3.0 : 1.0);
+        bool overBudget = renders > 0 && (elapsedMs() > budgetMs || (speculative && elapsedMs() - visibleDone > specBudget));
         if (!w.render || renders >= kSurfaceRendersPerFrame || verts.size() * sizeof(float) > kSurfaceBufferBytes / 2 || overBudget) {
             buildSurfaceJob(needs_[i].key, needs_[i].priority, nullptr, nullptr);
             continue;
@@ -1677,6 +1698,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     int blank = 0;
     int coarse = 0;
     int maxDepth = 0;
+    int deepLogged = 0;
     bool fading = false;
     double tnow = now();
     auto source = [&](const QuadKey& key, int minUp, sg_view& view, float uvx[4]) {
@@ -1726,6 +1748,24 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             if (ownSurface != surface_.end() && !ownSurface->second.complete) ++depth;
             if (depth >= 2) ++coarse;
             maxDepth = std::max(maxDepth, depth);
+            if (diagnostics_ && depth >= 3 && frame_ % 90 == 0 && deepLogged < 6) {
+                ++deepLogged;
+                bool needed = false;
+                for (const Need& n : needs_)
+                    if (n.key == dt.key) {
+                        needed = true;
+                        break;
+                    }
+                auto os = surface_.find(dt.key);
+                auto ot = terrain_.find(dt.key);
+                diag("deep frame %llu: L%d/%d/%d src L%d depth %d kind %s needed %d sticky %d surf %s missing %zu terr %s | needs %zu imagery %zu/%zu pending %d",
+                     static_cast<unsigned long long>(frame_), dt.key.level, dt.key.x, dt.key.y, src.level, depth,
+                     dt.kind == 1 ? "coverage" : dt.kind == 2 ? "retained" : "normal", needed ? 1 : 0, wasRefined(dt.key) ? 1 : 0,
+                     os == surface_.end() ? "-" : os->second.complete ? "C" : os->second.version < 0 ? "0" : "p",
+                     os == surface_.end() ? size_t(0) : os->second.missing.size(),
+                     ot == terrain_.end() ? "-" : ot->second.complete ? "C" : "p", needs_.size(), imagery_.size(), imageryCapacity_,
+                     loader_.pending());
+            }
         }
         auto own = surface_.find(dt.key);
         if (own == surface_.end() || !own->second.complete) ++incomplete;

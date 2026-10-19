@@ -16,7 +16,7 @@ size_t onData(char* ptr, size_t size, size_t n, void* user) {
 
 }
 
-Response get(const std::string& url, const std::string& userAgent) {
+Response getBackend(const std::string& url, const std::string& userAgent) {
     static std::once_flag once;
     std::call_once(once, [] { curl_global_init(CURL_GLOBAL_DEFAULT); });
     thread_local CURL* curl = curl_easy_init();

@@ -4,7 +4,7 @@
 
 namespace ote::net {
 
-Response get(const std::string& url, const std::string& userAgent) {
+Response getBackend(const std::string& url, const std::string& userAgent) {
     Response res;
     @autoreleasepool {
         static NSURLSession* session = [] {

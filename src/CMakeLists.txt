@@ -1,6 +1,7 @@
 add_library(opentakengine STATIC
     engine.cpp
     input/input_controller.cpp
+    net/http_faults.cpp
     capi.cpp
     core/geo.cpp
     core/camera.cpp

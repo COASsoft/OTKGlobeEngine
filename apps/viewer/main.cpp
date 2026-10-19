@@ -72,6 +72,7 @@ struct ViewerState {
     bool mouseDown = false;
     sapp_mousebutton mouseButton = SAPP_MOUSEBUTTON_LEFT;
     bool diag = false;
+    double zoomStartAfter = 0;
     int perfFrames = 0;
     double perfFrameMs = 0, perfFrameMax = 0, perfCpuMs = 0, perfCpuMax = 0;
     long long perfRenders = 0, perfBuilds = 0, perfUploads = 0;
@@ -85,7 +86,7 @@ struct ViewerState {
     ote::View zoomTarget;
     double zoomSeconds = 4.0;
     bool zoomStarted = false;
-    long long zoomFrames = 0, zoomIncomplete = 0, zoomMaxIncomplete = 0, zoomBadFrames = 0, zoomCoarseFrames = 0, zoomMaxDepth = 0;
+    long long zoomFrames = 0, zoomIncomplete = 0, zoomMaxIncomplete = 0, zoomBadFrames = 0, zoomCoarseFrames = 0, zoomMaxDepth = 0, zoomBlankFrames = 0;
     bool depth = true;
     double exaggeration = 1.0;
     std::string elevationDir;
@@ -281,7 +282,9 @@ void frame() {
         }
         state->settledFrames = state->engine.needsRedraw() ? 0 : state->settledFrames + 1;
         if (state->zoomTest) {
-            if (!state->zoomStarted && state->shotElapsed > 1.0 && !state->engine.needsRedraw()) {
+            bool startNow = state->zoomStartAfter > 0 ? state->shotElapsed > state->zoomStartAfter
+                                                      : (state->shotElapsed > 1.0 && !state->engine.needsRedraw());
+            if (!state->zoomStarted && startNow) {
                 state->engine.flyTo(state->zoomTarget, state->zoomSeconds);
                 state->zoomStarted = true;
             } else if (state->zoomStarted && state->engine.animating()) {
@@ -290,6 +293,7 @@ void frame() {
                 state->zoomIncomplete += inc;
                 state->zoomMaxIncomplete = std::max<long long>(state->zoomMaxIncomplete, inc);
                 if (state->engine.stats().coarseTiles > 0) ++state->zoomCoarseFrames;
+                if (state->engine.stats().blankTiles > 0) ++state->zoomBlankFrames;
                 state->zoomMaxDepth = std::max<long long>(state->zoomMaxDepth, state->engine.stats().maxFallbackDepth);
                 if (inc > 0) ++state->zoomBadFrames;
             }
@@ -331,7 +335,7 @@ void frame() {
                                  state->zoomFrames ? static_cast<double>(state->zoomIncomplete) / state->zoomFrames : 0.0,
                                  state->zoomMaxIncomplete);
                 if (state->zoomTest)
-                    std::fprintf(f, "zoom coarse_frames=%lld max_fallback_depth=%lld\n", state->zoomCoarseFrames, state->zoomMaxDepth);
+                    std::fprintf(f, "zoom coarse_frames=%lld max_fallback_depth=%lld blank_frames=%lld\n", state->zoomCoarseFrames, state->zoomMaxDepth, state->zoomBlankFrames);
                 std::fprintf(f, "features %zu viewshed %llu", state->engine.featureIds().size(),
                              static_cast<unsigned long long>(state->viewshed));
                 std::fputc(10, f);
@@ -685,6 +689,8 @@ void parseArgs(int argc, char** argv) {
             state->exaggeration = std::atof(argv[++i]);
         } else if (a == "--elevation-dir") {
             state->elevationDir = argv[++i];
+        } else if (a == "--zoom-start") {
+            state->zoomStartAfter = std::atof(argv[++i]);
         } else if (a == "--diag") {
             state->diag = std::atoi(argv[++i]) != 0;
         } else if (a == "--preset") {
