@@ -746,12 +746,19 @@ bool runScript() {
     }
     while (state->scriptNext < state->script.size() && state->script[state->scriptNext].at <= t && !state->dragging) {
         const auto& st = state->script[state->scriptNext++];
+        if (const char* dp = std::getenv("OTE_DIAG"))
+            if (FILE* df = std::fopen(dp, "a")) {
+                ote::View cv = state->engine.view();
+                std::fprintf(df, "input t=%.2f %s %.0f %.0f %.0f %.0f %.2f | view %.5f %.5f gsd %.2f tilt %.1f az %.1f\n", t, st.op.c_str(), st.v[0], st.v[1], st.v[2],
+                             st.v[3], st.v[4], cv.lat, cv.lon, cv.gsd, cv.tilt, cv.azimuth);
+                std::fclose(df);
+            }
         if (st.op == "wheel") in.wheel(st.v[0], st.v[1], 0, st.v[2], false, 0);
-        else if (st.op == "drag") {
+        else if (st.op == "drag" || st.op == "rdrag") {
             state->drag = st;
             state->drag.at = t;
             state->dragging = true;
-            in.pointerDown(77, st.v[0], st.v[1], ote::PointerType::Mouse, ote::MouseButton::Left, 0);
+            in.pointerDown(77, st.v[0], st.v[1], ote::PointerType::Mouse, st.op == "rdrag" ? ote::MouseButton::Right : ote::MouseButton::Left, 0);
         } else if (st.op == "view") {
             ote::View v;
             v.lat = st.v[0];
