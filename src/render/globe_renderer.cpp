@@ -69,7 +69,7 @@ constexpr size_t kUploadsPerFrame = 48;
 constexpr size_t kSurfaceBufferBytes = 4 * 1024 * 1024;
 constexpr double kRetrySeconds = 30.0;
 constexpr int kBaseZoom = 3;
-constexpr double kSkirt = 500.0;
+constexpr double kSkirtMax = 20000.0;
 constexpr double kUnknownMaxHeight = 4500.0;
 
 double spanDeg(int level) { return 180.0 / static_cast<double>(1 << level); }
@@ -521,7 +521,8 @@ void GlobeRenderer::buildTerrain(const QuadKey& k, TerrainTile& t, double priori
                                static_cast<float>(nz), hc});
         }
     }
-    double skirt = std::max({kSkirt, span * 111320.0 * 0.006, static_cast<double>(maxH - minH) * 0.25}) * std::max(1.0, exaggeration_);
+    double skirt = std::clamp(std::max({span * 111320.0 * 0.01, static_cast<double>(maxH - minH) * 0.25, 1.0}), 1.0, kSkirtMax) *
+                   std::max(1.0, exaggeration_);
     for (int e = 0; e < 4; ++e)
         for (int i = 0; i < kPosts; ++i) {
             int gi = e == 0 ? i : e == 1 ? i : e == 2 ? 0 : kGrid;
