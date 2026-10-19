@@ -169,5 +169,6 @@ std::vector<ImageryLayer> loadMobac(const std::string& xmlOrPath);
 void configureGfx(sg_desc& desc);
 void setAndroidJavaVm(void* vm);
 bool gdalAvailable();
+double geoidOffset(double lat, double lon);
 
 }

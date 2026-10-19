@@ -1,5 +1,7 @@
 #include "gdal/gdal_sources.hpp"
 
+#include "core/geoid.hpp"
+
 #include <cpl_conv.h>
 #include <gdal.h>
 #include <gdalwarper.h>
@@ -190,7 +192,9 @@ public:
             for (int i = 0; i < dw; ++i) {
                 float v = plane[static_cast<size_t>(j) * dw + i];
                 if (hasNoData && v == static_cast<float>(noData)) continue;
-                out.values[static_cast<size_t>(dy + j) * n + dx + i] = v;
+                double lat = out.maxY - (dy + j + 0.5) * (out.maxY - out.minY) / n;
+                double lon = out.minX + (dx + i + 0.5) * (out.maxX - out.minX) / n;
+                out.values[static_cast<size_t>(dy + j) * n + dx + i] = v + static_cast<float>(geoidHeight(lat, lon));
                 any = true;
             }
         return any ? 200 : 404;

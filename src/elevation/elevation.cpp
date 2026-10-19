@@ -1,5 +1,6 @@
 #include "elevation/elevation.hpp"
 
+#include "core/geoid.hpp"
 #include "gdal/gdal_sources.hpp"
 #include "raster/tile_provider.hpp"
 
@@ -19,6 +20,21 @@ namespace {
 
 constexpr float kNaN = std::numeric_limits<float>::quiet_NaN();
 constexpr size_t kGridCapacity = 192;
+
+void applyGeoid(HeightGrid& g, int srid) {
+    for (int r = 0; r < g.height; ++r) {
+        double y = g.maxY - (r + 0.5) * (g.maxY - g.minY) / g.height;
+        double lat = unprojectY(srid, y);
+        for (int c = 0; c < g.width; c += 8) {
+            double lon0 = unprojectX(srid, g.minX + (c + 0.5) * (g.maxX - g.minX) / g.width);
+            float n = static_cast<float>(geoidHeight(lat, lon0));
+            for (int k = c; k < std::min(c + 8, g.width); ++k) {
+                float& v = g.values[static_cast<size_t>(r) * g.width + k];
+                if (!std::isnan(v)) v += n;
+            }
+        }
+    }
+}
 
 class TerrariumProvider : public ElevationProvider {
 public:
@@ -47,6 +63,7 @@ public:
         }
         stbi_image_free(px);
         matrix_.tileBounds(z, x, y, out.minX, out.minY, out.maxX, out.maxY);
+        applyGeoid(out, 3857);
         return 200;
     }
 
@@ -176,6 +193,7 @@ public:
                 }
             }
         }
+        if (any) applyGeoid(out, 4326);
         return any ? 200 : 404;
     }
 

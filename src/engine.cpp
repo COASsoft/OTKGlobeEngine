@@ -5,6 +5,7 @@
 #include "core/camera.hpp"
 #include "render/globe_renderer.hpp"
 
+#include "core/geoid.hpp"
 #include "net/http.hpp"
 
 #include <sokol_gfx.h>
@@ -387,6 +388,8 @@ bool Engine::needsRedraw() const { return impl_->dirty || impl_->globe.busy(); }
 Stats Engine::stats() const { return impl_->globe.stats(); }
 
 void setAndroidJavaVm(void* vm) { net::setJavaVm(vm); }
+
+double geoidOffset(double lat, double lon) { return geoidHeight(lat, lon); }
 
 void configureGfx(sg_desc& desc) {
     desc.buffer_pool_size = 4096;

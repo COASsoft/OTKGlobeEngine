@@ -4,6 +4,7 @@ add_library(opentakengine STATIC
     core/geo.cpp
     core/camera.cpp
     core/mgrs.cpp
+    core/geoid.cpp
     raster/tile_loader.cpp
     raster/tile_matrix.cpp
     raster/tile_cache.cpp
@@ -73,6 +74,7 @@ ote_add_shaders(opentakengine
     render/shaders/mip.glsl
     render/shaders/model.glsl)
 ote_embed(opentakengine font_bold ${PROJECT_SOURCE_DIR}/assets/fonts/NotoSans-Bold-subset.ttf)
+ote_embed(opentakengine geoid_egm96 ${PROJECT_SOURCE_DIR}/assets/geoid/egm96-1deg.bin)
 
 add_library(opentakengine_c SHARED capi_shared.cpp)
 target_link_libraries(opentakengine_c PRIVATE opentakengine)
