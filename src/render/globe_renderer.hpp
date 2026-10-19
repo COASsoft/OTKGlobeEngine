@@ -227,6 +227,7 @@ private:
     std::unordered_map<QuadKey, std::uint64_t, QuadKeyHash> drawn_;
     std::unordered_map<QuadKey, std::uint64_t, QuadKeyHash> refined_;
     int syncBuilds_ = 0;
+    int retaining_ = 0;
     int usefulLevel_ = 22;
     std::vector<Need> overviewCache_;
     std::vector<Need> admittedCache_;

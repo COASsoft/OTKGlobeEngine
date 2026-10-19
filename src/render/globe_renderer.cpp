@@ -685,6 +685,7 @@ bool GlobeRenderer::progressed(const SurfaceTile& s) const {
 }
 
 void GlobeRenderer::need(const QuadKey& k, double priority) {
+    if (retaining_ > 0) return;
     if (prefetching_) prefetch_.push_back({k, priority * needScale_, true});
     else needs_.push_back({k, priority});
 }
@@ -734,12 +735,23 @@ void GlobeRenderer::traverse(const Camera& cam, const QuadKey& k, std::vector<Dr
     } else if (!ready(k) && k.level < maxRefine()) {
         if (!prefetching_ && wasRefined(k)) {
             bool drawable = true;
-            for (int i = 0; i < 4 && drawable; ++i)
-                if (info(cam, kids[i]).visible && terrain_.find(kids[i]) == terrain_.end()) drawable = false;
+            NodeInfo kin[4];
+            for (int i = 0; i < 4 && drawable; ++i) {
+                kin[i] = info(cam, kids[i]);
+                if (kin[i].visible && terrain_.find(kids[i]) == terrain_.end()) drawable = false;
+            }
             if (drawable) {
-                need(k, ni.distance);
+                need(k, ni.distance * 0.5);
                 refined_[k] = frame_;
-                for (int i = 0; i < 4; ++i) traverse(cam, kids[i], out);
+                ++retaining_;
+                for (int i = 0; i < 4; ++i) {
+                    if (!kin[i].visible) continue;
+                    auto d = drawn_.find(kids[i]);
+                    bool shown = d != drawn_.end() && d->second + 2 >= frame_;
+                    if (shown || wasRefined(kids[i])) traverse(cam, kids[i], out);
+                    else out.push_back({kids[i], kin[i].distance});
+                }
+                --retaining_;
                 return;
             }
         }
