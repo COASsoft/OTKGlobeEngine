@@ -13,7 +13,7 @@ struct sg_desc;
 
 namespace ote {
 
-enum class SourceType { Url, Wms, Wmts, MBTiles, GeoPackage, Osmdroid };
+enum class SourceType { Url, Wms, Wmts, MBTiles, GeoPackage, Osmdroid, Gdal };
 
 struct ImageryLayer {
     std::string name;
@@ -37,7 +37,7 @@ struct ImageryLayer {
     std::string userAgent;
 };
 
-enum class ElevationType { Terrarium, Directory };
+enum class ElevationType { Terrarium, Directory, Gdal };
 
 struct ElevationLayer {
     std::string name;
@@ -140,5 +140,6 @@ std::vector<ElevationLayer> defaultElevation();
 std::vector<ImageryLayer> loadMobac(const std::string& xmlOrPath);
 void configureGfx(sg_desc& desc);
 void setAndroidJavaVm(void* vm);
+bool gdalAvailable();
 
 }

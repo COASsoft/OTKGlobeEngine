@@ -59,6 +59,7 @@ struct ViewerState {
     bool depth = true;
     double exaggeration = 1.0;
     std::string elevationDir;
+    std::string gdalDem;
     int width = 1600;
     int height = 900;
     float t0x = 0, t0y = 0, t1x = 0, t1y = 0;
@@ -133,6 +134,12 @@ void init() {
             d.path = state->elevationDir;
             d.maxZoom = 14;
             elev.push_back(d);
+        }
+        if (!state->gdalDem.empty()) {
+            ote::ElevationLayer g;
+            g.type = ote::ElevationType::Gdal;
+            g.path = state->gdalDem;
+            elev.push_back(g);
         }
         for (auto& e : ote::defaultElevation()) elev.push_back(e);
         state->engine.setElevation(elev);
@@ -391,6 +398,14 @@ sapp_desc sokol_main(int argc, char* argv[]) {
             l.path = argv[++i];
             l.name = l.path;
             state->customLayers.push_back(l);
+        } else if (a == "--gdal") {
+            ote::ImageryLayer l;
+            l.type = ote::SourceType::Gdal;
+            l.path = argv[++i];
+            l.name = l.path;
+            state->customLayers.push_back(l);
+        } else if (a == "--gdal-dem") {
+            state->gdalDem = argv[++i];
         } else if (a == "--mobac") {
             for (auto& l : ote::loadMobac(argv[++i])) state->customLayers.push_back(l);
         } else if (a == "--download") {

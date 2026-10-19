@@ -17,6 +17,9 @@ struct FetchResult {
     int status = 0;
     std::vector<std::uint8_t> data;
     bool fromCache = false;
+    bool raw = false;
+    int width = 0;
+    int height = 0;
 };
 
 class TileProvider {

@@ -426,7 +426,7 @@ void FeatureLayer::drawOverlay(const Camera& cam, const GroundFn& ground, double
             if (!visible(e) || !project(e, sx, sy, sz) || sx < -64 || sy < -64 || sx > W + 64 || sy > H + 64) continue;
             double s = 22.0 * f.style.iconScale * dpi;
             double offset = 0;
-            if (f.style.icon != IconShape::None) {
+            if (f.style.icon != IconShape::Hidden) {
                 int shape = f.style.icon == IconShape::Circle ? 0 : f.style.icon == IconShape::Pin ? 1 : f.style.icon == IconShape::Square ? 2 : 3;
                 double cx = sx, cy = f.style.icon == IconShape::Pin ? sy - s * 0.5 : sy;
                 float c[4];

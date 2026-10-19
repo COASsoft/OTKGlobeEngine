@@ -16,7 +16,7 @@ enum class GeometryType { Point, LineString, Polygon };
 
 enum class AltitudeMode { ClampToGround, RelativeToGround, Absolute };
 
-enum class IconShape { Circle, Pin, Square, Triangle, None };
+enum class IconShape { Circle, Pin, Square, Triangle, Hidden };
 
 struct Geometry {
     GeometryType type = GeometryType::Point;

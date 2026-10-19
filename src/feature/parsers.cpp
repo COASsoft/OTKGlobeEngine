@@ -1,5 +1,7 @@
 #include "ote/features.hpp"
 
+#include "gdal/gdal_sources.hpp"
+
 #include <json.hpp>
 #include <miniz.h>
 #include <pugixml.hpp>
@@ -453,12 +455,12 @@ std::vector<Feature> parseFeatures(const std::string& path) {
     std::string ext = lower(p.extension().string());
     if (ext == ".shp") return parseShapefile(p);
     std::vector<std::uint8_t> bytes = readAll(p);
-    if (bytes.empty()) return {};
+    if (bytes.empty()) return parseWithOgr(path);
     if (ext == ".kmz") return parseKmz(bytes);
     if (ext == ".kml") return parseKmlText(reinterpret_cast<const char*>(bytes.data()), bytes.size());
     if (ext == ".gpx") return parseGpx(bytes);
     if (ext == ".json" || ext == ".geojson") return parseGeoJson(bytes);
-    return {};
+    return parseWithOgr(path);
 }
 
 }

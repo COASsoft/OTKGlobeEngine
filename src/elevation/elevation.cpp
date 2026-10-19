@@ -1,5 +1,6 @@
 #include "elevation/elevation.hpp"
 
+#include "gdal/gdal_sources.hpp"
 #include "raster/tile_provider.hpp"
 
 #include <stb_image.h>
@@ -298,8 +299,13 @@ ElevationManager::~ElevationManager() {
 void ElevationManager::setSources(const std::vector<ElevationLayer>& layers, TileCache* cache, std::atomic<bool>* offline) {
     std::vector<std::shared_ptr<ElevationProvider>> providers;
     for (const auto& l : layers) {
-        if (l.type == ElevationType::Directory) providers.push_back(std::make_shared<DirectoryProvider>(l));
-        else providers.push_back(std::make_shared<TerrariumProvider>(l, cache, offline));
+        if (l.type == ElevationType::Directory) {
+            providers.push_back(std::make_shared<DirectoryProvider>(l));
+        } else if (l.type == ElevationType::Gdal) {
+            if (auto p = makeGdalElevation(l)) providers.push_back(p);
+        } else {
+            providers.push_back(std::make_shared<TerrariumProvider>(l, cache, offline));
+        }
     }
     std::lock_guard lock(mutex_);
     layers_ = layers;

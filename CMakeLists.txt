@@ -7,6 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(OTE_BUILD_VIEWER "Build the demo viewer" ON)
+option(OTE_WITH_GDAL "Build the optional GDAL raster, elevation and vector module" OFF)
 
 if(APPLE)
     enable_language(OBJC OBJCXX)

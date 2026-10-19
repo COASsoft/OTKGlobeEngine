@@ -1,6 +1,7 @@
 #include "raster/tile_provider.hpp"
 
 #include "db/sqlite.hpp"
+#include "gdal/gdal_sources.hpp"
 #include "net/http.hpp"
 #include "raster/tile_cache.hpp"
 
@@ -259,8 +260,25 @@ std::string tileUrl(const ImageryLayer& layer, const TileMatrix& m, int z, int x
     return url;
 }
 
+namespace {
+class NullProvider : public TileProvider {
+public:
+    NullProvider() { matrix_ = TileMatrix::webMercator(0, 0, 256); }
+    FetchResult fetch(int, int, int) override {
+        FetchResult r;
+        r.status = 404;
+        return r;
+    }
+};
+}
+
 std::shared_ptr<TileProvider> makeProvider(const ImageryLayer& layer, TileCache* cache, std::atomic<bool>* offline) {
     switch (layer.type) {
+    case SourceType::Gdal: {
+        auto p = makeGdalRaster(layer);
+        if (p) return p;
+        return std::make_shared<NullProvider>();
+    }
     case SourceType::MBTiles:
         return std::make_shared<MBTilesProvider>(layer);
     case SourceType::GeoPackage:

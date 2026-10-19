@@ -180,7 +180,12 @@ void TileLoader::run() {
         tile.id = id;
         tile.generation = gen;
         FetchResult res = provider->fetch(id.z, id.x, id.y);
-        if (res.status == 200 && !res.data.empty()) {
+        if (res.status == 200 && res.raw) {
+            tile.ok = true;
+            tile.width = res.width;
+            tile.height = res.height;
+            tile.rgba = std::move(res.data);
+        } else if (res.status == 200 && !res.data.empty()) {
             int w = 0, h = 0, n = 0;
             unsigned char* px = stbi_load_from_memory(res.data.data(), static_cast<int>(res.data.size()), &w, &h, &n, 4);
             if (px) {

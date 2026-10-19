@@ -39,7 +39,7 @@ def sdk_root():
 
 
 def latest(path):
-    items = sorted((p for p in path.iterdir() if p.is_dir()), key=lambda p: [int(x) if x.isdigit() else x for x in p.name.replace("-", ".").split(".")])
+    items = sorted((p for p in path.iterdir() if p.is_dir()), key=lambda p: [int(x) if x.isdigit() else -1 for x in p.name.replace("-", ".").split(".")])
     return items[-1]
 
 
