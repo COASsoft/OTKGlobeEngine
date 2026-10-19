@@ -4,6 +4,7 @@
 #include "elevation/elevation.hpp"
 #include "feature/feature_layer.hpp"
 #include "model/model_layer.hpp"
+#include "tiles3d/tileset.hpp"
 #include "raster/tile_cache.hpp"
 #include "raster/tile_loader.hpp"
 
@@ -63,6 +64,8 @@ public:
     TileLoader& loader() { return loader_; }
     FeatureLayer& features() { return features_; }
     ModelLayer& models() { return models_; }
+    std::uint64_t addTileset(const std::string& uri, double maxSse, Vec3* center);
+    bool removeTileset(std::uint64_t id) { return tilesets_.erase(id) > 0; }
     const FeatureLayer& features() const { return features_; }
     const TileLoader& loader() const { return loader_; }
     void setImageryScale(double s) { imageryScale_ = s; }
@@ -173,6 +176,8 @@ private:
     ElevationManager elevation_{4};
     FeatureLayer features_;
     ModelLayer models_;
+    std::unordered_map<std::uint64_t, std::unique_ptr<Tileset3D>> tilesets_;
+    std::uint64_t nextTileset_ = 1;
     std::atomic<bool> offline_{false};
     std::vector<ImageryLayer> layers_;
     std::vector<TileMatrix> matrices_;

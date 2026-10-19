@@ -296,6 +296,12 @@ uint64_t ote_add_model(ote_engine* e, const char* path, double lat, double lon, 
 
 void ote_set_grid(ote_engine* e, int enabled) { e->engine.setGridEnabled(enabled != 0); }
 
+uint64_t ote_add_tileset(ote_engine* e, const char* path, double max_sse) {
+    return e->engine.addTileset(path ? path : "", max_sse > 0 ? max_sse : 16.0);
+}
+
+int ote_remove_tileset(ote_engine* e, uint64_t id) { return e->engine.removeTileset(id) ? 1 : 0; }
+
 uint64_t ote_viewshed(ote_engine* e, double lat, double lon, double height, double radius) {
     return e->engine.computeViewshed({lat, lon, 0}, height, radius);
 }

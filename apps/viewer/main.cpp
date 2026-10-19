@@ -52,6 +52,7 @@ struct ViewerState {
     int downloadMin = 0, downloadMax = 0;
     int downloadId = 0;
     std::vector<std::string> featureFiles;
+    std::vector<std::string> tilesets;
     std::vector<std::pair<std::string, ote::ModelPlacement>> models;
     std::string selected;
     bool hasHit = false;
@@ -174,6 +175,7 @@ void init() {
     state->engine.setElevationHeatmap(state->heat);
 
     for (const auto& [path, placement] : state->models) state->engine.addModel(path, placement);
+    for (const auto& t : state->tilesets) state->engine.addTileset(t);
     if (state->hasDownload)
         state->downloadId = state->engine.downloadRegion(0, state->download, state->downloadMin, state->downloadMax);
     state->engine.setView(state->startView);
@@ -499,6 +501,8 @@ sapp_desc sokol_main(int argc, char* argv[]) {
                                              &state->downloadMin, &state->downloadMax) == 6;
         } else if (a == "--hit") {
             state->hasHit = std::sscanf(argv[++i], "%lf,%lf", &state->hitX, &state->hitY) == 2;
+        } else if (a == "--tileset") {
+            state->tilesets.push_back(argv[++i]);
         } else if (a == "--model") {
             ote::ModelPlacement p;
             char path[1024] = {0};

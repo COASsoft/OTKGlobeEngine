@@ -107,9 +107,9 @@ bool parseGltf(const std::uint8_t* bytes, std::size_t size, const std::string& b
         cgltf_free(data);
         return false;
     }
-    for (cgltf_size i = 0; i < data->extensions_count; ++i) {
-        if (data->extensions[i].name && std::strcmp(data->extensions[i].name, "CESIUM_RTC") == 0 && data->extensions[i].data) {
-            nlohmann::json j = nlohmann::json::parse(data->extensions[i].data, nullptr, false);
+    for (cgltf_size i = 0; i < data->data_extensions_count; ++i) {
+        if (data->data_extensions[i].name && std::strcmp(data->data_extensions[i].name, "CESIUM_RTC") == 0 && data->data_extensions[i].data) {
+            nlohmann::json j = nlohmann::json::parse(data->data_extensions[i].data, nullptr, false);
             if (j.contains("center") && j["center"].is_array() && j["center"].size() == 3)
                 for (int k = 0; k < 3; ++k) out.rtc[k] = j["center"][k].get<double>();
         }
@@ -297,7 +297,7 @@ std::shared_ptr<GpuMesh> ModelLayer::load(const std::string& path) {
     std::vector<std::uint8_t> bytes = readFile(p);
     if (bytes.empty()) return nullptr;
     CpuModel cpu;
-    if (!parseGltf(bytes.data(), bytes.size(), p.parent_path().u8string(), cpu)) return nullptr;
+    if (!parseGltf(bytes.data(), bytes.size(), p.parent_path().string(), cpu)) return nullptr;
     auto mesh = upload(cpu);
     meshes_[path] = mesh;
     return mesh;

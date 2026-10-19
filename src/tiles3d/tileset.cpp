@@ -116,7 +116,7 @@ Vec3 applyDir(const Mat4& m, Vec3 v) {
 }
 
 std::string lowerExt(const std::string& path) {
-    std::string e = std::filesystem::u8path(path).extension().u8string();
+    std::string e = std::filesystem::u8path(path).extension().string();
     std::transform(e.begin(), e.end(), e.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return e;
 }
@@ -207,7 +207,6 @@ Vec3 Tileset3D::center() const { return root_ ? root_->center : Vec3{}; }
 
 bool Tileset3D::contentReady(const Node* n) const {
     if (n->content.empty()) return true;
-    if (n->external) return n->external->root_ != nullptr;
     return n->state == 2 || n->state == 3;
 }
 
@@ -223,11 +222,6 @@ void Tileset3D::select(Node* n, const Camera& cam, const std::array<double, 16>&
         if (pl[0] * rel.x + pl[1] * rel.y + pl[2] * rel.z + pl[3] < -n->radius) return;
     }
     n->used = frame;
-    if (n->external) {
-        if (n->external->root_) n->external->select(n->external->root_.get(), cam, frustum, frame);
-        n->external->draw_.swap(n->external->draw_);
-        return;
-    }
     double dist = std::max(length(rel) - n->radius, 1.0);
     double sse = n->geometricError * cam.height / (2.0 * dist * std::tan(cam.fovY * 0.5));
     bool refine = sse > maxSse_ && !n->children.empty();
@@ -264,12 +258,11 @@ void Tileset3D::update(const Camera& cam, const std::array<double, 16>& frustum,
         while (!done_.empty()) {
             Done d = std::move(done_.front());
             done_.pop_front();
-            if (d.ok && d.model) {
-                if (d.model->primitives.empty() && d.node->content.size() > 5 &&
-                    lowerExt(d.node->content) == ".json") {
-                    d.node->state = 3;
-                    continue;
-                }
+            if (d.ok && d.tileset) {
+                const auto& j = *static_cast<const nlohmann::json*>(d.tileset.get());
+                d.node->children.push_back(parse(&j["root"], d.node->transform, d.tilesetBase, d.node->add));
+                d.node->state = 3;
+            } else if (d.ok && d.model) {
                 d.node->mesh = ModelLayer::upload(*d.model);
                 d.node->state = 2;
                 resident_ += d.node->mesh->bytes;
@@ -282,8 +275,6 @@ void Tileset3D::update(const Camera& cam, const std::array<double, 16>& frustum,
     draw_.clear();
     wanted_.clear();
     select(root_.get(), cam, frustum, frame);
-    for (Node* n : loaded_)
-        if (n->external) n->external->update(cam, frustum, frame);
     std::sort(wanted_.begin(), wanted_.end(), [](const Job& a, const Job& b) { return a.priority > b.priority; });
     {
         std::lock_guard lock(mutex_);
@@ -344,7 +335,12 @@ void Tileset3D::run() {
         Done d;
         d.node = job.node;
         std::vector<std::uint8_t> bytes = source_->read(job.path);
-        if (!bytes.empty()) {
+        if (!bytes.empty() && lowerExt(job.path) == ".json") {
+            auto j = std::make_shared<nlohmann::json>(nlohmann::json::parse(bytes.begin(), bytes.end(), nullptr, false));
+            d.ok = !j->is_discarded() && j->contains("root");
+            d.tileset = j;
+            d.tilesetBase = TileSource::dir(job.path);
+        } else if (!bytes.empty()) {
             auto model = std::make_unique<CpuModel>();
             d.ok = parseB3dm(bytes.data(), bytes.size(), *model);
             d.model = std::move(model);

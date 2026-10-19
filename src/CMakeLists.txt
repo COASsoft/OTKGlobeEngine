@@ -17,6 +17,7 @@ add_library(opentakengine STATIC
     feature/feature_layer.cpp
     feature/grid.cpp
     model/model_layer.cpp
+    tiles3d/tileset.cpp
     render/globe_renderer.cpp
     render/gfx_impl.cpp)
 

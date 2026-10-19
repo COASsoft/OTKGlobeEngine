@@ -161,6 +161,9 @@ public:
     std::uint64_t addModel(const std::string& path, const ModelPlacement& placement);
     bool updateModel(std::uint64_t id, const ModelPlacement& placement);
     bool removeModel(std::uint64_t id);
+    std::uint64_t addTileset(const std::string& pathOrUrl, double maxScreenSpaceError = 16.0);
+    bool removeTileset(std::uint64_t id);
+    bool tilesetCenter(std::uint64_t id, double& lat, double& lon, double& alt) const;
 
     void setGridEnabled(bool enabled);
     std::uint64_t addImageOverlay(const ImageOverlay& overlay);

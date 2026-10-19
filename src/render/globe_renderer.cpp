@@ -255,6 +255,7 @@ void GlobeRenderer::shutdown() {
         }
         overlays_.clear();
         features_.shutdown();
+        tilesets_.clear();
         models_.shutdown();
     }
     terrain_.clear();
@@ -281,6 +282,16 @@ void GlobeRenderer::setMemoryBudget(int megabytes) {
     imageryCapacity_ = static_cast<size_t>(mb * 0.25 / 0.262);
     terrainCapacity_ = static_cast<size_t>(mb * 0.20 / 0.034);
     freeSurfacePool_ = std::max<size_t>(16, surfaceCapacity_ / 16);
+}
+
+std::uint64_t GlobeRenderer::addTileset(const std::string& uri, double maxSse, Vec3* center) {
+    auto t = std::make_unique<Tileset3D>(uri, maxSse);
+    if (!t->valid()) return 0;
+    if (center) *center = t->center();
+    std::uint64_t id = nextTileset_++;
+    tilesets_[id] = std::move(t);
+    busy_ = true;
+    return id;
 }
 
 void GlobeRenderer::setOffline(bool offline) {
@@ -1306,6 +1317,12 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         sg_draw(0, kIndexCount, 1);
     }
     models_.draw(cam, [this](double lat, double lon) { return elevationAt(lat, lon); });
+    bool tilesBusy = false;
+    for (auto& [id, t] : tilesets_) {
+        t->update(cam, frustum_, frame_);
+        t->draw(cam, models_);
+        tilesBusy = tilesBusy || t->busy();
+    }
     features_.drawOverlay(cam, [this](double lat, double lon) { return elevationAt(lat, lon); }, dpiScale_, flipSurface_);
     sg_end_pass();
 
@@ -1322,7 +1339,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     stats_.maxLevel = maxLevel;
     stats_.incompleteTiles = incomplete;
     viewComplete_ = incomplete == 0;
-    busy_ = pending || fading || stats_.pendingRequests > 0 || renders > 0 || builds > 0 || elevationChanged;
+    busy_ = pending || fading || tilesBusy || stats_.pendingRequests > 0 || renders > 0 || builds > 0 || elevationChanged;
     if (trace_) {
         int waitImagery = 0, waitTerrain = 0, unrendered = 0;
         for (auto& dt : tiles) {

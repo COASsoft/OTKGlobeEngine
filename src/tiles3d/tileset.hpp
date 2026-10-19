@@ -41,7 +41,6 @@ private:
         std::string base;
         std::vector<std::unique_ptr<Node>> children;
         std::shared_ptr<GpuMesh> mesh;
-        std::shared_ptr<Tileset3D> external;
         int state = 0;
         std::uint64_t used = 0;
     };
@@ -53,6 +52,8 @@ private:
     struct Done {
         Node* node;
         std::unique_ptr<CpuModel> model;
+        std::shared_ptr<void> tileset;
+        std::string tilesetBase;
         bool ok = false;
     };
 

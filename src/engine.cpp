@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <unordered_map>
 
 #include "core/camera.hpp"
 #include "render/globe_renderer.hpp"
@@ -17,6 +18,7 @@ struct Engine::Impl {
     Camera camera;
     GlobeRenderer globe;
     bool dirty = true;
+    std::unordered_map<std::uint64_t, Vec3> tilesetCenters;
     bool flying = false;
     View flyFrom, flyTo;
     double flyDuration = 0;
@@ -204,6 +206,30 @@ bool Engine::updateModel(std::uint64_t id, const ModelPlacement& placement) {
 bool Engine::removeModel(std::uint64_t id) {
     impl_->dirty = true;
     return impl_->globe.models().remove(id);
+}
+
+std::uint64_t Engine::addTileset(const std::string& path, double maxSse) {
+    Vec3 c;
+    std::uint64_t id = impl_->globe.addTileset(path, maxSse, &c);
+    if (id) impl_->tilesetCenters[id] = c;
+    impl_->dirty = true;
+    return id;
+}
+
+bool Engine::removeTileset(std::uint64_t id) {
+    impl_->tilesetCenters.erase(id);
+    impl_->dirty = true;
+    return impl_->globe.removeTileset(id);
+}
+
+bool Engine::tilesetCenter(std::uint64_t id, double& lat, double& lon, double& alt) const {
+    auto it = impl_->tilesetCenters.find(id);
+    if (it == impl_->tilesetCenters.end()) return false;
+    GeoPoint g = ecefToGeodetic(it->second);
+    lat = g.lat;
+    lon = g.lon;
+    alt = g.alt;
+    return true;
 }
 
 void Engine::setGridEnabled(bool enabled) {

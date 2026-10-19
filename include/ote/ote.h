@@ -93,6 +93,8 @@ OTE_API void ote_clear_features(ote_engine* e);
 OTE_API uint64_t ote_hit_test(const ote_engine* e, double sx, double sy, double radius_px);
 OTE_API uint64_t ote_add_model(ote_engine* e, const char* path, double lat, double lon, double heading, double scale);
 OTE_API void ote_set_grid(ote_engine* e, int enabled);
+OTE_API uint64_t ote_add_tileset(ote_engine* e, const char* path_or_url, double max_sse);
+OTE_API int ote_remove_tileset(ote_engine* e, uint64_t id);
 OTE_API uint64_t ote_viewshed(ote_engine* e, double lat, double lon, double height, double radius);
 
 OTE_API int ote_to_mgrs(double lat, double lon, int digits, char* out, int capacity);
