@@ -13,7 +13,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <d3d11.h>
 
-bool saveImagePng(sg_image image, int width, int height, const void* device, const void* context, const char* path) {
+bool readImageRgba(sg_image image, int width, int height, const void* device, const void* context, std::vector<unsigned char>& px) {
     auto* dev = static_cast<ID3D11Device*>(const_cast<void*>(device));
     auto* ctx = static_cast<ID3D11DeviceContext*>(const_cast<void*>(context));
     auto* tex = static_cast<ID3D11Texture2D*>(const_cast<void*>(sg_d3d11_query_image_info(image).tex2d));
@@ -31,7 +31,7 @@ bool saveImagePng(sg_image image, int width, int height, const void* device, con
     bool ok = false;
     if (SUCCEEDED(ctx->Map(staging, 0, D3D11_MAP_READ, 0, &map))) {
         bool bgra = desc.Format == DXGI_FORMAT_B8G8R8A8_UNORM || desc.Format == DXGI_FORMAT_B8G8R8A8_UNORM_SRGB;
-        std::vector<unsigned char> px(static_cast<size_t>(width) * height * 4);
+        px.assign(static_cast<size_t>(width) * height * 4, 0);
         for (int y = 0; y < height; ++y) {
             const auto* row = static_cast<const unsigned char*>(map.pData) + static_cast<size_t>(y) * map.RowPitch;
             for (int x = 0; x < width; ++x) {
@@ -44,7 +44,7 @@ bool saveImagePng(sg_image image, int width, int height, const void* device, con
             }
         }
         ctx->Unmap(staging, 0);
-        ok = stbi_write_png(path, width, height, 4, px.data(), width * 4) != 0;
+        ok = true;
     }
     staging->Release();
     return ok;
@@ -63,7 +63,7 @@ bool saveImagePng(sg_image image, int width, int height, const void* device, con
 #include <GL/gl.h>
 #endif
 
-bool saveImagePng(sg_image image, int width, int height, const void*, const void*, const char* path) {
+bool readImageRgba(sg_image image, int width, int height, const void*, const void*, std::vector<unsigned char>& out) {
     sg_gl_image_info info = sg_gl_query_image_info(image);
     std::vector<unsigned char> px(static_cast<size_t>(width) * height * 4);
 #if defined(SOKOL_GLES3)
@@ -79,13 +79,23 @@ bool saveImagePng(sg_image image, int width, int height, const void*, const void
     glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, px.data());
     glBindTexture(GL_TEXTURE_2D, 0);
 #endif
-    std::vector<unsigned char> flipped(px.size());
+    out.resize(px.size());
     for (int y = 0; y < height; ++y)
-        std::memcpy(&flipped[static_cast<size_t>(y) * width * 4], &px[static_cast<size_t>(height - 1 - y) * width * 4],
-                    static_cast<size_t>(width) * 4);
-    for (size_t i = 3; i < flipped.size(); i += 4) flipped[i] = 255;
-    return stbi_write_png(path, width, height, 4, flipped.data(), width * 4) != 0;
+        std::memcpy(&out[static_cast<size_t>(y) * width * 4], &px[static_cast<size_t>(height - 1 - y) * width * 4], static_cast<size_t>(width) * 4);
+    for (size_t i = 3; i < out.size(); i += 4) out[i] = 255;
+    sg_reset_state_cache();
+    return true;
 }
 #else
-bool saveImagePng(sg_image, int, int, const void*, const void*, const char*) { return false; }
+bool readImageRgba(sg_image, int, int, const void*, const void*, std::vector<unsigned char>&) { return false; }
 #endif
+
+bool saveImagePng(sg_image image, int width, int height, const void* device, const void* context, const char* path) {
+    std::vector<unsigned char> px;
+    if (!readImageRgba(image, width, height, device, context, px)) return false;
+    return stbi_write_png(path, width, height, 4, px.data(), width * 4) != 0;
+}
+
+bool writePng(const char* path, int width, int height, const std::vector<unsigned char>& rgba) {
+    return stbi_write_png(path, width, height, 4, rgba.data(), width * 4) != 0;
+}
