@@ -122,6 +122,7 @@ private:
     struct Need {
         QuadKey key;
         double priority = 0;
+        bool prefetch = false;
     };
     struct NodeInfo {
         bool visible = false;
@@ -160,7 +161,15 @@ private:
     bool ready(const QuadKey& k) const;
     bool progressed(const SurfaceTile& s) const;
     void need(const QuadKey& k, double priority);
-    void prefetch(const QuadKey& k, double priority) { prefetch_.push_back({k, priority}); }
+    void prefetch(const QuadKey& k, double priority) {
+        if (prefetching_) return;
+        for (size_t i = prefetch_.size(), n = 0; i-- > 0 && n < 6; ++n)
+            if (prefetch_[i].key == k) {
+                prefetch_[i].priority = std::min(prefetch_[i].priority, priority);
+                return;
+            }
+        prefetch_.push_back({k, priority, true});
+    }
     void traverse(const Camera& cam, const QuadKey& k, std::vector<DrawTile>& out);
     TerrainTile& terrain(const QuadKey& k);
     void buildTerrain(const QuadKey& k, TerrainTile& t, double priority);
@@ -219,8 +228,20 @@ private:
     std::unordered_map<QuadKey, std::uint64_t, QuadKeyHash> refined_;
     int syncBuilds_ = 0;
     int usefulLevel_ = 22;
+    std::vector<Need> overviewCache_;
+    std::vector<Need> admittedCache_;
+    bool overviewReused_ = false;
+    double lastOverviewKey_[6] = {};
     bool budgetSet_ = false;
     static double physicalMemoryMb();
+    static double videoMemoryMb();
+    void profileMark(int section);
+    bool profiling_ = false;
+    std::string profilePath_;
+    std::chrono::steady_clock::time_point profileStart_;
+    double profileLast_ = 0;
+    double profileAcc_[8] = {};
+    int profileFrames_ = 0;
     bool glMips_ = false;
     void generateMips(const std::vector<sg_image>& images);
     int maxRefine() const;

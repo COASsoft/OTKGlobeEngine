@@ -389,7 +389,13 @@ void frame() {
 #if defined(__ANDROID__)
             __android_log_write(ANDROID_LOG_INFO, "OpenTAKEngine", line);
 #else
-            if (std::getenv("OTE_PERF")) std::fprintf(stderr, "%s\n", line);
+            if (const char* pf = std::getenv("OTE_PERF")) {
+                if (FILE* pfile = std::fopen(pf, "a")) {
+                    std::fputs(line, pfile);
+                    std::fputc(10, pfile);
+                    std::fclose(pfile);
+                }
+            }
 #endif
             state->perfFrames = 0;
             state->perfFrameMs = state->perfFrameMax = state->perfCpuMs = state->perfCpuMax = 0;
