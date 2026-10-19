@@ -774,6 +774,12 @@ void parseArgs(int argc, char** argv) {
             state->zoomStartAfter = std::atof(argv[++i]);
         } else if (a == "--diag") {
             state->diag = std::atoi(argv[++i]) != 0;
+        } else if (a == "--lod-blend") {
+#if defined(_WIN32)
+            _putenv_s("OTE_LOD_BLEND", argv[++i]);
+#else
+            setenv("OTE_LOD_BLEND", argv[++i], 1);
+#endif
         } else if (a == "--holes") {
             state->holes = std::atoi(argv[++i]) != 0;
 #if defined(_WIN32)

@@ -106,6 +106,7 @@ bool GlobeRenderer::init() {
     fitPools();
     sg_backend backend = sg_query_backend();
     holeMarker_ = std::getenv("OTE_HOLES") != nullptr;
+    if (const char* v = std::getenv("OTE_LOD_BLEND")) lodBlend_ = std::atoi(v) != 0;
     if (std::getenv("OTE_DIAG")) diagnostics_ = true;
     if (const char* pp = std::getenv("OTE_PROFILE")) {
         profiling_ = true;
@@ -346,6 +347,7 @@ void GlobeRenderer::setMemoryBudget(int megabytes) {
     budgetSet_ = true;
     double mb = std::clamp(megabytes, 96, 8192);
     surfaceCapacity_ = static_cast<size_t>(mb * 0.60 / 0.35);
+    budgetMb_ = mb;
     imageryCapacity_ = static_cast<size_t>(mb * 0.20 / 0.262);
     terrainCapacity_ = static_cast<size_t>(mb * 0.20 / 0.034);
     freeSurfacePool_ = std::max<size_t>(16, surfaceCapacity_ / 16);
@@ -372,8 +374,22 @@ void GlobeRenderer::fitPools() {
         imageryCapacity_ = std::max<size_t>(48, static_cast<size_t>(imageryCapacity_ * f));
     }
     freeSurfacePool_ = std::max<size_t>(16, surfaceCapacity_ / 16);
-    size_t bufferRoom = buffers > 2048 + 2 * imageryCapacity_ ? buffers - 1024 - 2 * imageryCapacity_ : buffers / 2;
+    size_t slots = surfaceSlots(surfaceCapacity_);
+    size_t byImages = imageRoom > slots ? imageRoom - slots : 0;
+    size_t byViews = viewRoom > slots * perSurface ? viewRoom - slots * perSurface : 0;
+    imageryPoolMax_ = std::max(imageryCapacity_, std::min({byImages, byViews, imageryCapacity_ * 4}));
+    size_t bufferRoom = buffers > 2048 + 2 * imageryPoolMax_ ? buffers - 1024 - 2 * imageryPoolMax_ : buffers / 2;
     terrainCapacity_ = std::min(terrainCapacity_, std::max<size_t>(256, bufferRoom));
+}
+
+size_t GlobeRenderer::imageryLimit() const {
+    if (budgetMb_ <= 0 || imageryPoolMax_ <= imageryCapacity_) return imageryCapacity_;
+    const double surfaceMb = kSurfaceSize * kSurfaceSize * 4.0 * 4.0 / 3.0 / 1048576.0;
+    const double imageryMb = 256.0 * 256.0 * 4.0 / 1048576.0;
+    const double terrainMb = kVertexCount * kStride * 4.0 / 1048576.0;
+    double room = budgetMb_ - static_cast<double>(surface_.size() + freeSurfaces_.size()) * surfaceMb - static_cast<double>(terrain_.size()) * terrainMb;
+    size_t fit = room > 0 ? static_cast<size_t>(room / imageryMb) : 0;
+    return std::clamp(fit, imageryCapacity_, imageryPoolMax_);
 }
 
 void GlobeRenderer::poolPressure(const char* what) {
@@ -383,6 +399,7 @@ void GlobeRenderer::poolPressure(const char* what) {
     else {
         surfaceCapacity_ = std::max<size_t>(64, std::min(surfaceCapacity_, surface_.size()) * 9 / 10);
         imageryCapacity_ = std::max<size_t>(48, std::min(imageryCapacity_, imagery_.size()) * 9 / 10);
+        imageryPoolMax_ = std::max(imageryCapacity_, std::min(imageryPoolMax_, imagery_.size() * 9 / 10));
         freeSurfacePool_ = std::max<size_t>(16, surfaceCapacity_ / 16);
         while (freeSurfaces_.size() > freeSurfacePool_) {
             dropSurface(freeSurfaces_.back());
@@ -827,8 +844,8 @@ void GlobeRenderer::explain(const Camera& cam, double lat, double lon, const cha
 }
 
 double GlobeRenderer::seamSkirt(const QuadKey& k, const TerrainTile& t,
-                                const std::unordered_map<QuadKey, const TerrainTile*, QuadKeyHash>& drawn) const {
-    if (t.edges.size() != static_cast<size_t>(4) * kPosts) return t.skirt;
+                                const std::unordered_map<QuadKey, const TerrainTile*, QuadKeyHash>& drawn, int coarser[4]) const {
+    for (int e = 0; e < 4; ++e) coarser[e] = 0;
     auto profile = [](const TerrainTile& tile, int e, double s) {
         double f = std::clamp(s, 0.0, 1.0) * kGrid;
         int i = std::min(static_cast<int>(f), kGrid - 1);
@@ -857,7 +874,10 @@ double GlobeRenderer::seamSkirt(const QuadKey& k, const TerrainTile& t,
         for (int up = 0; up <= nk.level && found.empty(); ++up) {
             QuadKey anc{nk.level - up, nk.x >> up, nk.y >> up};
             auto it = drawn.find(anc);
-            if (it != drawn.end()) found.push_back({anc, it->second});
+            if (it != drawn.end()) {
+                found.push_back({anc, it->second});
+                coarser[dir] = up;
+            }
         }
         if (found.empty()) {
             std::vector<QuadKey> frontier{nk};
@@ -877,6 +897,7 @@ double GlobeRenderer::seamSkirt(const QuadKey& k, const TerrainTile& t,
                 frontier.swap(next);
             }
         }
+        if (t.edges.size() != static_cast<size_t>(4) * kPosts) continue;
         for (const auto& [nkey, nt] : found) {
             if (nt->edges.size() != static_cast<size_t>(4) * kPosts) continue;
             const Bounds b = bounds(nkey);
@@ -1128,12 +1149,13 @@ void GlobeRenderer::processLoads() {
 }
 
 void GlobeRenderer::evict() {
-    if (imagery_.size() > imageryCapacity_) {
+    const size_t imageryCap = imageryLimit();
+    if (imagery_.size() > imageryCap) {
         std::vector<std::pair<std::uint64_t, TileId>> c;
         for (auto& [k, t] : imagery_)
             if (k.z > kBaseZoom && t.used + 1 < frame_) c.push_back({t.used, k});
         std::sort(c.begin(), c.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
-        for (size_t i = 0; i < c.size() && imagery_.size() > imageryCapacity_; ++i) {
+        for (size_t i = 0; i < c.size() && imagery_.size() > imageryCap; ++i) {
             auto it = imagery_.find(c[i].second);
             dropImagery(it->second);
             imagery_.erase(it);
@@ -1537,6 +1559,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     requests_.clear();
     needs_.clear();
     prefetch_.clear();
+    for (const auto& [bk, bp] : blendParents_) need(bk, bp);
+    blendParents_.clear();
     elevation_.beginFrame();
     processLoads();
     bool elevationChanged = elevation_.processResults(32);
@@ -1689,7 +1713,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         size_t activeImagery = 0;
         for (const auto& [id, t] : imagery_)
             if (t.used + 1 >= frame_) ++activeImagery;
-        double imageryRoom = static_cast<double>(imageryCapacity_) * 0.85 - static_cast<double>(activeImagery);
+        double imageryRoom = static_cast<double>(imageryLimit()) * 0.85 - static_cast<double>(activeImagery);
         double surfaceRoom = std::min(static_cast<double>(surfaceCapacity_) * 0.92 - static_cast<double>(seen.size()),
                                       2.5 * static_cast<double>(seen.size()) + 64.0);
         int freshBudget = std::clamp(static_cast<int>(imageryRoom / 2.0), 4, urgentPrefetch_ ? 96 : 32);
@@ -1789,7 +1813,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     int rasterLayers = 0;
     for (size_t l = 0; l < matrices_.size() && l < layers_.size(); ++l)
         if (!(l < vectorLayers_.size() && vectorLayers_[l])) ++rasterLayers;
-    const int maxTouched = std::clamp(static_cast<int>(imageryCapacity_ * 0.8 / (2.5 * std::max(rasterLayers, 1))), 16, 128);
+    const int maxTouched = std::clamp(static_cast<int>(imageryLimit() * 0.8 / (2.5 * std::max(rasterLayers, 1))), 16, 128);
     int touched = 0;
     int hollowSkipped = 0;
 
@@ -2165,6 +2189,28 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 }
             }
         }
+        int coarser[4];
+        double skirtLen = seamSkirt(dt.key, tt, drawnNow, coarser);
+        int lodUp = 0;
+        for (int e = 0; e < 4; ++e)
+            if (coarser[e] > 0) lodUp = lodUp == 0 ? coarser[e] : std::min(lodUp, coarser[e]);
+        float lodEdges[4] = {0, 0, 0, 0};
+        if (lodBlend_ && lodUp > 0 && src.level == dt.key.level) {
+            QuadKey got = src;
+            if (blend >= 1.0f) {
+                sg_view pv = view2;
+                float pu[4] = {uvx2[0], uvx2[1], uvx2[2], uvx2[3]};
+                got = source(dt.key, lodUp, pv, pu);
+                if (got.level >= 0 && got.level < src.level) {
+                    view2 = pv;
+                    std::memcpy(uvx2, pu, sizeof(pu));
+                }
+            }
+            if (blend < 1.0f || (got.level >= 0 && got.level < src.level))
+                for (int e = 0; e < 4; ++e) lodEdges[e] = coarser[e] > 0 ? 1.0f : 0.0f;
+            QuadKey parent{dt.key.level - lodUp, dt.key.x >> lodUp, dt.key.y >> lodUp};
+            if (blend >= 1.0f && got.level != parent.level && blendParents_.size() < 256) blendParents_.push_back({parent, dt.distance * 2.0});
+        }
         if (sg_query_buffer_state(tt.vbuf) != SG_RESOURCESTATE_VALID) {
             ++invalidResources_;
             continue;
@@ -2182,7 +2228,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         toFloat(mvp, vsp.mvp);
         std::memcpy(vsp.uv_xform, uvx, sizeof(uvx));
         std::memcpy(vsp.uv_xform2, uvx2, sizeof(uvx2));
-        vsp.skirt[0] = static_cast<float>(seamSkirt(dt.key, tt, drawnNow));
+        vsp.skirt[0] = static_cast<float>(skirtLen);
+        std::memcpy(vsp.edges, lodEdges, sizeof(lodEdges));
         vsp.skirt[1] = static_cast<float>(kPosts * kPosts);
         vsp.center[0] = static_cast<float>(tt.center.x);
         vsp.center[1] = static_cast<float>(tt.center.y);

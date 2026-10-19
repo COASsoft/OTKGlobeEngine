@@ -50,6 +50,7 @@ public:
     void setOffline(bool offline);
     void setMemoryBudget(int megabytes);
     void fitPools();
+    size_t imageryLimit() const;
     void poolPressure(const char* what);
     void setElevation(const std::vector<ElevationLayer>& layers);
     void setTerrainEnabled(bool enabled);
@@ -172,7 +173,8 @@ private:
 
     static Bounds bounds(const QuadKey& k);
     NodeInfo info(const Camera& cam, const QuadKey& k) const;
-    double seamSkirt(const QuadKey& k, const TerrainTile& t, const std::unordered_map<QuadKey, const TerrainTile*, QuadKeyHash>& drawn) const;
+    double seamSkirt(const QuadKey& k, const TerrainTile& t, const std::unordered_map<QuadKey, const TerrainTile*, QuadKeyHash>& drawn,
+                     int coarser[4]) const;
     bool ready(const QuadKey& k) const;
     bool progressed(const SurfaceTile& s) const;
     void need(const QuadKey& k, double priority);
@@ -293,6 +295,7 @@ private:
     sg_pipeline surfacePipeline_{};
     sg_pipeline skyPipeline_{};
     bool holeMarker_ = false;
+    bool lodBlend_ = true;
     sg_shader vfillShader_{};
     sg_shader vlineShader_{};
     sg_pipeline vfillPipeline_{};
@@ -331,6 +334,9 @@ private:
     bool ready_ = false;
     Stats stats_;
     int invalidResources_ = 0;
+    double budgetMb_ = 0;
+    size_t imageryPoolMax_ = 0;
+    std::vector<std::pair<QuadKey, double>> blendParents_;
     std::chrono::steady_clock::time_point start_ = std::chrono::steady_clock::now();
 };
 
