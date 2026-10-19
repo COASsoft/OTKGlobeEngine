@@ -244,7 +244,7 @@ void frame() {
         double benchMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - benchStart).count();
         ++state->frames;
         state->shotElapsed += sapp_frame_duration();
-        if (state->shotViewshed && !state->viewshed && state->shotElapsed > 3.0 && !state->engine.needsRedraw()) {
+        if (state->shotViewshed && !state->viewshed && state->shotElapsed > 1.0 && !state->engine.needsRedraw()) {
             ote::View v = state->engine.view();
             state->viewshed = state->engine.computeViewshed({v.lat, v.lon, 0}, 2.0, 5000.0);
         }
@@ -270,7 +270,8 @@ void frame() {
         }
         zooming = zooming || (state->bench > 0 && state->benchDone < state->bench);
         bool downloading = (state->downloadId && !state->engine.downloadStatus(state->downloadId).finished) || zooming;
-        bool settled = state->shotElapsed > 1.0 && state->settledFrames > 10 && !downloading;
+        bool settled = state->shotElapsed > 1.0 && state->settledFrames > 10 && !downloading &&
+                       (!state->shotViewshed || state->viewshed);
         if (settled || state->shotElapsed >= state->shotTimeout) {
             bool ok = saveImagePng(state->shotColor, state->width, state->height,
 #if defined(SOKOL_D3D11)
