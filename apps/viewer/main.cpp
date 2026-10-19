@@ -126,9 +126,13 @@ void frame() {
 #endif
                                    state->shotPath.c_str());
             ote::Stats s = state->engine.stats();
-            std::printf("%s frames=%d settled=%d tiles=%d L%d imagery=%d pending=%d\n", ok ? "saved" : "failed",
-                        state->frames, settled ? 1 : 0, s.terrainTiles, s.maxLevel, s.imageryTextures, s.pendingRequests);
-            std::fflush(stdout);
+            std::string logPath = state->shotPath + ".txt";
+            if (FILE* f = std::fopen(logPath.c_str(), "w")) {
+                std::fprintf(f, "%s frames=%d seconds=%.1f settled=%d tiles=%d L%d imagery=%d pending=%d\n",
+                             ok ? "saved" : "failed", state->frames, state->shotElapsed, settled ? 1 : 0,
+                             s.terrainTiles, s.maxLevel, s.imageryTextures, s.pendingRequests);
+                std::fclose(f);
+            }
             sapp_quit();
         }
         return;
