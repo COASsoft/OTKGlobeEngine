@@ -436,7 +436,7 @@ ote::MouseButton mouseButton(sapp_mousebutton b) {
     case SAPP_MOUSEBUTTON_MIDDLE:
         return ote::MouseButton::Middle;
     default:
-        return ote::MouseButton::None;
+        return ote::MouseButton::NoButton;
     }
 }
 

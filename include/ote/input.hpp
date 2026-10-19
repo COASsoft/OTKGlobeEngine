@@ -10,7 +10,7 @@ class Engine;
 
 enum class PointerType { Mouse, Touch, Pen };
 
-enum class MouseButton { None, Left, Right, Middle };
+enum class MouseButton { NoButton, Left, Right, Middle };
 
 enum Modifier : int { ModShift = 1, ModCtrl = 2, ModAlt = 4, ModSuper = 8 };
 
@@ -84,7 +84,7 @@ public:
 
 private:
     using Clock = std::chrono::steady_clock;
-    enum class Mode { None, Pending, Pan, RotateTilt, ZoomDrag, MultiPending, Multi, Tilt };
+    enum class Mode { Idle, Pending, Pan, RotateTilt, ZoomDrag, MultiPending, Multi, Tilt };
     struct Pointer {
         int id = 0;
         PointerType type = PointerType::Touch;
@@ -112,7 +112,7 @@ private:
     InputSettings settings_;
     double width_ = 1, height_ = 1, dpi_ = 1;
     std::vector<Pointer> pointers_;
-    Mode mode_ = Mode::None;
+    Mode mode_ = Mode::Idle;
     bool moved_ = false;
     bool longPressFired_ = false;
     int maxPointers_ = 0;

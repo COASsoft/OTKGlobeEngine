@@ -223,7 +223,7 @@ void InputController::pointerCancel(int id) { endPointer(id, true); }
 
 void InputController::cancelAll() {
     pointers_.clear();
-    mode_ = Mode::None;
+    mode_ = Mode::Idle;
     flinging_ = false;
     samples_.clear();
 }
@@ -238,7 +238,7 @@ void InputController::endPointer(int id, bool cancelled) {
     Clock::time_point now = Clock::now();
     if (pointers_.empty()) {
         Mode ended = mode_;
-        mode_ = Mode::None;
+        mode_ = Mode::Idle;
         if (cancelled) {
             samples_.clear();
             tapArmed_ = false;
