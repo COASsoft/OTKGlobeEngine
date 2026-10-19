@@ -3,6 +3,10 @@ add_library(opentakengine STATIC
     core/geo.cpp
     core/camera.cpp
     raster/tile_loader.cpp
+    raster/tile_matrix.cpp
+    raster/tile_cache.cpp
+    raster/tile_provider.cpp
+    raster/mobac.cpp
     render/globe_renderer.cpp
     render/gfx_impl.cpp)
 
@@ -33,6 +37,7 @@ target_include_directories(opentakengine
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${stb_SOURCE_DIR})
 target_compile_definitions(opentakengine PUBLIC ${OTE_GFX_BACKEND})
+target_link_libraries(opentakengine PRIVATE ote_sqlite pugixml::pugixml)
 if(MSVC)
     target_compile_options(opentakengine PRIVATE /W3 /utf-8)
     target_compile_definitions(opentakengine PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)

@@ -55,6 +55,34 @@ void Engine::setLayers(const std::vector<ImageryLayer>& layers) {
     impl_->dirty = true;
 }
 
+std::vector<ImageryLayer> Engine::layers() const { return impl_->globe.layers(); }
+
+void Engine::setCacheDirectory(const std::string& dir) {
+    impl_->globe.setCacheDirectory(dir);
+    impl_->dirty = true;
+}
+
+void Engine::setOffline(bool offline) {
+    impl_->globe.setOffline(offline);
+    impl_->dirty = true;
+}
+
+int Engine::downloadRegion(int layer, const Region& region, int minZoom, int maxZoom) {
+    return impl_->globe.loader().startDownload(layer, region, minZoom, maxZoom);
+}
+
+std::int64_t Engine::countRegionTiles(int layer, const Region& region, int minZoom, int maxZoom) const {
+    const auto& m = impl_->globe.matrices();
+    if (layer < 0 || layer >= static_cast<int>(m.size())) return 0;
+    std::int64_t n = 0;
+    for (const auto& r : regionRanges(m[layer], region, minZoom, maxZoom)) n += r.count();
+    return n;
+}
+
+DownloadStatus Engine::downloadStatus(int id) const { return impl_->globe.loader().downloadStatus(id); }
+
+void Engine::cancelDownload(int id) { impl_->globe.loader().cancelDownload(id); }
+
 void Engine::setImageryScale(double scale) {
     impl_->globe.setImageryScale(scale);
     impl_->dirty = true;

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<customMultiLayerMapSource>
+  <name>Test multi</name>
+  <layers>
+    <customMapSource>
+      <name>Esri</name>
+      <minZoom>0</minZoom>
+      <maxZoom>19</maxZoom>
+      <tileType>jpg</tileType>
+      <url>https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{$z}/{$y}/{$x}</url>
+    </customMapSource>
+    <customWmsMapSource>
+      <name>USGS Hydro WMS 4326</name>
+      <minZoom>4</minZoom>
+      <maxZoom>17</maxZoom>
+      <tileType>png</tileType>
+      <version>1.3.0</version>
+      <layers>0</layers>
+      <url>https://basemap.nationalmap.gov/arcgis/services/USGSHydroCached/MapServer/WMSServer?</url>
+      <coordinatesystem>EPSG:4326</coordinatesystem>
+    </customWmsMapSource>
+  </layers>
+</customMultiLayerMapSource>

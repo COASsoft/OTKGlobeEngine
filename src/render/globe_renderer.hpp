@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/camera.hpp"
+#include "raster/tile_cache.hpp"
 #include "raster/tile_loader.hpp"
 
 #include <sokol_gfx.h>
@@ -34,6 +35,12 @@ public:
     bool init();
     void shutdown();
     void setLayers(const std::vector<ImageryLayer>& layers);
+    const std::vector<ImageryLayer>& layers() const { return layers_; }
+    const std::vector<TileMatrix>& matrices() const { return matrices_; }
+    void setCacheDirectory(const std::string& dir);
+    void setOffline(bool offline) { loader_.setOffline(offline); }
+    TileLoader& loader() { return loader_; }
+    const TileLoader& loader() const { return loader_; }
     void setImageryScale(double s) { imageryScale_ = s; }
     void setDpiScale(double s) { dpiScale_ = s; }
     void render(Camera& cam, const sg_swapchain* swapchain, const sg_attachments* attachments, int width, int height);
@@ -86,11 +93,14 @@ private:
     void evict();
     bool buildSurfaceJob(const QuadKey& k, double priority, SurfaceJob* job, std::vector<float>* verts);
     void requestBase();
+    ImageryTexture* findTexture(const TileId& id, const TileMatrix& m, double priority, bool& missing, TileId& src);
     double now() const;
     void want(const TileId& id, double priority);
 
+    TileCache cache_;
     TileLoader loader_{6};
     std::vector<ImageryLayer> layers_;
+    std::vector<TileMatrix> matrices_;
     std::unordered_map<QuadKey, TerrainTile, QuadKeyHash> terrain_;
     std::unordered_map<QuadKey, SurfaceTile, QuadKeyHash> surface_;
     std::unordered_map<TileId, ImageryTexture, TileIdHash> imagery_;

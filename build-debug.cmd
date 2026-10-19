@@ -1,5 +1,6 @@
 @echo off
 setlocal
+cd /d "%~dp0"
 set "PATH=%PATH%;%ProgramFiles(x86)%\Microsoft Visual Studio\Installer"
 for /f "usebackq delims=" %%i in (`vswhere -latest -products * -property installationPath`) do set "VSPATH=%%i"
 call "%VSPATH%\VC\Auxiliary\Build\vcvars64.bat" >nul || exit /b 1

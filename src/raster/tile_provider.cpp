@@ -4,6 +4,7 @@
 #include "net/http.hpp"
 #include "raster/tile_cache.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <mutex>
 

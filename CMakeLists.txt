@@ -21,7 +21,22 @@ FetchContent_Declare(sokol
 FetchContent_Declare(stb
     GIT_REPOSITORY https://github.com/nothings/stb.git
     GIT_TAG 2c980bb59875b0d32144a71867fbdebb2f77cd20)
-FetchContent_MakeAvailable(sokol stb)
+FetchContent_Declare(sqlite
+    URL https://www.sqlite.org/2026/sqlite-amalgamation-3540100.zip)
+FetchContent_Declare(pugixml
+    GIT_REPOSITORY https://github.com/zeux/pugixml.git
+    GIT_TAG v1.16)
+FetchContent_MakeAvailable(sokol stb sqlite)
+set(PUGIXML_NO_EXCEPTIONS ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(pugixml)
+
+add_library(ote_sqlite STATIC ${sqlite_SOURCE_DIR}/sqlite3.c)
+target_include_directories(ote_sqlite PUBLIC ${sqlite_SOURCE_DIR})
+target_compile_definitions(ote_sqlite PRIVATE SQLITE_THREADSAFE=1 SQLITE_OMIT_LOAD_EXTENSION SQLITE_DEFAULT_WAL_SYNCHRONOUS=1)
+if(UNIX AND NOT APPLE AND NOT ANDROID)
+    find_package(Threads REQUIRED)
+    target_link_libraries(ote_sqlite PUBLIC Threads::Threads)
+endif()
 
 include(cmake/shaders.cmake)
 
