@@ -122,7 +122,20 @@ std::vector<std::uint64_t> Engine::featureIds() const { return impl_->globe.feat
 
 std::vector<std::uint64_t> Engine::loadFeatures(const std::string& path) {
     std::vector<std::uint64_t> ids;
-    for (const Feature& f : parseFeatures(path)) ids.push_back(addFeature(f));
+    ParsedFile parsed = parseFile(path);
+    for (const Feature& f : parsed.features) ids.push_back(addFeature(f));
+    for (const GroundOverlay& g : parsed.overlays) {
+        ImageOverlay o;
+        o.north = g.north;
+        o.south = g.south;
+        o.east = g.east;
+        o.west = g.west;
+        o.width = g.width;
+        o.height = g.height;
+        o.rgba = g.rgba;
+        o.opacity = g.opacity;
+        addImageOverlay(o);
+    }
     return ids;
 }
 

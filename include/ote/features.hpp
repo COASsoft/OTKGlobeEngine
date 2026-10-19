@@ -47,6 +47,24 @@ struct Feature {
     bool visible = true;
 };
 
+struct GroundOverlay {
+    std::string name;
+    double north = 0;
+    double south = 0;
+    double east = 0;
+    double west = 0;
+    int width = 0;
+    int height = 0;
+    std::vector<std::uint8_t> rgba;
+    float opacity = 1.0f;
+};
+
+struct ParsedFile {
+    std::vector<Feature> features;
+    std::vector<GroundOverlay> overlays;
+};
+
+ParsedFile parseFile(const std::string& path);
 std::vector<Feature> parseFeatures(const std::string& path);
 
 inline std::uint32_t argb(std::uint8_t a, std::uint8_t r, std::uint8_t g, std::uint8_t b) {

@@ -3,6 +3,7 @@
 #include "gdal/gdal_sources.hpp"
 
 #include <json.hpp>
+#include <stb_image.h>
 #include <miniz.h>
 #include <pugixml.hpp>
 
@@ -11,6 +12,7 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <sstream>
 
@@ -172,10 +174,41 @@ void kmlGeometry(const pugi::xml_node& g, Feature& f) {
     f.geometries.push_back(std::move(geom));
 }
 
-std::vector<Feature> parseKmlText(const char* text, size_t size) {
+using Resolver = std::function<std::vector<std::uint8_t>(const std::string&)>;
+
+void kmlGroundOverlays(const pugi::xml_document& doc, const Resolver& resolve, std::vector<GroundOverlay>& out) {
+    for (auto n : doc.select_nodes("//GroundOverlay")) {
+        pugi::xml_node g = n.node();
+        pugi::xml_node box = g.child("LatLonBox");
+        std::string href = g.child("Icon").child_value("href");
+        if (!box || href.empty() || !resolve) continue;
+        std::vector<std::uint8_t> bytes = resolve(href);
+        if (bytes.empty()) continue;
+        int w = 0, h = 0, c = 0;
+        unsigned char* px = stbi_load_from_memory(bytes.data(), static_cast<int>(bytes.size()), &w, &h, &c, 4);
+        if (!px) continue;
+        GroundOverlay o;
+        o.name = g.child_value("name");
+        o.north = box.child("north").text().as_double();
+        o.south = box.child("south").text().as_double();
+        o.east = box.child("east").text().as_double();
+        o.west = box.child("west").text().as_double();
+        o.width = w;
+        o.height = h;
+        o.rgba.assign(px, px + static_cast<size_t>(w) * h * 4);
+        stbi_image_free(px);
+        std::string color = g.child_value("color");
+        if (color.size() == 8) o.opacity = static_cast<float>(std::stoul(color.substr(0, 2), nullptr, 16)) / 255.0f;
+        if (o.north > o.south && o.east > o.west) out.push_back(std::move(o));
+    }
+}
+
+std::vector<Feature> parseKmlText(const char* text, size_t size, const Resolver& resolve = {},
+                                  std::vector<GroundOverlay>* overlays = nullptr) {
     std::vector<Feature> out;
     pugi::xml_document doc;
     if (!doc.load_buffer(text, size)) return out;
+    if (overlays) kmlGroundOverlays(doc, resolve, *overlays);
     std::map<std::string, KmlStyle> styles;
     std::map<std::string, std::string> maps;
     for (auto n : doc.select_nodes("//Style")) {
@@ -208,7 +241,7 @@ std::vector<Feature> parseKmlText(const char* text, size_t size) {
     return out;
 }
 
-std::vector<Feature> parseKmz(const std::vector<std::uint8_t>& bytes) {
+std::vector<Feature> parseKmz(const std::vector<std::uint8_t>& bytes, std::vector<GroundOverlay>* overlays = nullptr) {
     std::vector<Feature> out;
     mz_zip_archive zip{};
     if (!mz_zip_reader_init_mem(&zip, bytes.data(), bytes.size(), 0)) return out;
@@ -227,7 +260,20 @@ std::vector<Feature> parseKmz(const std::vector<std::uint8_t>& bytes) {
         size_t size = 0;
         void* data = mz_zip_reader_extract_to_heap(&zip, static_cast<mz_uint>(index), &size, 0);
         if (data) {
-            out = parseKmlText(static_cast<const char*>(data), size);
+            Resolver resolve = [&zip](const std::string& href) {
+                std::vector<std::uint8_t> r;
+                int i = mz_zip_reader_locate_file(&zip, href.c_str(), nullptr, 0);
+                if (i < 0) return r;
+                size_t n = 0;
+                void* p = mz_zip_reader_extract_to_heap(&zip, static_cast<mz_uint>(i), &n, 0);
+                if (p) {
+                    const auto* b = static_cast<const std::uint8_t*>(p);
+                    r.assign(b, b + n);
+                    mz_free(p);
+                }
+                return r;
+            };
+            out = parseKmlText(static_cast<const char*>(data), size, resolve, overlays);
             mz_free(data);
         }
     }
@@ -450,17 +496,33 @@ std::vector<Feature> parseShapefile(const std::filesystem::path& path) {
 
 }
 
-std::vector<Feature> parseFeatures(const std::string& path) {
+ParsedFile parseFile(const std::string& path) {
+    ParsedFile out;
     std::filesystem::path p = std::filesystem::u8path(path);
     std::string ext = lower(p.extension().string());
-    if (ext == ".shp") return parseShapefile(p);
+    if (ext == ".shp") {
+        out.features = parseShapefile(p);
+        return out;
+    }
     std::vector<std::uint8_t> bytes = readAll(p);
-    if (bytes.empty()) return parseWithOgr(path);
-    if (ext == ".kmz") return parseKmz(bytes);
-    if (ext == ".kml") return parseKmlText(reinterpret_cast<const char*>(bytes.data()), bytes.size());
-    if (ext == ".gpx") return parseGpx(bytes);
-    if (ext == ".json" || ext == ".geojson") return parseGeoJson(bytes);
-    return parseWithOgr(path);
+    if (bytes.empty()) {
+        out.features = parseWithOgr(path);
+    } else if (ext == ".kmz") {
+        out.features = parseKmz(bytes, &out.overlays);
+    } else if (ext == ".kml") {
+        std::filesystem::path dir = p.parent_path();
+        Resolver resolve = [dir](const std::string& href) { return readAll(dir / std::filesystem::u8path(href)); };
+        out.features = parseKmlText(reinterpret_cast<const char*>(bytes.data()), bytes.size(), resolve, &out.overlays);
+    } else if (ext == ".gpx") {
+        out.features = parseGpx(bytes);
+    } else if (ext == ".json" || ext == ".geojson") {
+        out.features = parseGeoJson(bytes);
+    } else {
+        out.features = parseWithOgr(path);
+    }
+    return out;
 }
+
+std::vector<Feature> parseFeatures(const std::string& path) { return parseFile(path).features; }
 
 }
