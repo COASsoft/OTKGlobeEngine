@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -10,14 +11,28 @@ struct sg_desc;
 
 namespace ote {
 
+enum class SourceType { Url, Wms, Wmts, MBTiles, GeoPackage, Osmdroid };
+
 struct ImageryLayer {
     std::string name;
+    SourceType type = SourceType::Url;
     std::string url;
+    std::string path;
+    std::string table;
     std::vector<std::string> servers;
     int minZoom = 0;
     int maxZoom = 19;
+    int srid = 3857;
+    int tileSize = 256;
     bool tms = false;
+    bool cache = true;
     float opacity = 1.0f;
+    std::string wmsLayers;
+    std::string wmsStyles;
+    std::string wmsFormat = "image/png";
+    std::string wmsVersion = "1.1.1";
+    std::string wmsExtra;
+    std::string userAgent;
 };
 
 struct View {
@@ -37,6 +52,21 @@ struct Stats {
     int maxLevel = 0;
 };
 
+struct DownloadStatus {
+    std::int64_t total = 0;
+    std::int64_t done = 0;
+    std::int64_t failed = 0;
+    bool finished = false;
+    bool cancelled = false;
+};
+
+struct Region {
+    double west = 0;
+    double south = 0;
+    double east = 0;
+    double north = 0;
+};
+
 class Engine {
 public:
     Engine();
@@ -49,7 +79,10 @@ public:
 
     void setViewport(int width, int height, float dpiScale);
     void setLayers(const std::vector<ImageryLayer>& layers);
+    std::vector<ImageryLayer> layers() const;
     void setImageryScale(double scale);
+    void setCacheDirectory(const std::string& dir);
+    void setOffline(bool offline);
 
     View view() const;
     void setView(const View& v);
@@ -59,6 +92,11 @@ public:
     void zoomAt(double sx, double sy, double factor);
     void rotate(double degrees);
     void tiltBy(double degrees);
+
+    int downloadRegion(int layer, const Region& region, int minZoom, int maxZoom);
+    std::int64_t countRegionTiles(int layer, const Region& region, int minZoom, int maxZoom) const;
+    DownloadStatus downloadStatus(int id) const;
+    void cancelDownload(int id);
 
     void frame(const sg_swapchain& swapchain);
     void frameOffscreen(const sg_attachments& attachments, int width, int height);
@@ -71,6 +109,7 @@ private:
 };
 
 std::vector<ImageryLayer> defaultLayers();
+std::vector<ImageryLayer> loadMobac(const std::string& xmlOrPath);
 void configureGfx(sg_desc& desc);
 
 }
