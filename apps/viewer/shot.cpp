@@ -5,6 +5,7 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>
 
+#include <cstring>
 #include <vector>
 
 #if defined(SOKOL_D3D11)
@@ -47,6 +48,43 @@ bool saveImagePng(sg_image image, int width, int height, const void* device, con
     }
     staging->Release();
     return ok;
+}
+#elif defined(SOKOL_GLCORE) || defined(SOKOL_GLES3)
+#if defined(_WIN32)
+#define NOMINMAX
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <GL/gl.h>
+#elif defined(__APPLE__)
+#include <OpenGL/gl3.h>
+#elif defined(__ANDROID__)
+#include <GLES3/gl3.h>
+#else
+#include <GL/gl.h>
+#endif
+
+bool saveImagePng(sg_image image, int width, int height, const void*, const void*, const char* path) {
+    sg_gl_image_info info = sg_gl_query_image_info(image);
+    std::vector<unsigned char> px(static_cast<size_t>(width) * height * 4);
+#if defined(SOKOL_GLES3)
+    GLuint fb = 0;
+    glGenFramebuffers(1, &fb);
+    glBindFramebuffer(GL_FRAMEBUFFER, fb);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, info.tex[info.active_slot], 0);
+    glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, px.data());
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDeleteFramebuffers(1, &fb);
+#else
+    glBindTexture(GL_TEXTURE_2D, info.tex[info.active_slot]);
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, px.data());
+    glBindTexture(GL_TEXTURE_2D, 0);
+#endif
+    std::vector<unsigned char> flipped(px.size());
+    for (int y = 0; y < height; ++y)
+        std::memcpy(&flipped[static_cast<size_t>(y) * width * 4], &px[static_cast<size_t>(height - 1 - y) * width * 4],
+                    static_cast<size_t>(width) * 4);
+    for (size_t i = 3; i < flipped.size(); i += 4) flipped[i] = 255;
+    return stbi_write_png(path, width, height, 4, flipped.data(), width * 4) != 0;
 }
 #else
 bool saveImagePng(sg_image, int, int, const void*, const void*, const char*) { return false; }
