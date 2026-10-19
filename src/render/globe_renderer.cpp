@@ -588,7 +588,30 @@ void GlobeRenderer::buildTerrain(const QuadKey& k, TerrainTile& t, double priori
                 edgeDev = std::max(edgeDev, std::abs(edge(i) - (edge(a) * (1.0 - f) + edge(z) * f)));
             }
     }
-    double skirt = std::clamp(std::max({span * 111320.0 * 0.01, static_cast<double>(maxH - minH) * 0.25, edgeDev * 1.5, 1.0}), 1.0, kSkirtMax) *
+    if (terrainEnabled_ && !elevation_.empty())
+        for (int coarse : {kGrid / 2 + 1, kGrid / 4 + 1}) {
+            std::vector<float> ch;
+            elevation_.gridFor(b.west, b.south, b.east, b.north, coarse, priority, ch);
+            if (ch.size() != static_cast<size_t>(coarse) * coarse) continue;
+            const int step = kGrid / (coarse - 1);
+            for (int e = 0; e < 4; ++e)
+                for (int i = 0; i <= kGrid; ++i) {
+                    int gi = e < 2 ? i : (e == 2 ? 0 : kGrid);
+                    int gj = e < 2 ? (e == 0 ? 0 : kGrid) : i;
+                    double fine = h[static_cast<size_t>(gj + 1) * n + (gi + 1)];
+                    int a = (i / step) * step, z = std::min(a + step, kGrid);
+                    double f = z == a ? 0.0 : static_cast<double>(i - a) / (z - a);
+                    auto at = [&](int p) {
+                        int ci = e < 2 ? p / step : (e == 2 ? 0 : coarse - 1);
+                        int cj = e < 2 ? (e == 0 ? 0 : coarse - 1) : p / step;
+                        return static_cast<double>(ch[static_cast<size_t>(cj) * coarse + ci]);
+                    };
+                    double c0 = at(a), c1 = at(z);
+                    if (std::isnan(c0) || std::isnan(c1)) continue;
+                    edgeDev = std::max(edgeDev, std::abs(fine - (c0 * (1.0 - f) + c1 * f) * exaggeration_));
+                }
+        }
+    double skirt = std::clamp(std::max({span * 111320.0 * 0.02, static_cast<double>(maxH - minH) * 0.25, edgeDev * 1.5, 1.0}), 1.0, kSkirtMax) *
                    std::max(1.0, exaggeration_);
     for (int e = 0; e < 4; ++e)
         for (int i = 0; i < kPosts; ++i) {
