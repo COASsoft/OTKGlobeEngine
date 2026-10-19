@@ -780,6 +780,12 @@ void parseArgs(int argc, char** argv) {
 #else
             setenv("OTE_LOD_BLEND", argv[++i], 1);
 #endif
+        } else if (a == "--margin") {
+#if defined(_WIN32)
+            _putenv_s("OTE_MARGIN", argv[++i]);
+#else
+            setenv("OTE_MARGIN", argv[++i], 1);
+#endif
         } else if (a == "--holes") {
             state->holes = std::atoi(argv[++i]) != 0;
 #if defined(_WIN32)
