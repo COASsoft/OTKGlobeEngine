@@ -67,6 +67,10 @@ struct Engine::Impl {
     }
 
     void followTerrain() {
+        if (camera.firstPerson) {
+            camera.update();
+            return;
+        }
         double h = globe.elevationAt(camera.focus.lat, camera.focus.lon);
         if (std::abs(h - camera.focus.alt) > 0.01) {
             camera.focus.alt = h;
@@ -342,6 +346,13 @@ View Engine::view() const {
 
 void Engine::setView(const View& v) {
     Camera& c = impl_->camera;
+    if (c.firstPerson) {
+        c.fpPosition = {v.lat, v.lon, 0};
+        c.fpHeading = v.azimuth;
+        c.update();
+        impl_->dirty = true;
+        return;
+    }
     c.focus = {v.lat, v.lon, v.alt};
     c.gsd = v.gsd;
     c.azimuth = v.azimuth;
@@ -359,8 +370,66 @@ bool Engine::pick(double sx, double sy, double& lat, double& lon) const {
     return true;
 }
 
+void Engine::setFirstPerson(bool enabled, double height) {
+    Camera& c = impl_->camera;
+    if (enabled == c.firstPerson) return;
+    if (enabled) {
+        c.fpPosition = {c.focus.lat, c.focus.lon, 0};
+        c.fpHeight = height;
+        c.fpHeading = c.azimuth;
+        c.fpPitch = 0;
+        c.firstPerson = true;
+    } else {
+        c.firstPerson = false;
+        c.focus = {c.fpPosition.lat, c.fpPosition.lon, impl_->globe.elevationAt(c.fpPosition.lat, c.fpPosition.lon)};
+        c.azimuth = c.fpHeading;
+        c.tilt = 60;
+        c.setRange(400);
+    }
+    c.update();
+    impl_->dirty = true;
+}
+
+bool Engine::firstPerson() const { return impl_->camera.firstPerson; }
+
+void Engine::walk(double forward, double right) {
+    Camera& c = impl_->camera;
+    if (!c.firstPerson) return;
+    double h = c.fpHeading * kDegToRad;
+    double north = forward * std::cos(h) - right * std::sin(h);
+    double east = forward * std::sin(h) + right * std::cos(h);
+    c.fpPosition.lat += north / 111320.0;
+    c.fpPosition.lon += east / (111320.0 * std::max(std::cos(c.fpPosition.lat * kDegToRad), 0.01));
+    c.update();
+    impl_->dirty = true;
+}
+
+void Engine::look(double heading, double pitch) {
+    Camera& c = impl_->camera;
+    if (!c.firstPerson) return;
+    c.fpHeading += heading;
+    c.fpPitch += pitch;
+    c.update();
+    impl_->dirty = true;
+}
+
+void Engine::set3D(bool enabled) {
+    Camera& c = impl_->camera;
+    c.lock2d = !enabled;
+    if (!enabled && c.firstPerson) setFirstPerson(false);
+    impl_->globe.setTerrainEnabled(enabled);
+    c.update();
+    impl_->dirty = true;
+}
+
+bool Engine::is3D() const { return !impl_->camera.lock2d; }
+
 void Engine::pan(double x0, double y0, double x1, double y1) {
     Camera& c = impl_->camera;
+    if (c.firstPerson) {
+        look((x0 - x1) * 0.15, (y1 - y0) * 0.15);
+        return;
+    }
     Vec3 p0, p1;
     if (impl_->pickGround(x0, y0, p0) && impl_->pickGround(x1, y1, p1)) {
         impl_->moveCamera(p1, p0);
@@ -380,6 +449,10 @@ void Engine::pan(double x0, double y0, double x1, double y1) {
 
 void Engine::zoomAt(double sx, double sy, double factor) {
     Camera& c = impl_->camera;
+    if (c.firstPerson) {
+        walk((1.0 - factor) * std::max(c.fpHeight * 10.0, 20.0), 0);
+        return;
+    }
     Vec3 before;
     bool hit = impl_->pickGround(sx, sy, before);
     c.gsd *= factor;
@@ -390,12 +463,20 @@ void Engine::zoomAt(double sx, double sy, double factor) {
 }
 
 void Engine::rotate(double degrees) {
+    if (impl_->camera.firstPerson) {
+        look(degrees, 0);
+        return;
+    }
     impl_->camera.azimuth += degrees;
     impl_->camera.update();
     impl_->dirty = true;
 }
 
 void Engine::tiltBy(double degrees) {
+    if (impl_->camera.firstPerson) {
+        look(0, degrees);
+        return;
+    }
     impl_->camera.tilt += degrees;
     impl_->camera.update();
     impl_->dirty = true;

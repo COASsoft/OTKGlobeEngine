@@ -47,6 +47,7 @@ struct ElevationLayer {
     std::string path;
     int maxZoom = 15;
     bool cache = true;
+    bool bathymetry = false;
 };
 
 struct View {
@@ -139,6 +140,12 @@ public:
     void rotate(double degrees);
     void tiltBy(double degrees);
     void flyTo(const View& target, double seconds = 2.0);
+    void setFirstPerson(bool enabled, double heightAboveGround = 2.0);
+    bool firstPerson() const;
+    void walk(double forwardMeters, double rightMeters);
+    void look(double headingDegrees, double pitchDegrees);
+    void set3D(bool enabled);
+    bool is3D() const;
     bool animating() const;
 
     std::uint64_t addFeature(const Feature& feature);

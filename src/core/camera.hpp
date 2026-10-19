@@ -17,6 +17,12 @@ public:
     double fovY = 45.0 * kDegToRad;
     bool zeroToOneDepth = false;
     std::function<double(double, double)> groundHeight;
+    bool firstPerson = false;
+    GeoPoint fpPosition;
+    double fpHeight = 2.0;
+    double fpHeading = 0.0;
+    double fpPitch = 0.0;
+    bool lock2d = false;
 
     static constexpr double kMinGsd = 0.02;
     static constexpr double kMaxRange = 4.0e7;
@@ -24,6 +30,7 @@ public:
     static constexpr double kCollideRadius = 10.0;
 
     void update();
+    void updateFirstPerson();
 
     double range() const { return gsd * (height * 0.5) / std::tan(fovY * 0.5); }
     double maxTiltForRange(double r) const;

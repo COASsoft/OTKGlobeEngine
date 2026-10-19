@@ -1334,6 +1334,15 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                      static_cast<unsigned long long>(frame_), tiles.size(), needs_.size(), work.size(), renders, builds,
                      loader_.pending(), elevation_.pending(), incomplete, waitImagery, unrendered, waitTerrain, maxLevel,
                      cam.gsd);
+        if (std::getenv("OTE_TRACE_TILES")) {
+            GeoPoint eg = ecefToGeodetic(cam.eye());
+            std::fprintf(trace_, "  eye %.5f %.5f alt %.1f ground %.1f\n", eg.lat, eg.lon, eg.alt, elevationAt(eg.lat, eg.lon));
+            for (size_t i = 0; i < tiles.size() && i < 6; ++i) {
+                Bounds tb = bounds(tiles[i].key);
+                std::fprintf(trace_, "  draw L%d %d,%d dist %.0f bounds %.4f %.4f %.4f %.4f\n", tiles[i].key.level, tiles[i].key.x,
+                             tiles[i].key.y, tiles[i].distance, tb.west, tb.south, tb.east, tb.north);
+            }
+        }
         std::fprintf(trace_, "  loader %s\n", loader_.debug().c_str());
         int shown = 0;
         for (auto& dt : tiles) {

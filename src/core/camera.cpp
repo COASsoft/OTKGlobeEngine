@@ -34,7 +34,46 @@ Vec3 Camera::computeEye(double tiltDeg) const {
     return focusEcef_ + (u * std::cos(t) - fwd * std::sin(t)) * range();
 }
 
+void Camera::updateFirstPerson() {
+    fpPosition.lat = std::clamp(fpPosition.lat, -89.9999, 89.9999);
+    fpPosition.lon = wrapLon(fpPosition.lon);
+    fpPitch = std::clamp(fpPitch, -89.0, 89.0);
+    fpHeading = std::fmod(fpHeading + 360.0, 360.0);
+    fpHeight = std::max(fpHeight, 0.5);
+    double g = ground(fpPosition);
+    eye_ = geodeticToEcef(fpPosition.lat, fpPosition.lon, g + fpHeight);
+    Vec3 e, n, u;
+    enuFrame(fpPosition.lat, fpPosition.lon, e, n, u);
+    double h = fpHeading * kDegToRad, p = fpPitch * kDegToRad;
+    Vec3 fwd = (n * std::cos(h) + e * std::sin(h)) * std::cos(p) + u * std::sin(p);
+    Vec3 right = e * std::cos(h) - n * std::sin(h);
+    Vec3 up = normalize(cross(right, fwd));
+    viewRel_ = lookDirection(fwd, up);
+    eyeAlt_ = g + fpHeight;
+    eyeAboveGround_ = fpHeight;
+    double ahead = std::max(fpHeight * 50.0, 200.0);
+    GeoPoint f = ecefToGeodetic(eye_ + fwd * ahead);
+    focus = {f.lat, f.lon, ground(f)};
+    focusEcef_ = geodeticToEcef(focus);
+    azimuth = fpHeading;
+    tilt = std::clamp(90.0 + fpPitch, 0.0, kMaxTilt);
+    double hh = std::max(eyeAlt_, 1.0);
+    double horizon = std::sqrt(hh * (2.0 * kWgs84A + hh)) + std::sqrt(9000.0 * (2.0 * kWgs84A + 9000.0));
+    near_ = std::clamp(fpHeight * 0.25, 0.1, 50.0);
+    far_ = horizon * 1.05 + 1000.0;
+    gsd = pixelSizeAt(ahead);
+    double aspect = static_cast<double>(width) / std::max(height, 1);
+    proj_ = perspective(fovY, aspect, near_, far_, zeroToOneDepth);
+    viewProjRel_ = proj_ * viewRel_;
+    invert(viewProjRel_, invViewProjRel_);
+}
+
 void Camera::update() {
+    if (firstPerson) {
+        updateFirstPerson();
+        return;
+    }
+    if (lock2d) tilt = 0.0;
     clamp();
     focusEcef_ = geodeticToEcef(focus);
     eye_ = computeEye(tilt);

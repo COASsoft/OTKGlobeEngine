@@ -77,6 +77,11 @@ OTE_API void ote_pan(ote_engine* e, double x0, double y0, double x1, double y1);
 OTE_API void ote_zoom_at(ote_engine* e, double sx, double sy, double factor);
 OTE_API void ote_rotate(ote_engine* e, double degrees);
 OTE_API void ote_tilt(ote_engine* e, double degrees);
+OTE_API void ote_set_first_person(ote_engine* e, int enabled, double height_above_ground);
+OTE_API void ote_walk(ote_engine* e, double forward_m, double right_m);
+OTE_API void ote_look(ote_engine* e, double heading_deg, double pitch_deg);
+OTE_API void ote_set_3d(ote_engine* e, int enabled);
+OTE_API void ote_fly_to(ote_engine* e, const ote_view* v, double seconds);
 
 OTE_API int ote_load_features(ote_engine* e, const char* path);
 OTE_API uint64_t ote_add_point(ote_engine* e, double lat, double lon, double alt, const char* name, uint32_t argb);

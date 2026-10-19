@@ -45,6 +45,7 @@ public:
         l.maxZoom = layer.maxZoom;
         l.cache = layer.cache;
         inner_ = makeProvider(l, cache, offline);
+        bathymetry_ = layer.bathymetry;
         matrix_ = TileMatrix::webMercator(0, layer.maxZoom, 256);
     }
 
@@ -59,7 +60,8 @@ public:
         out.values.resize(static_cast<size_t>(w) * h);
         for (size_t i = 0; i < out.values.size(); ++i) {
             const unsigned char* p = px + i * 3;
-            out.values[i] = static_cast<float>(p[0] * 256.0 + p[1] + p[2] / 256.0 - 32768.0);
+            float v = static_cast<float>(p[0] * 256.0 + p[1] + p[2] / 256.0 - 32768.0);
+            out.values[i] = bathymetry_ ? v : std::max(v, 0.0f);
         }
         stbi_image_free(px);
         matrix_.tileBounds(z, x, y, out.minX, out.minY, out.maxX, out.maxY);
@@ -69,6 +71,7 @@ public:
 
 private:
     std::shared_ptr<TileProvider> inner_;
+    bool bathymetry_ = false;
 };
 
 struct Cell {

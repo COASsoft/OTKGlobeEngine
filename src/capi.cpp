@@ -234,6 +234,24 @@ void ote_rotate(ote_engine* e, double degrees) { e->engine.rotate(degrees); }
 
 void ote_tilt(ote_engine* e, double degrees) { e->engine.tiltBy(degrees); }
 
+void ote_set_first_person(ote_engine* e, int enabled, double height) { e->engine.setFirstPerson(enabled != 0, height); }
+
+void ote_walk(ote_engine* e, double forward_m, double right_m) { e->engine.walk(forward_m, right_m); }
+
+void ote_look(ote_engine* e, double heading_deg, double pitch_deg) { e->engine.look(heading_deg, pitch_deg); }
+
+void ote_set_3d(ote_engine* e, int enabled) { e->engine.set3D(enabled != 0); }
+
+void ote_fly_to(ote_engine* e, const ote_view* v, double seconds) {
+    ote::View view = e->engine.view();
+    view.lat = v->lat;
+    view.lon = v->lon;
+    view.gsd = v->gsd;
+    view.azimuth = v->azimuth;
+    view.tilt = v->tilt;
+    e->engine.flyTo(view, seconds);
+}
+
 int ote_load_features(ote_engine* e, const char* path) {
     return static_cast<int>(e->engine.loadFeatures(path ? path : "").size());
 }
