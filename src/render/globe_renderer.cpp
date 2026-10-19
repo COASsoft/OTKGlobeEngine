@@ -1211,7 +1211,15 @@ void GlobeRenderer::diag(const char* fmt, ...) const {
 #if defined(__ANDROID__)
     __android_log_write(ANDROID_LOG_INFO, "OpenTAKEngine", buf);
 #else
-    std::fprintf(stderr, "%s\n", buf);
+    if (const char* path = std::getenv("OTE_DIAG")) {
+        if (FILE* f = std::fopen(path, "a")) {
+            std::fputs(buf, f);
+            std::fputc(10, f);
+            std::fclose(f);
+        }
+    } else {
+        std::fprintf(stderr, "%s\n", buf);
+    }
 #endif
 }
 
