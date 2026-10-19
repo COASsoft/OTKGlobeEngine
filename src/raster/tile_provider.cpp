@@ -67,6 +67,27 @@ public:
         layer_.url = j["tiles"][0].get<std::string>();
     }
 
+    bool fetchLocal(int z, int x, int y, FetchResult& out) override {
+        bool offline = offline_ && offline_->load();
+        if (!cache_ || !cache_->isOpen() || !layer_.cache) {
+            if (offline) out.status = 0;
+            return offline;
+        }
+        std::int64_t expires = 0;
+        std::vector<std::uint8_t> data;
+        if (cache_->get(key_, z, x, y, data, expires) && (expires > TileCache::now() || offline)) {
+            out.status = 200;
+            out.data = std::move(data);
+            out.fromCache = true;
+            return true;
+        }
+        if (offline) {
+            out.status = 0;
+            return true;
+        }
+        return false;
+    }
+
     FetchResult fetch(int z, int x, int y) override {
         FetchResult r;
         if (!resolved_) resolveTileJson();

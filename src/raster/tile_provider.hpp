@@ -27,6 +27,10 @@ public:
     virtual ~TileProvider() = default;
     const TileMatrix& matrix() const { return matrix_; }
     virtual FetchResult fetch(int z, int x, int y) = 0;
+    virtual bool fetchLocal(int z, int x, int y, FetchResult& out) {
+        out = fetch(z, x, y);
+        return true;
+    }
     virtual bool remote() const { return false; }
     virtual bool cached(int, int, int) { return false; }
     virtual bool vector() const { return false; }

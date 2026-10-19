@@ -1224,8 +1224,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     int incomplete = 0;
     bool fading = false;
     double tnow = now();
-    auto source = [&](const QuadKey& key, int startLevel, sg_view& view, float uvx[4]) {
-        for (int k = std::max(0, key.level - startLevel); k <= key.level; ++k) {
+    auto source = [&](const QuadKey& key, int minUp, sg_view& view, float uvx[4]) {
+        for (int k = std::max(0, minUp); k <= key.level; ++k) {
             QuadKey a{key.level - k, key.x >> k, key.y >> k};
             auto it = surface_.find(a);
             if (it == surface_.end() || it->second.version < 0) continue;
@@ -1277,7 +1277,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             } else {
                 QuadKey from = fd->second.from;
                 int up = dt.key.level - from.level;
-                QuadKey got = source(dt.key, -up, view2, uvx2);
+                QuadKey got = source(dt.key, up, view2, uvx2);
                 if (got.level >= 0 && got.level < src.level) {
                     blend = static_cast<float>(t * t * (3 - 2 * t));
                     fading = true;

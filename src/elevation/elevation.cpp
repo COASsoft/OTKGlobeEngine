@@ -330,6 +330,7 @@ void ElevationManager::setSources(const std::vector<ElevationLayer>& layers, Til
     providers_ = std::move(providers);
     queue_.clear();
     done_.clear();
+    doneKeys_.clear();
     grids_.clear();
     used_.clear();
     failed_.clear();
@@ -423,7 +424,7 @@ void ElevationManager::submit() {
     queue_.clear();
     std::unordered_set<Key, KeyHash> seen;
     for (auto it = requests_.rbegin(); it != requests_.rend(); ++it)
-        if (!inflight_.count(it->first) && seen.insert(it->first).second) queue_.push_back(it->first);
+        if (!inflight_.count(it->first) && !doneKeys_.count(it->first) && seen.insert(it->first).second) queue_.push_back(it->first);
     std::reverse(queue_.begin(), queue_.end());
     if (!queue_.empty()) cv_.notify_all();
 }
@@ -433,6 +434,7 @@ bool ElevationManager::processResults(size_t max) {
     {
         std::lock_guard lock(mutex_);
         while (!done_.empty() && results.size() < max) {
+            doneKeys_.erase(done_.front().key);
             if (done_.front().generation == generation_) results.push_back(std::move(done_.front()));
             done_.pop_front();
         }
@@ -486,7 +488,7 @@ void ElevationManager::run() {
         r.status = provider->fetch(k.z, k.x, k.y, r.grid);
         std::lock_guard lock(mutex_);
         inflight_.erase(k);
-        done_.push_back(std::move(r));
+        if (doneKeys_.insert(k).second) done_.push_back(std::move(r));
     }
 }
 

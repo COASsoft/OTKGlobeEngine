@@ -10,9 +10,11 @@
 #include <cstdint>
 #include <deque>
 #include <map>
+#include <string>
 #include <memory>
 #include <mutex>
 #include <thread>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -57,7 +59,7 @@ std::vector<TileRange> regionRanges(const TileMatrix& m, const Region& r, int mi
 
 class TileLoader {
 public:
-    explicit TileLoader(int threads);
+    TileLoader(int localThreads, int networkThreads);
     ~TileLoader();
 
     void setCache(TileCache* cache) { cache_ = cache; }
@@ -69,6 +71,7 @@ public:
     void submit(std::vector<std::pair<TileId, double>>& requests);
     std::vector<DecodedTile> take(size_t max);
     int pending() const;
+    std::string debug() const;
 
     int startDownload(int layer, const Region& region, int minZoom, int maxZoom);
     DownloadStatus downloadStatus(int id) const;
@@ -85,8 +88,10 @@ private:
         DownloadStatus status;
     };
 
-    void run();
+    void runLocal();
+    void runNetwork();
     bool nextDownload(int& id, TileId& tile);
+    void finish(const TileId& id, int generation, const std::shared_ptr<TileProvider>& provider, FetchResult& res);
 
     mutable std::mutex mutex_;
     std::condition_variable cv_;
@@ -94,8 +99,13 @@ private:
     std::vector<ImageryLayer> layers_;
     std::vector<std::shared_ptr<TileProvider>> providers_;
     std::vector<TileId> queue_;
+    std::vector<TileId> netQueue_;
+    std::unordered_set<TileId, TileIdHash> wanted_;
+    std::unordered_map<TileId, double, TileIdHash> netPriority_;
+    std::condition_variable netCv_;
     std::unordered_set<TileId, TileIdHash> inflight_;
     std::deque<DecodedTile> done_;
+    std::unordered_set<TileId, TileIdHash> doneIds_;
     std::map<int, Download> downloads_;
     int nextDownloadId_ = 1;
     TileCache* cache_ = nullptr;

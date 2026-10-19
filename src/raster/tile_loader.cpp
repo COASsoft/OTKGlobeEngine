@@ -28,8 +28,9 @@ std::vector<TileRange> regionRanges(const TileMatrix& m, const Region& r, int mi
     return out;
 }
 
-TileLoader::TileLoader(int threads) {
-    for (int i = 0; i < threads; ++i) workers_.emplace_back([this] { run(); });
+TileLoader::TileLoader(int localThreads, int networkThreads) {
+    for (int i = 0; i < localThreads; ++i) workers_.emplace_back([this] { runLocal(); });
+    for (int i = 0; i < networkThreads; ++i) workers_.emplace_back([this] { runNetwork(); });
 }
 
 TileLoader::~TileLoader() {
@@ -38,6 +39,7 @@ TileLoader::~TileLoader() {
         stop_ = true;
     }
     cv_.notify_all();
+    netCv_.notify_all();
     for (auto& t : workers_) t.join();
 }
 
@@ -48,7 +50,10 @@ void TileLoader::setLayers(const std::vector<ImageryLayer>& layers) {
     layers_ = layers;
     providers_ = std::move(providers);
     queue_.clear();
+    for (const TileId& t : netQueue_) inflight_.erase(t);
+    netQueue_.clear();
     done_.clear();
+    doneIds_.clear();
     ++generation_;
 }
 
@@ -71,8 +76,13 @@ void TileLoader::submit(std::vector<std::pair<TileId, double>>& requests) {
     std::lock_guard lock(mutex_);
     queue_.clear();
     queue_.reserve(requests.size());
-    for (const auto& r : requests)
-        if (!inflight_.count(r.first)) queue_.push_back(r.first);
+    wanted_.clear();
+    netPriority_.clear();
+    for (const auto& r : requests) {
+        wanted_.insert(r.first);
+        netPriority_[r.first] = r.second;
+        if (!inflight_.count(r.first) && !doneIds_.count(r.first)) queue_.push_back(r.first);
+    }
     if (!queue_.empty()) cv_.notify_all();
 }
 
@@ -80,10 +90,27 @@ std::vector<DecodedTile> TileLoader::take(size_t max) {
     std::lock_guard lock(mutex_);
     std::vector<DecodedTile> out;
     while (!done_.empty() && out.size() < max) {
+        doneIds_.erase(done_.front().id);
         if (done_.front().generation == generation_) out.push_back(std::move(done_.front()));
         done_.pop_front();
     }
     return out;
+}
+
+std::string TileLoader::debug() const {
+    std::lock_guard lock(mutex_);
+    int netWanted = 0;
+    for (const TileId& t : netQueue_) netWanted += wanted_.count(t) ? 1 : 0;
+    std::string s = "queue " + std::to_string(queue_.size()) + " net " + std::to_string(netQueue_.size()) + " netwanted " +
+                    std::to_string(netWanted) + " inflight " + std::to_string(inflight_.size()) + " wanted " +
+                    std::to_string(wanted_.size()) + " done " + std::to_string(done_.size());
+    int shown = 0;
+    for (const TileId& t : inflight_) {
+        if (shown++ >= 4) break;
+        s += " [" + std::to_string(t.layer) + ":" + std::to_string(t.z) + "/" + std::to_string(t.x) + "/" + std::to_string(t.y) +
+             (wanted_.count(t) ? " w" : " -") + "]";
+    }
+    return s;
 }
 
 int TileLoader::pending() const {
@@ -102,7 +129,7 @@ int TileLoader::startDownload(int layer, const Region& region, int minZoom, int 
     d.status.finished = d.status.total == 0 || !providers_[layer]->remote();
     int id = nextDownloadId_++;
     downloads_[id] = std::move(d);
-    cv_.notify_all();
+    netCv_.notify_all();
     return id;
 }
 
@@ -140,7 +167,67 @@ bool TileLoader::nextDownload(int& id, TileId& tile) {
     return false;
 }
 
-void TileLoader::run() {
+void TileLoader::finish(const TileId& id, int gen, const std::shared_ptr<TileProvider>& provider, FetchResult& res) {
+    DecodedTile tile;
+    tile.id = id;
+    tile.generation = gen;
+    if (res.status == 200 && provider->vector()) {
+        tile.vector = decodeVectorTile(res.data, id.z, id.x, id.y);
+        tile.ok = tile.vector != nullptr;
+        tile.permanent = !tile.ok;
+    } else if (res.status == 200 && res.raw) {
+        tile.ok = true;
+        tile.width = res.width;
+        tile.height = res.height;
+        tile.rgba = std::move(res.data);
+    } else if (res.status == 200 && !res.data.empty()) {
+        int w = 0, h = 0, n = 0;
+        unsigned char* px = stbi_load_from_memory(res.data.data(), static_cast<int>(res.data.size()), &w, &h, &n, 4);
+        if (px) {
+            tile.ok = true;
+            tile.width = w;
+            tile.height = h;
+            tile.rgba.assign(px, px + static_cast<size_t>(w) * h * 4);
+            stbi_image_free(px);
+        } else {
+            tile.permanent = true;
+        }
+    } else if (res.status == 404 || res.status == 204 || res.status == 400 || (res.status == 200 && res.data.empty())) {
+        tile.permanent = true;
+    }
+    std::lock_guard lock(mutex_);
+    inflight_.erase(id);
+    if (doneIds_.insert(id).second) done_.push_back(std::move(tile));
+}
+
+void TileLoader::runLocal() {
+    for (;;) {
+        TileId id;
+        std::shared_ptr<TileProvider> provider;
+        int gen = 0;
+        {
+            std::unique_lock lock(mutex_);
+            cv_.wait(lock, [this] { return stop_ || !queue_.empty(); });
+            if (stop_) return;
+            id = queue_.back();
+            queue_.pop_back();
+            if (id.layer < 0 || id.layer >= static_cast<int>(providers_.size())) continue;
+            provider = providers_[id.layer];
+            gen = generation_;
+            inflight_.insert(id);
+        }
+        FetchResult res;
+        if (provider->fetchLocal(id.z, id.x, id.y, res)) {
+            finish(id, gen, provider, res);
+            continue;
+        }
+        std::lock_guard lock(mutex_);
+        netQueue_.push_back(id);
+        netCv_.notify_one();
+    }
+}
+
+void TileLoader::runNetwork() {
     for (;;) {
         TileId id;
         std::shared_ptr<TileProvider> provider;
@@ -148,20 +235,34 @@ void TileLoader::run() {
         int download = 0;
         {
             std::unique_lock lock(mutex_);
-            cv_.wait(lock, [this] {
-                if (stop_ || !queue_.empty()) return true;
+            netCv_.wait(lock, [this] {
+                if (stop_ || !netQueue_.empty()) return true;
                 for (auto& [k, d] : downloads_)
                     if (!d.status.finished && d.generation == generation_ && d.range < d.ranges.size()) return true;
                 return false;
             });
             if (stop_) return;
-            if (!queue_.empty()) {
-                id = queue_.back();
-                queue_.pop_back();
-                inflight_.insert(id);
-            } else if (!nextDownload(download, id)) {
-                continue;
+            bool picked = false;
+            while (!netQueue_.empty() && !picked) {
+                auto best = netQueue_.begin();
+                double bp = 1e300;
+                for (auto it = netQueue_.begin(); it != netQueue_.end(); ++it) {
+                    auto p = netPriority_.find(*it);
+                    double v = p == netPriority_.end() ? 1e299 : p->second;
+                    if (v < bp) {
+                        bp = v;
+                        best = it;
+                    }
+                }
+                id = *best;
+                netQueue_.erase(best);
+                if (!wanted_.count(id)) {
+                    inflight_.erase(id);
+                    continue;
+                }
+                picked = true;
             }
+            if (!picked && !nextDownload(download, id)) continue;
             if (id.layer < 0 || id.layer >= static_cast<int>(providers_.size())) {
                 inflight_.erase(id);
                 continue;
@@ -182,38 +283,8 @@ void TileLoader::run() {
             }
             continue;
         }
-
-        DecodedTile tile;
-        tile.id = id;
-        tile.generation = gen;
         FetchResult res = provider->fetch(id.z, id.x, id.y);
-        if (res.status == 200 && provider->vector()) {
-            tile.vector = decodeVectorTile(res.data, id.z, id.x, id.y);
-            tile.ok = tile.vector != nullptr;
-            tile.permanent = !tile.ok;
-        } else if (res.status == 200 && res.raw) {
-            tile.ok = true;
-            tile.width = res.width;
-            tile.height = res.height;
-            tile.rgba = std::move(res.data);
-        } else if (res.status == 200 && !res.data.empty()) {
-            int w = 0, h = 0, n = 0;
-            unsigned char* px = stbi_load_from_memory(res.data.data(), static_cast<int>(res.data.size()), &w, &h, &n, 4);
-            if (px) {
-                tile.ok = true;
-                tile.width = w;
-                tile.height = h;
-                tile.rgba.assign(px, px + static_cast<size_t>(w) * h * 4);
-                stbi_image_free(px);
-            } else {
-                tile.permanent = true;
-            }
-        } else if (res.status == 404 || res.status == 204 || res.status == 400 || (res.status == 200 && res.data.empty())) {
-            tile.permanent = true;
-        }
-        std::lock_guard lock(mutex_);
-        inflight_.erase(id);
-        done_.push_back(std::move(tile));
+        finish(id, gen, provider, res);
     }
 }
 

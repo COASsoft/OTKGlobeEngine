@@ -113,7 +113,12 @@ private:
     struct NodeInfo {
         bool visible = false;
         bool refine = false;
+        bool nearRefine = false;
         double distance = 0;
+    };
+    struct Fade {
+        double start = 0;
+        QuadKey from;
     };
     struct SurfaceDraw {
         sg_view texture{};
@@ -141,6 +146,7 @@ private:
     bool ready(const QuadKey& k) const;
     bool progressed(const SurfaceTile& s) const;
     void need(const QuadKey& k, double priority);
+    void prefetch(const QuadKey& k, double priority) { prefetch_.push_back({k, priority}); }
     void traverse(const Camera& cam, const QuadKey& k, std::vector<DrawTile>& out);
     TerrainTile& terrain(const QuadKey& k);
     void buildTerrain(const QuadKey& k, TerrainTile& t, double priority);
@@ -159,7 +165,7 @@ private:
     double now() const;
 
     TileCache cache_;
-    TileLoader loader_{6};
+    TileLoader loader_{3, 8};
     ElevationManager elevation_{4};
     FeatureLayer features_;
     ModelLayer models_;
@@ -174,6 +180,12 @@ private:
     std::vector<SurfaceTile> freeSurfaces_;
     std::vector<std::pair<TileId, double>> requests_;
     std::vector<Need> needs_;
+    std::unordered_map<QuadKey, Fade, QuadKeyHash> fades_;
+    double needScale_ = 1.0;
+    bool prefetching_ = false;
+    std::vector<Need> prefetch_;
+    bool viewComplete_ = false;
+    std::unordered_map<QuadKey, std::uint64_t, QuadKeyHash> drawn_;
     struct Overlay {
         GeoRect rect;
         sg_image image{};

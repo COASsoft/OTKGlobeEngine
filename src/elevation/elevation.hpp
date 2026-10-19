@@ -91,6 +91,7 @@ private:
     std::vector<Key> queue_;
     std::unordered_set<Key, KeyHash> inflight_;
     std::deque<Result> done_;
+    std::unordered_set<Key, KeyHash> doneKeys_;
     int generation_ = 0;
     bool stop_ = false;
 };

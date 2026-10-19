@@ -19,6 +19,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <string>
@@ -61,6 +62,11 @@ struct ViewerState {
     bool heat = false;
     std::uint64_t viewshed = 0;
     bool shotViewshed = false;
+    bool zoomTest = false;
+    ote::View zoomTarget;
+    double zoomSeconds = 4.0;
+    bool zoomStarted = false;
+    long long zoomFrames = 0, zoomIncomplete = 0, zoomMaxIncomplete = 0, zoomBadFrames = 0;
     bool depth = true;
     double exaggeration = 1.0;
     std::string elevationDir;
@@ -214,7 +220,20 @@ void frame() {
             state->viewshed = state->engine.computeViewshed({v.lat, v.lon, 0}, 2.0, 5000.0);
         }
         state->settledFrames = state->engine.needsRedraw() ? 0 : state->settledFrames + 1;
-        bool downloading = state->downloadId && !state->engine.downloadStatus(state->downloadId).finished;
+        if (state->zoomTest) {
+            if (!state->zoomStarted && state->shotElapsed > 1.0 && !state->engine.needsRedraw()) {
+                state->engine.flyTo(state->zoomTarget, state->zoomSeconds);
+                state->zoomStarted = true;
+            } else if (state->zoomStarted && state->engine.animating()) {
+                int inc = state->engine.stats().incompleteTiles;
+                ++state->zoomFrames;
+                state->zoomIncomplete += inc;
+                state->zoomMaxIncomplete = std::max<long long>(state->zoomMaxIncomplete, inc);
+                if (inc > 0) ++state->zoomBadFrames;
+            }
+        }
+        bool zooming = state->zoomTest && (!state->zoomStarted || state->engine.animating());
+        bool downloading = (state->downloadId && !state->engine.downloadStatus(state->downloadId).finished) || zooming;
         bool settled = state->shotElapsed > 1.0 && state->settledFrames > 10 && !downloading;
         if (settled || state->shotElapsed >= state->shotTimeout) {
             bool ok = saveImagePng(state->shotColor, state->width, state->height,
@@ -233,6 +252,11 @@ void frame() {
                 ote::View fv = state->engine.view();
                 std::fprintf(f, "focus %.5f %.5f elevation %.1f", fv.lat, fv.lon, state->engine.elevationAt(fv.lat, fv.lon));
                 std::fputc(10, f);
+                if (state->zoomTest)
+                    std::fprintf(f, "zoom frames=%lld frames_with_incomplete=%lld avg_incomplete=%.2f max_incomplete=%lld\n",
+                                 state->zoomFrames, state->zoomBadFrames,
+                                 state->zoomFrames ? static_cast<double>(state->zoomIncomplete) / state->zoomFrames : 0.0,
+                                 state->zoomMaxIncomplete);
                 std::fprintf(f, "features %zu viewshed %llu", state->engine.featureIds().size(),
                              static_cast<unsigned long long>(state->viewshed));
                 std::fputc(10, f);
@@ -463,6 +487,10 @@ sapp_desc sokol_main(int argc, char* argv[]) {
             state->featureFiles.push_back(argv[++i]);
         } else if (a == "--heatmap") {
             state->heat = std::atoi(argv[++i]) != 0;
+        } else if (a == "--zoom-test") {
+            ote::View& v = state->zoomTarget;
+            state->zoomTest = std::sscanf(argv[++i], "%lf,%lf,%lf,%lf,%lf,%lf", &v.lat, &v.lon, &v.gsd, &v.tilt, &v.azimuth,
+                                          &state->zoomSeconds) >= 3;
         } else if (a == "--grid") {
             state->grid = std::atoi(argv[++i]) != 0;
         } else if (a == "--viewshed") {

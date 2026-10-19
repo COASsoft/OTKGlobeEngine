@@ -64,6 +64,7 @@ struct Stats {
     int imageryTextures = 0;
     int pendingRequests = 0;
     int maxLevel = 0;
+    int incompleteTiles = 0;
 };
 
 struct DownloadStatus {
