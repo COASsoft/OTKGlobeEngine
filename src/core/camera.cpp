@@ -1,0 +1,97 @@
+#include "core/camera.hpp"
+
+#include <algorithm>
+
+namespace ote {
+
+double Camera::maxTiltForRange(double r) const {
+    const double r0 = 2.0e5, r1 = 1.5e7;
+    if (r <= r0) return kMaxTilt;
+    if (r >= r1) return 15.0;
+    double t = std::log(r / r0) / std::log(r1 / r0);
+    return kMaxTilt + (15.0 - kMaxTilt) * t;
+}
+
+void Camera::setRange(double r) {
+    gsd = r * std::tan(fovY * 0.5) / (height * 0.5);
+}
+
+void Camera::clamp() {
+    focus.lat = std::clamp(focus.lat, -89.9999, 89.9999);
+    focus.lon = wrapLon(focus.lon);
+    azimuth = std::fmod(azimuth, 360.0);
+    if (azimuth < 0) azimuth += 360.0;
+    gsd = std::max(gsd, kMinGsd);
+    if (range() > kMaxRange) setRange(kMaxRange);
+    tilt = std::clamp(tilt, 0.0, maxTiltForRange(range()));
+}
+
+Vec3 Camera::computeEye(double tiltDeg) const {
+    Vec3 e, n, u;
+    enuFrame(focus.lat, focus.lon, e, n, u);
+    double az = azimuth * kDegToRad, t = tiltDeg * kDegToRad;
+    Vec3 fwd = n * std::cos(az) + e * std::sin(az);
+    return focusEcef_ + (u * std::cos(t) - fwd * std::sin(t)) * range();
+}
+
+void Camera::update() {
+    clamp();
+    focusEcef_ = geodeticToEcef(focus);
+    eye_ = computeEye(tilt);
+    GeoPoint eg = ecefToGeodetic(eye_);
+    if (eg.alt < kCollideRadius && tilt > 0) {
+        double lo = 0, hi = tilt;
+        for (int i = 0; i < 30; ++i) {
+            double mid = 0.5 * (lo + hi);
+            if (ecefToGeodetic(computeEye(mid)).alt < kCollideRadius) hi = mid;
+            else lo = mid;
+        }
+        tilt = lo;
+        eye_ = computeEye(tilt);
+        eg = ecefToGeodetic(eye_);
+    }
+    eyeAlt_ = eg.alt;
+
+    Vec3 e, n, u;
+    enuFrame(focus.lat, focus.lon, e, n, u);
+    double az = azimuth * kDegToRad;
+    Vec3 right = e * std::cos(az) - n * std::sin(az);
+    Vec3 dir = normalize(focusEcef_ - eye_);
+    Vec3 up = normalize(cross(right, dir));
+    viewRel_ = lookDirection(dir, up);
+
+    double h = std::max(eyeAlt_, 1.0);
+    double horizon = std::sqrt(h * (2.0 * kWgs84A + h));
+    near_ = std::clamp(h * 0.05, 0.5, 1.0e6);
+    far_ = std::max(horizon * 1.05 + 1000.0, range() * 1.5);
+    double aspect = static_cast<double>(width) / std::max(height, 1);
+    proj_ = perspective(fovY, aspect, near_, far_, zeroToOneDepth);
+    viewProjRel_ = proj_ * viewRel_;
+    invert(viewProjRel_, invViewProjRel_);
+}
+
+Vec3 Camera::rayDirection(double sx, double sy) const {
+    double nx = 2.0 * sx / width - 1.0;
+    double ny = 1.0 - 2.0 * sy / height;
+    Vec4 p = invViewProjRel_ * Vec4{nx, ny, 1.0, 1.0};
+    return normalize(Vec3{p.x / p.w, p.y / p.w, p.z / p.w});
+}
+
+bool Camera::screenToEcef(double sx, double sy, Vec3& out, double h) const {
+    Vec3 d = rayDirection(sx, sy);
+    double t;
+    if (!rayEllipsoid(eye_, d, h, t)) return false;
+    out = eye_ + d * t;
+    return true;
+}
+
+bool Camera::ecefToScreen(Vec3 p, double& sx, double& sy) const {
+    Vec3 r = p - eye_;
+    Vec4 c = viewProjRel_ * Vec4{r.x, r.y, r.z, 1.0};
+    if (c.w <= 0) return false;
+    sx = (c.x / c.w * 0.5 + 0.5) * width;
+    sy = (0.5 - c.y / c.w * 0.5) * height;
+    return true;
+}
+
+}
