@@ -296,6 +296,7 @@ private:
     sg_pipeline skyPipeline_{};
     bool holeMarker_ = false;
     bool lodBlend_ = true;
+    double marginPrefetch_ = 0;
     sg_shader vfillShader_{};
     sg_shader vlineShader_{};
     sg_pipeline vfillPipeline_{};

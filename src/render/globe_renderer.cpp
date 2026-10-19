@@ -107,6 +107,7 @@ bool GlobeRenderer::init() {
     sg_backend backend = sg_query_backend();
     holeMarker_ = std::getenv("OTE_HOLES") != nullptr;
     if (const char* v = std::getenv("OTE_LOD_BLEND")) lodBlend_ = std::atoi(v) != 0;
+    if (const char* v = std::getenv("OTE_MARGIN")) marginPrefetch_ = std::max(1.0, std::atof(v));
     if (std::getenv("OTE_DIAG")) diagnostics_ = true;
     if (const char* pp = std::getenv("OTE_PROFILE")) {
         profiling_ = true;
@@ -1623,13 +1624,15 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     traverse(cam, {0, 0, 0}, tiles);
     traverse(cam, {0, 1, 0}, tiles);
     profileMark(1);
-    auto overview = [&](double gsdScale, double scale) {
+    auto overview = [&](double gsdScale, double scale, double widen) {
         Camera wide = cam;
-        int side = static_cast<int>(std::hypot(static_cast<double>(cam.width), static_cast<double>(cam.height)));
-        wide.width = side;
-        wide.height = side;
-        wide.gsd = cam.gsd * gsdScale;
-        wide.update();
+        if (gsdScale != 1.0) {
+            int side = static_cast<int>(std::hypot(static_cast<double>(cam.width), static_cast<double>(cam.height)));
+            wide.width = side;
+            wide.height = side;
+            wide.gsd = cam.gsd * gsdScale;
+            wide.update();
+        }
         std::array<double, 16> saved = frustum_;
         Vec3 savedEye = eye_;
         eye_ = wide.eye();
@@ -1637,8 +1640,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         for (int p = 0; p < 4; ++p) {
             int row = p / 2;
             double sign = (p % 2 == 0) ? 1.0 : -1.0;
-            double a = wm.at(3, 0) + sign * wm.at(row, 0), b = wm.at(3, 1) + sign * wm.at(row, 1);
-            double c = wm.at(3, 2) + sign * wm.at(row, 2), d = wm.at(3, 3) + sign * wm.at(row, 3);
+            double a = widen * wm.at(3, 0) + sign * wm.at(row, 0), b = widen * wm.at(3, 1) + sign * wm.at(row, 1);
+            double c = widen * wm.at(3, 2) + sign * wm.at(row, 2), d = widen * wm.at(3, 3) + sign * wm.at(row, 3);
             double len = std::sqrt(a * a + b * b + c * c);
             frustum_[p * 4 + 0] = a / len;
             frustum_[p * 4 + 1] = b / len;
@@ -1676,9 +1679,11 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         urgentPrefetch_ = zoomingOut;
         overviewReused_ = !(moved || frame_ % 8 == 0 || overviewCache_.empty());
         if (!overviewReused_) {
-            overview(2.0, zoomingOut ? 1.2 : 3.0);
-            overview(4.0, zoomingOut ? 2.0 : 6.0);
-            if (zoomRate_ > 1.5) overview(8.0, 3.0);
+            double margin = marginPrefetch_ > 0 ? marginPrefetch_ : (budgetMb_ >= 512 ? 2.0 : 1.5);
+            if (!zoomingOut && margin > 1.0) overview(1.0, 2.0, margin);
+            overview(2.0, zoomingOut ? 1.2 : 3.0, 1.0);
+            overview(4.0, zoomingOut ? 2.0 : 6.0, 1.0);
+            if (zoomRate_ > 1.5) overview(8.0, 3.0, 1.0);
 
             overviewCache_.assign(prefetch_.begin() + static_cast<std::ptrdiff_t>(own), prefetch_.end());
             for (int i = 0; i < 6; ++i) lastOverviewKey_[i] = camKey[i];
