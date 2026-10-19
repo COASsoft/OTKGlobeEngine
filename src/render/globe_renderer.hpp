@@ -231,6 +231,7 @@ private:
     std::vector<Need> overviewCache_;
     std::vector<Need> admittedCache_;
     bool overviewReused_ = false;
+    double zoomRate_ = 0, zoomClock_ = 0, zoomGsd_ = 0;
     double lastOverviewKey_[6] = {};
     bool budgetSet_ = false;
     static double physicalMemoryMb();

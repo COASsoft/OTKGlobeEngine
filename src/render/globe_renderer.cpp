@@ -1314,10 +1314,22 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         for (int i = 0; i < 6; ++i) moved = moved || camKey[i] != lastOverviewKey_[i];
         size_t own = prefetch_.size();
         double overviewStart = elapsedMs();
+        double tnowZoom = now();
+        if (zoomClock_ > 0 && tnowZoom > zoomClock_) {
+            double rate = (std::log2(std::max(cam.gsd, 1e-6)) - std::log2(std::max(zoomGsd_, 1e-6))) / (tnowZoom - zoomClock_);
+            double a = std::clamp((tnowZoom - zoomClock_) / 0.25, 0.0, 1.0);
+            zoomRate_ = zoomRate_ + (rate - zoomRate_) * a;
+        }
+        zoomClock_ = tnowZoom;
+        zoomGsd_ = cam.gsd;
+        bool zoomingOut = zoomRate_ > 0.3;
         overviewReused_ = !(moved || frame_ % 8 == 0 || overviewCache_.empty());
         if (!overviewReused_) {
-            overview(2.0, 3.0);
-            overview(4.0, 6.0);
+            overview(2.0, zoomingOut ? 1.2 : 3.0);
+            overview(4.0, zoomingOut ? 2.0 : 6.0);
+            if (zoomRate_ > 1.5) overview(8.0, 3.0);
+            if (zoomingOut)
+                for (size_t i = own; i < prefetch_.size(); ++i) prefetch_[i].prefetch = false;
             overviewCache_.assign(prefetch_.begin() + static_cast<std::ptrdiff_t>(own), prefetch_.end());
             for (int i = 0; i < 6; ++i) lastOverviewKey_[i] = camKey[i];
         } else {
@@ -1354,7 +1366,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         double imageryRoom = static_cast<double>(imageryCapacity_) * 0.85 - static_cast<double>(activeImagery);
         double surfaceRoom = std::min(static_cast<double>(surfaceCapacity_) * 0.92 - static_cast<double>(seen.size()),
                                       2.5 * static_cast<double>(seen.size()) + 64.0);
-        int freshBudget = std::clamp(static_cast<int>(imageryRoom / 2.0), 4, 32);
+        int freshBudget = std::clamp(static_cast<int>(imageryRoom / 2.0), 4, zoomRate_ > 0.3 ? 96 : 32);
         int fresh = 0;
         size_t admitted = 0;
         std::sort(prefetch_.begin(), prefetch_.end(), [](const Need& a, const Need& b) { return a.priority < b.priority; });
