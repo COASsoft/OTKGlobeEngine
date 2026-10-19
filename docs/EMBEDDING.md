@@ -1,0 +1,94 @@
+# Embedding OpenTAKEngine
+
+The engine never owns a window. A host app creates a GPU surface with its own toolkit, creates the engine once for that device, and calls a frame function whenever the surface needs drawing. `ote_needs_redraw` tells the host when tiles are still arriving, so a host can render on demand instead of continuously.
+
+Two APIs are available:
+
+- C++: `include/ote/engine.hpp` (`ote::Engine`), linked against the `opentakengine` static library. The host calls `sg_setup` itself with `ote::configureGfx(desc)` applied, as `apps/viewer` does.
+- C ABI: `include/ote/ote.h`, in the static library and in the `opentakengine_c` shared library. It sets up the GPU layer from native handles and is the entry point for Kotlin/JNI, Swift, C# and other languages.
+
+The graphics backend is chosen at build time: Direct3D 11 on Windows, Metal on macOS and iOS, OpenGL 4.1 on Linux, OpenGL ES 3 on Android.
+
+## Android (GLSurfaceView, Kotlin + JNI)
+
+```kotlin
+override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
+    engine = Native.create()
+}
+override fun onDrawFrame(gl: GL10?) {
+    Native.frame(engine, width, height, density)
+}
+```
+
+```cpp
+JNIEXPORT jlong JNICALL Java_app_Native_create(JNIEnv* env, jclass) {
+    JavaVM* vm;
+    env->GetJavaVM(&vm);
+    ote_set_android_vm(vm);
+    ote_engine* e = ote_create_gl(1, 1);
+    ote_set_cache_directory(e, "/data/data/app/files");
+    return reinterpret_cast<jlong>(e);
+}
+JNIEXPORT void JNICALL Java_app_Native_frame(JNIEnv*, jclass, jlong e, jint w, jint h, jfloat dpi) {
+    ote_frame_gl(reinterpret_cast<ote_engine*>(e), w, h, 0, dpi);
+}
+```
+
+`ote_set_android_vm` is required: tiles are fetched through the platform `HttpURLConnection`, so no TLS library ships in the APK. `scripts/android_apk.py` builds a standalone NativeActivity viewer APK without Gradle.
+
+## iOS, iPadOS and macOS (MTKView, Swift)
+
+```swift
+let engine = ote_create_metal(Unmanaged.passUnretained(view.device!).toOpaque(), 1)
+view.depthStencilPixelFormat = .depth32Float_stencil8
+view.colorPixelFormat = .bgra8Unorm
+
+func draw(in view: MTKView) {
+    guard let drawable = view.currentDrawable, let depth = view.depthStencilTexture else { return }
+    ote_frame_metal(engine, Int32(view.drawableSize.width), Int32(view.drawableSize.height),
+                    Unmanaged.passUnretained(drawable).toOpaque(),
+                    Unmanaged.passUnretained(depth).toOpaque(), nil, Float(view.contentScaleFactor))
+}
+```
+
+## Windows (Direct3D 11)
+
+```cpp
+ote_engine* e = ote_create_d3d11(device, context, 1);
+ote_frame_d3d11(e, width, height, backbufferRtv, nullptr, depthDsv, dpiScale);
+swapChain->Present(1, 0);
+```
+
+The back buffer must be `DXGI_FORMAT_B8G8R8A8_UNORM` and the depth view `DXGI_FORMAT_D24_UNORM_S8_UINT`.
+
+## C# (.NET P/Invoke)
+
+```csharp
+[DllImport("opentakengine_c")] static extern IntPtr ote_create_d3d11(IntPtr device, IntPtr context, int samples);
+[DllImport("opentakengine_c")] static extern void ote_frame_d3d11(IntPtr e, int w, int h, IntPtr rtv, IntPtr resolve, IntPtr dsv, float dpi);
+[DllImport("opentakengine_c")] static extern int ote_load_features(IntPtr e, [MarshalAs(UnmanagedType.LPUTF8Str)] string path);
+```
+
+## Qt (QOpenGLWidget on Linux)
+
+```cpp
+void initializeGL() override { engine = ote_create_gl(0, 1); }
+void paintGL() override {
+    ote_frame_gl(engine, width() * devicePixelRatio(), height() * devicePixelRatio(), defaultFramebufferObject(), devicePixelRatio());
+    if (ote_needs_redraw(engine)) update();
+}
+```
+
+## Common calls
+
+```c
+ote_view v = {47.04, -122.90, 20.0, 0.0, 45.0};
+ote_set_view(e, &v);
+ote_add_layer(e, OTE_SOURCE_MBTILES, "Offline", "/maps/area.mbtiles", 0, 18, 1.0f);
+ote_load_mobac(e, "/maps/source.xml");
+ote_add_elevation_directory(e, "/dted");
+ote_load_features(e, "/data/overlay.kmz");
+ote_set_grid(e, 1);
+char mgrs[32];
+ote_to_mgrs(47.04, -122.90, 5, mgrs, sizeof mgrs);
+```
