@@ -208,6 +208,24 @@ int main(int argc, char** argv) {
     double dLon = std::abs(std::fmod(b.lon - lon0 + 540.0, 360.0) - 180.0);
     check(dLon <= 180.0 * 200.0 / std::min(w, h) + 0.01 && b.lat > 89.0, "sideways pan at the pole turns at a bounded rate", dLon);
 
+    ote_view poleClose{89.99, 30.0, 20.0, 0.0, 0.0};
+    ote_set_view(e, &poleClose);
+    pump(2);
+    ote_get_view(e, &a);
+    for (int k = 0; k < 3; ++k) {
+        ote_pointer_down(e, 50 + k, cx - 200, cy, OTE_POINTER_TOUCH, OTE_BUTTON_LEFT, 0);
+        ote_pointer_down(e, 60 + k, cx + 200, cy, OTE_POINTER_TOUCH, OTE_BUTTON_LEFT, 0);
+        for (int i = 1; i <= 10; ++i) {
+            ote_pointer_move(e, 50 + k, cx - 200 + 15 * i, cy, 0);
+            ote_pointer_move(e, 60 + k, cx + 200 - 15 * i, cy, 0);
+        }
+        ote_pointer_up(e, 50 + k, cx - 50, cy);
+        ote_pointer_up(e, 60 + k, cx + 50, cy);
+    }
+    ote_get_view(e, &b);
+    double spin = std::abs(std::fmod(b.lon - a.lon + 540.0, 360.0) - 180.0);
+    check(b.gsd > a.gsd * 10.0 && spin < 5.0, "pinch at the pole zooms without spinning the view", spin);
+
     char mgrs[32];
     ote_to_mgrs(46.8529, -121.7604, 5, mgrs, sizeof mgrs);
     std::printf("frames %d quiet %d png %d mgrs %s\n", frames, quiet, ok, mgrs);

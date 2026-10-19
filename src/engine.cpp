@@ -576,10 +576,22 @@ void Engine::zoomAt(double sx, double sy, double factor) {
     }
     Vec3 before;
     bool hit = impl_->pickGround(sx, sy, before);
+    double ax = sx - c.width * 0.5, ay = sy - c.height * 0.5;
     c.gsd *= factor;
     c.update();
     Vec3 after;
-    if (hit && impl_->pickGround(sx, sy, after)) impl_->moveCamera(after, before);
+    if (hit && impl_->pickGround(sx, sy, after)) {
+        if (impl_->headingLock) {
+            Vec3 e, n, u;
+            enuFrame(c.focus.lat, c.focus.lon, e, n, u);
+            Vec3 move = before - after;
+            double shiftPx = std::hypot(ax, ay) * std::abs(1.0 - 1.0 / factor);
+            double cap = 180.0 * shiftPx / std::max(static_cast<double>(std::min(c.width, c.height)), 1.0);
+            impl_->shiftFocus(dot(move, e), dot(move, n), cap);
+        } else {
+            impl_->moveCamera(after, before);
+        }
+    }
     impl_->dirty = true;
 }
 
