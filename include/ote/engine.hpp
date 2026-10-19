@@ -128,6 +128,7 @@ public:
     void setTerrainEnabled(bool enabled);
     void setTerrainExaggeration(double factor);
     void setDepthPerception(bool enabled);
+    void setTerrainTransparency(float alpha);
     void setElevationHeatmap(bool enabled, double minHeight = 0, double maxHeight = 4500, float opacity = 0.55f);
     std::vector<ProfileSample> elevationProfile(const std::vector<Coord>& path, int samples) const;
     double elevationAt(double lat, double lon) const;

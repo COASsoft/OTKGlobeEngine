@@ -369,6 +369,11 @@ void Engine::setTerrainExaggeration(double factor) {
     impl_->dirty = true;
 }
 
+void Engine::setTerrainTransparency(float alpha) {
+    impl_->globe.setTerrainAlpha(alpha);
+    impl_->dirty = true;
+}
+
 void Engine::setDepthPerception(bool enabled) {
     impl_->globe.setDepthPerception(enabled);
     impl_->dirty = true;

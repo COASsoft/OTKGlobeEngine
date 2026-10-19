@@ -54,7 +54,7 @@ void main() {
     vec2 t2 = vec2(uv2.x, flags.x > 0.5 ? 1.0 - uv2.y : uv2.y);
     vec3 c = mix(texture(sampler2D(tex2, smp), t2).rgb, texture(sampler2D(tex, smp), t).rgb, flags.z);
     c = mix(c, ramp((elev - heat.x) * heat.y), heat.z);
-    frag_color = vec4(c * s, 1.0);
+    frag_color = vec4(c * s, flags.w);
 }
 @end
 

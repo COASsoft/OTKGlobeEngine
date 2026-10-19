@@ -67,6 +67,7 @@ struct ViewerState {
     bool shotViewshed = false;
     bool zoomTest = false;
     int bench = 0;
+    float xray = 1.0f;
     int benchDone = 0;
     double benchTotal = 0, benchMax = 0;
     int memory = 0;
@@ -186,6 +187,7 @@ void init() {
     for (const auto& f : state->featureFiles) state->engine.loadFeatures(f);
     state->engine.setGridEnabled(state->grid);
     state->engine.setElevationHeatmap(state->heat);
+    state->engine.setTerrainTransparency(state->xray);
 
     for (const auto& [path, placement] : state->models) state->engine.addModel(path, placement);
     for (const auto& t : state->tilesets) state->engine.addTileset(t);
@@ -426,6 +428,9 @@ void event(const sapp_event* e) {
             eng.walk(0, -25);
         } else if (e->key_code == SAPP_KEYCODE_D && eng.firstPerson()) {
             eng.walk(0, 25);
+        } else if (e->key_code == SAPP_KEYCODE_X) {
+            state->xray = state->xray < 0.99f ? 1.0f : 0.45f;
+            eng.setTerrainTransparency(state->xray);
         } else if (e->key_code == SAPP_KEYCODE_H) {
             state->heat = !state->heat;
             eng.setElevationHeatmap(state->heat);
@@ -552,6 +557,8 @@ sapp_desc sokol_main(int argc, char* argv[]) {
             state->memory = std::atoi(argv[++i]);
         } else if (a == "--bench") {
             state->bench = std::atoi(argv[++i]);
+        } else if (a == "--xray") {
+            state->xray = static_cast<float>(std::atof(argv[++i]));
         } else if (a == "--grid") {
             state->grid = std::atoi(argv[++i]) != 0;
         } else if (a == "--viewshed") {

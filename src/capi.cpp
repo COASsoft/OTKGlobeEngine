@@ -194,6 +194,8 @@ void ote_set_terrain_exaggeration(ote_engine* e, double factor) { e->engine.setT
 
 void ote_set_depth_perception(ote_engine* e, int enabled) { e->engine.setDepthPerception(enabled != 0); }
 
+void ote_set_terrain_transparency(ote_engine* e, float alpha) { e->engine.setTerrainTransparency(alpha); }
+
 void ote_add_elevation_directory(ote_engine* e, const char* path) {
     ote::ElevationLayer d;
     d.type = ote::ElevationType::Directory;

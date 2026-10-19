@@ -68,6 +68,7 @@ OTE_API void ote_use_default_layers(ote_engine* e);
 OTE_API void ote_set_terrain(ote_engine* e, int enabled);
 OTE_API void ote_set_terrain_exaggeration(ote_engine* e, double factor);
 OTE_API void ote_set_depth_perception(ote_engine* e, int enabled);
+OTE_API void ote_set_terrain_transparency(ote_engine* e, float alpha);
 OTE_API void ote_add_elevation_directory(ote_engine* e, const char* path);
 OTE_API double ote_elevation(const ote_engine* e, double lat, double lon);
 

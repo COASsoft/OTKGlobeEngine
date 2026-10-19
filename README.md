@@ -32,7 +32,7 @@ ATAK reference captures are in `screenshots/atak`.
 - Layer stacking with opacity, KML/KMZ ground overlays, arbitrary image overlays
 
 **Terrain**
-- WGS84 quadtree, 33x33 post meshes with skirts, screen-space-error LOD, slope shading ("enhanced depth perception"), exaggeration
+- WGS84 quadtree, 33x33 post meshes with skirts, screen-space-error LOD, slope shading ("enhanced depth perception"), exaggeration, x-ray transparency
 - Terrarium and quantized-mesh elevation tiles, DTED 0-3 and SRTM HGT folders, GDAL DEMs, EGM96 geoid (heights are HAE)
 - Line of sight, viewshed, elevation profile, elevation heat map
 
@@ -75,7 +75,7 @@ ote_viewer [--view lat,lon,gsd,tilt,azimuth] [--preset 0..3] [--size WxH]
 ```
 
 - Mouse: left drag pans, wheel zooms, right drag rotates and tilts. Touch: one finger pans, pinch zooms, twist rotates, two-finger vertical drag tilts.
-- Keys: `1`-`4` imagery presets (satellite, satellite + USGS topo, OpenStreetMap, vector tiles), `R` reset north, `T` terrain, `E` exaggeration, `D` depth shading, `H` heat map, `G` MGRS grid, `V` viewshed at the cursor, `F` fly to Mount Rainier, `M` 2D/3D, `P` first person (`W`/`A`/`S`/`D` to walk).
+- Keys: `1`-`4` imagery presets (satellite, satellite + USGS topo, OpenStreetMap, vector tiles), `R` reset north, `T` terrain, `E` exaggeration, `D` depth shading, `H` heat map, `G` MGRS grid, `V` viewshed at the cursor, `F` fly to Mount Rainier, `M` 2D/3D, `P` first person (`W`/`A`/`S`/`D` to walk), `X` terrain x-ray.
 - `--shot` renders offscreen until everything has loaded, writes the PNG plus a `.txt` with statistics, and exits. `--zoom-test` flies to a view and reports how many frames showed incompletely loaded tiles.
 - Environment: `OTE_TRACE=file` per-frame trace, `OTE_WATCHDOG=file` main-thread stack dump on a 3 s stall, `OTE_LOG=file` sokol validation messages.
 

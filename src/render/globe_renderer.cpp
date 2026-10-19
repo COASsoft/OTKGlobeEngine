@@ -147,6 +147,11 @@ bool GlobeRenderer::init() {
     gp.depth.write_enabled = true;
     gp.cull_mode = SG_CULLMODE_NONE;
     globePipeline_ = sg_make_pipeline(&gp);
+    gp.depth.write_enabled = false;
+    gp.colors[0].blend.enabled = true;
+    gp.colors[0].blend.src_factor_rgb = SG_BLENDFACTOR_SRC_ALPHA;
+    gp.colors[0].blend.dst_factor_rgb = SG_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
+    globeBlendPipeline_ = sg_make_pipeline(&gp);
 
     sg_pipeline_desc sp{};
     sp.shader = surfaceShader_;
@@ -228,6 +233,7 @@ void GlobeRenderer::shutdown() {
         for (auto& s : freeSurfaces_) dropSurface(s);
         for (auto& [k, t] : imagery_) dropImagery(t);
         sg_destroy_pipeline(globePipeline_);
+        sg_destroy_pipeline(globeBlendPipeline_);
         sg_destroy_pipeline(surfacePipeline_);
         sg_destroy_pipeline(skyPipeline_);
         sg_destroy_pipeline(mipPipeline_);
@@ -1239,10 +1245,23 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     sg_apply_uniforms(UB_sky_fs_params, SG_RANGE(sky));
     sg_draw(0, 3, 1);
 
-    sg_apply_pipeline(globePipeline_);
+    bool xray = terrainAlpha_ < 0.999f;
+    bool tilesBusy = false;
+    auto drawObjects = [&]() {
+        models_.draw(cam, [this](double lat, double lon) { return elevationAt(lat, lon); });
+        points_.draw(cam, dpiScale_);
+        for (auto& [id, t] : tilesets_) {
+            t->update(cam, frustum_, frame_);
+            t->draw(cam, models_);
+            tilesBusy = tilesBusy || t->busy();
+        }
+    };
+    if (xray) drawObjects();
+    sg_apply_pipeline(xray ? globeBlendPipeline_ : globePipeline_);
     globe_fs_params_t gfs{};
     gfs.flags[0] = flipSurface_ ? 1.0f : 0.0f;
     gfs.flags[1] = depthPerception_ && terrainEnabled_ ? 1.0f : 0.0f;
+    gfs.flags[3] = terrainAlpha_;
     gfs.heat[0] = static_cast<float>(heatMin_);
     gfs.heat[1] = static_cast<float>(1.0 / std::max(heatMax_ - heatMin_, 1.0));
     gfs.heat[2] = heatmap_ ? heatOpacity_ : 0.0f;
@@ -1326,16 +1345,9 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         bind.samplers[SMP_smp] = sampler_;
         sg_apply_bindings(&bind);
         sg_apply_uniforms(UB_globe_vs_params, SG_RANGE(vsp));
-        sg_draw(0, kIndexCount, 1);
+        sg_draw(0, xray ? kGrid * kGrid * 6 : kIndexCount, 1);
     }
-    models_.draw(cam, [this](double lat, double lon) { return elevationAt(lat, lon); });
-    points_.draw(cam, dpiScale_);
-    bool tilesBusy = false;
-    for (auto& [id, t] : tilesets_) {
-        t->update(cam, frustum_, frame_);
-        t->draw(cam, models_);
-        tilesBusy = tilesBusy || t->busy();
-    }
+    if (!xray) drawObjects();
     std::vector<FeatureLayer::ExternalLabel> vectorLabels;
     if (!vectorLayers_.empty()) {
         std::unordered_set<TileId, TileIdHash> seen;

@@ -14,6 +14,7 @@
 #if defined(__APPLE__)
 #include <TargetConditionals.h>
 #endif
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <unordered_map>
@@ -52,6 +53,7 @@ public:
     void setTerrainEnabled(bool enabled);
     void setTerrainExaggeration(double factor);
     void setDepthPerception(bool enabled) { depthPerception_ = enabled; }
+    void setTerrainAlpha(float alpha) { terrainAlpha_ = std::clamp(alpha, 0.0f, 1.0f); }
     void setHeatmap(bool enabled, double minHeight, double maxHeight, float opacity) {
         heatmap_ = enabled;
         heatMin_ = minHeight;
@@ -232,6 +234,7 @@ private:
     sg_shader surfaceShader_{};
     sg_shader skyShader_{};
     sg_pipeline globePipeline_{};
+    sg_pipeline globeBlendPipeline_{};
     sg_pipeline surfacePipeline_{};
     sg_pipeline skyPipeline_{};
     sg_shader vfillShader_{};
@@ -258,6 +261,7 @@ private:
     double exaggeration_ = 1.0;
     bool terrainEnabled_ = true;
     bool depthPerception_ = true;
+    float terrainAlpha_ = 1.0f;
     bool heatmap_ = false;
     double heatMin_ = 0, heatMax_ = 4500;
     float heatOpacity_ = 0.55f;
