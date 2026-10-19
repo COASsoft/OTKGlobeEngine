@@ -2,6 +2,11 @@ add_library(opentakengine STATIC
     engine.cpp
     input/input_controller.cpp
     net/http_faults.cpp
+    formats/formats.cpp
+    formats/cot.cpp
+    formats/text_formats.cpp
+    formats/exporters.cpp
+    formats/package.cpp
     capi.cpp
     core/geo.cpp
     core/camera.cpp

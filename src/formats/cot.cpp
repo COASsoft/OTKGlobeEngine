@@ -7,7 +7,7 @@
 #include <cstdio>
 #include <sstream>
 
-namespace ote::formats {
+namespace ote::adapters {
 
 namespace {
 

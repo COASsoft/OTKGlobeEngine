@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<events>
+<event version="2.0" uid="ANDROID-123" type="a-f-G-U-C" how="m-g" time="2026-10-19T12:00:00.000Z" start="2026-10-19T12:00:00.000Z" stale="2026-10-19T12:05:00.000Z"><point lat="46.85290000" lon="-121.76040000" hae="4392.0" ce="5.0" le="3.0"/><detail><contact callsign="Rainier Team"/><remarks>Summit check-in</remarks><color argb="-65536"/><__group name="Cyan" role="Team Member"/></detail></event>
+<event version="2.0" uid="shape-1" type="u-d-f" how="h-e" time="2026-10-19T12:01:00.000Z" start="2026-10-19T12:01:00.000Z" stale="2027-10-19T12:01:00.000Z"><point lat="46.80" lon="-121.75" hae="9999999.0" ce="9999999.0" le="9999999.0"/><detail><contact callsign="Search Area"/><link point="46.79,-121.76"/><link point="46.81,-121.76"/><link point="46.81,-121.74"/><link point="46.79,-121.74"/><link point="46.79,-121.76"/><strokeColor value="-16776961"/><strokeWeight value="3.0"/><fillColor value="1073741824"/></detail></event>
+</events>

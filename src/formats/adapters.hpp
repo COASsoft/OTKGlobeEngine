@@ -6,7 +6,7 @@
 
 #include "ote/formats.hpp"
 
-namespace ote::formats {
+namespace ote::adapters {
 
 std::string xmlEscape(const std::string& s);
 std::string colorHex(std::uint32_t argb);

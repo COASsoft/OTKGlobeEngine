@@ -1,6 +1,7 @@
 #include "ote/ote.h"
 
 #include "ote/engine.hpp"
+#include "ote/formats.hpp"
 
 #include <sokol_gfx.h>
 
@@ -309,6 +310,26 @@ void ote_fly_to(ote_engine* e, const ote_view* v, double seconds) {
 int ote_load_features(ote_engine* e, const char* path) {
     return static_cast<int>(e->engine.loadFeatures(path ? path : "").size());
 }
+
+int ote_export_features(ote_engine* e, const char* path, const char* format) {
+    ote::ExportResult r = e->engine.exportFeatures({}, path ? path : "", format ? format : "");
+    return r.ok ? 1 : 0;
+}
+
+namespace {
+int copyOut(const std::string& s, char* out, int capacity) {
+    if (out && capacity > 0) {
+        size_t n = std::min(s.size(), static_cast<size_t>(capacity - 1));
+        std::memcpy(out, s.data(), n);
+        out[n] = 0;
+    }
+    return static_cast<int>(s.size());
+}
+}
+
+int ote_detect_format(const char* path, char* out, int capacity) { return copyOut(ote::detectFormat(std::string(path ? path : "")), out, capacity); }
+
+int ote_formats_markdown(char* out, int capacity) { return copyOut(ote::formatsMarkdown(), out, capacity); }
 
 uint64_t ote_add_point(ote_engine* e, double lat, double lon, double alt, const char* name, uint32_t argb) {
     ote::Feature f;

@@ -1,4 +1,5 @@
 #include "ote/engine.hpp"
+#include "ote/formats.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -220,7 +221,8 @@ std::vector<std::uint64_t> Engine::featureIds() const { return impl_->globe.feat
 
 std::vector<std::uint64_t> Engine::loadFeatures(const std::string& path) {
     std::vector<std::uint64_t> ids;
-    ParsedFile parsed = parseFile(path);
+    ImportResult imported = importData(path);
+    ParsedFile& parsed = imported.data;
     for (const Feature& f : parsed.features) ids.push_back(addFeature(f));
     for (const GroundOverlay& g : parsed.overlays) {
         ImageOverlay o;
@@ -235,6 +237,15 @@ std::vector<std::uint64_t> Engine::loadFeatures(const std::string& path) {
         addImageOverlay(o);
     }
     return ids;
+}
+
+ExportResult Engine::exportFeatures(const std::vector<std::uint64_t>& ids, const std::string& path, const std::string& format) const {
+    std::vector<Feature> out;
+    for (std::uint64_t id : ids.empty() ? featureIds() : ids) {
+        Feature f;
+        if (feature(id, f)) out.push_back(std::move(f));
+    }
+    return ote::exportFeatures(out, path, format);
 }
 
 std::uint64_t Engine::hitTest(double sx, double sy, double radiusPx) const {

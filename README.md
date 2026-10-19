@@ -4,7 +4,7 @@ A lightweight, cross-platform C++ map engine modeled on the TAK map engine: a WG
 
 Targets Windows, macOS, Linux, Android, iOS and iPadOS from one codebase. Rendering goes through sokol_gfx (Direct3D 11, Metal, OpenGL 4.1, OpenGL ES 3) with shaders written once. CI builds all five targets on every push.
 
-See [docs/PLAN.md](docs/PLAN.md) for the architecture and decisions, and [docs/EMBEDDING.md](docs/EMBEDDING.md) for using the engine from Android, iOS, macOS, Windows, C# and Qt.
+See [docs/PLAN.md](docs/PLAN.md) for the architecture and decisions, and [docs/EMBEDDING.md](docs/EMBEDDING.md) for using the engine from Android, iOS, macOS, Windows, C# and Qt. [docs/RENDERING.md](docs/RENDERING.md) covers continuous, zero-blank rendering and how it is measured; [docs/FORMATS.md](docs/FORMATS.md) is the data import/export compatibility matrix.
 
 | Globe | Terrain | First person |
 | --- | --- | --- |
@@ -83,13 +83,19 @@ ote_viewer [--view lat,lon,gsd,tilt,azimuth] [--preset 0..3] [--size WxH]
            [--elevation-dir dir] [--gdal-dem f] [--quantized-mesh url] [--terrain 0|1] [--exaggeration x]
            [--cache dir] [--offline 1] [--memory MB] [--grid 1] [--heatmap 1]
            [--first-person heading,pitch[,height]] [--download w,s,e,n,minz,maxz]
-           [--shot out.png] [--shot-timeout s] [--zoom-test lat,lon,gsd,tilt,az,seconds]
+           [--shot out.png] [--shot-timeout s] [--zoom-test lat,lon,gsd,tilt,az,seconds] [--zoom-start s] [--diag 1]
 ```
 
-- Mouse: left drag pans, wheel zooms, right drag rotates and tilts. Touch: one finger pans, pinch zooms, twist rotates, two-finger vertical drag tilts.
-- Keys: `1`-`4` imagery presets (satellite, satellite + USGS topo, OpenStreetMap, vector tiles), `R` reset north, `T` terrain, `E` exaggeration, `D` depth shading, `H` heat map, `G` MGRS grid, `V` viewshed at the cursor, `F` fly to Mount Rainier, `M` 2D/3D, `P` first person (`W`/`A`/`S`/`D` to walk), `X` terrain x-ray.
-- `--shot` renders offscreen until everything has loaded, writes the PNG plus a `.txt` with statistics, and exits. `--zoom-test` flies to a view and reports how many frames showed incompletely loaded tiles.
-- Environment: `OTE_TRACE=file` per-frame trace, `OTE_WATCHDOG=file` main-thread stack dump on a 3 s stall, `OTE_LOG=file` sokol validation messages.
+- Input is handled by the engine's shared controller (`engine.input()`, `ote_pointer_*` in the C ABI), so every host behaves the same:
+  - Mouse: left drag pans (with inertia), wheel zooms at the cursor, right or middle drag (or Ctrl/Alt + left) rotates and tilts, double click zooms in; Shift + wheel tilts, Alt + wheel rotates.
+  - Touch and pen: one finger pans with fling, pinch zooms about the fingers, twist rotates past a 10° threshold, two-finger vertical drag (or three fingers) tilts, double tap zooms in, double-tap-and-drag zooms continuously, two-finger tap zooms out, long press reports a callback. Windows touchscreens and pens use `WM_POINTER`.
+  - Trackpads: pinch (magnify) zooms and rotate rotates on macOS and iPad; precise two-finger scroll pans.
+  - Keys: arrows or `W`/`A`/`S`/`D` pan (walk in first person), `+`/`-` zoom, `Q`/`E` rotate, `PageUp`/`PageDown` tilt, `N` north up, `T` level the camera.
+  - Panning keeps the current heading; only explicit rotation changes it. The poles are reachable at any zoom without the view spinning.
+- Viewer keys: `1`-`4` imagery presets (satellite, satellite + USGS topo, OpenStreetMap, vector tiles), `R` reset north and tilt, `Y` terrain, `O` exaggeration, `U` depth shading, `H` heat map, `G` MGRS grid, `V` viewshed at the cursor, `F` fly to Mount Rainier, `M` 2D/3D, `P` first person, `X` terrain x-ray.
+- `--shot` renders offscreen until everything has loaded, writes the PNG plus a `.txt` with statistics, and exits. `--zoom-test` flies to a view and reports incomplete, coarse (two or more levels of fallback) and blank frames; `--zoom-start s` starts it after a fixed delay. `--diag 1` logs subtree collapses and deep-fallback tiles.
+- On Android the viewer also reads arguments from `Android/data/com.opentakengine.viewer/files/args.txt` and logs statistics under the logcat tag `OpenTAKEngine`.
+- Environment: `OTE_TRACE=file` per-frame trace, `OTE_WATCHDOG=file` main-thread stack dump on a 3 s stall, `OTE_LOG=file` sokol validation messages, `OTE_PROFILE=file` per-section CPU times, `OTE_PERF=file` frame and cache statistics, `OTE_NET_DELAY_MS` / `OTE_NET_JITTER_MS` / `OTE_NET_FAIL_RATE` / `OTE_NET_TIMEOUT_RATE` / `OTE_NET_CORRUPT_RATE` / `OTE_NET_404_RATE` network fault injection.
 
 ## License
 

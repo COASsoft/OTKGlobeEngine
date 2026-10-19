@@ -274,15 +274,15 @@ ImportResult importBytes(const std::vector<std::uint8_t>& bytes, const std::stri
     if (f == "kml" || f == "kmz" || f == "gpx" || f == "geojson") {
         res.data = parseBytes(bytes, f == "geojson" ? ".geojson" : "." + f);
     } else if (f == "cot") {
-        res.data.features = formats::parseCot(bytes, res.warnings);
+        res.data.features = adapters::parseCot(bytes, res.warnings);
     } else if (f == "csv") {
-        res.data.features = formats::parseCsv(bytes, res.warnings);
+        res.data.features = adapters::parseCsv(bytes, res.warnings);
     } else if (f == "wkt") {
-        res.data.features = formats::parseWktText(bytes, res.warnings);
+        res.data.features = adapters::parseWktText(bytes, res.warnings);
     } else if (f == "gml") {
-        res.data.features = formats::parseGml(bytes, res.warnings);
+        res.data.features = adapters::parseGml(bytes, res.warnings);
     } else if (f == "tak-package") {
-        return formats::importPackage(bytes, limits, 0);
+        return adapters::importPackage(bytes, limits, 0);
     } else {
         const FormatInfo* info = findFormat(f);
         res.error = info ? info->name + " is not a feature format; load it with " + (info->loadWith.empty() ? "a future adapter" : info->loadWith)
@@ -327,19 +327,19 @@ std::vector<std::uint8_t> exportBytes(const std::vector<Feature>& features, cons
     ExportResult& r = result ? *result : local;
     r.format = formatId;
     std::string text;
-    if (formatId == "geojson") text = formats::writeGeoJson(features, r);
-    else if (formatId == "kml") text = formats::writeKml(features, r);
-    else if (formatId == "gpx") text = formats::writeGpx(features, r);
-    else if (formatId == "cot") text = formats::writeCot(features, r);
-    else if (formatId == "csv") text = formats::writeCsv(features, r);
-    else if (formatId == "wkt") text = formats::writeWktText(features, r);
-    else if (formatId == "gml") text = formats::writeGml(features, r);
+    if (formatId == "geojson") text = adapters::writeGeoJson(features, r);
+    else if (formatId == "kml") text = adapters::writeKml(features, r);
+    else if (formatId == "gpx") text = adapters::writeGpx(features, r);
+    else if (formatId == "cot") text = adapters::writeCot(features, r);
+    else if (formatId == "csv") text = adapters::writeCsv(features, r);
+    else if (formatId == "wkt") text = adapters::writeWktText(features, r);
+    else if (formatId == "gml") text = adapters::writeGml(features, r);
     else if (formatId == "tak-package") {
-        std::vector<std::uint8_t> zip = formats::writePackage(features, r);
+        std::vector<std::uint8_t> zip = adapters::writePackage(features, r);
         r.ok = !zip.empty();
         return zip;
     } else if (formatId == "kmz") {
-        std::string kml = formats::writeKml(features, r);
+        std::string kml = adapters::writeKml(features, r);
         mz_zip_archive zip{};
         std::vector<std::uint8_t> out;
         if (mz_zip_writer_init_heap(&zip, 0, 1 << 16)) {
@@ -412,13 +412,13 @@ std::string formatsMarkdown() {
         }
         return "";
     };
-    std::string out = "| Format | Id | Kind | Import | Export | Needs GDAL | Load with | Notes |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n";
+    std::string out = "| Format | Id | Kind | Import | Export | Needs GDAL | In this build | Load with | Notes |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n";
     for (const FormatInfo& f : formats()) {
         std::string ext;
         for (const auto& e : f.extensions) ext += (ext.empty() ? "" : " ") + e;
         out += "| " + f.name + (ext.empty() ? "" : " (" + ext + ")") + " | `" + f.id + "` | " + kind(f.kind) + " | " +
                (f.canImport ? "yes" : "no") + " | " + (f.canExport ? "yes" : "no") + " | " + (f.requiresGdal ? "yes" : "no") + " | " +
-               (f.loadWith.empty() ? "-" : f.loadWith) + " | " + f.notes + " |\n";
+               (f.available ? "yes" : "no") + " | " + (f.loadWith.empty() ? "-" : f.loadWith) + " | " + f.notes + " |\n";
     }
     return out;
 }

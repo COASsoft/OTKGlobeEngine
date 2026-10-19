@@ -9,7 +9,7 @@
 #include <fstream>
 #include <random>
 
-namespace ote::formats {
+namespace ote::adapters {
 
 namespace {
 
@@ -128,9 +128,8 @@ ImportResult importPackage(const std::vector<std::uint8_t>& bytes, const ImportL
                         std::ofstream(temp / (std::string("layer") + std::to_string(i) + side), std::ios::binary)
                             .write(reinterpret_cast<const char*>(b.data()), static_cast<std::streamsize>(b.size()));
                     }
-            ImportResult sub = importData((temp / ("layer" + std::to_string(i) + ".shp")).u8string().empty() ? std::string()
-                                                                                                                  : (temp / ("layer" + std::to_string(i) + ".shp")).string(),
-                                          "shp", limits);
+            std::u8string shp = (temp / ("layer" + std::to_string(i) + ".shp")).u8string();
+            ImportResult sub = importData(std::string(shp.begin(), shp.end()), "shp", limits);
             res.data.features.insert(res.data.features.end(), sub.data.features.begin(), sub.data.features.end());
             continue;
         }

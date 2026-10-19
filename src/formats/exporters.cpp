@@ -4,7 +4,7 @@
 
 #include <cstdio>
 
-namespace ote::formats {
+namespace ote::adapters {
 
 std::string xmlEscape(const std::string& s) {
     std::string out;

@@ -10,7 +10,7 @@
 #include <set>
 #include <sstream>
 
-namespace ote::formats {
+namespace ote::adapters {
 
 namespace {
 
@@ -97,8 +97,10 @@ struct WktReader {
     }
     bool geometry(std::vector<Geometry>& out) {
         std::string kind = word();
+        size_t afterKind = i;
         std::string mod = word();
-        (void)mod;
+        if (mod == "empty") return true;
+        if (mod != "z" && mod != "m" && mod != "zm") i = afterKind;
         ws();
         if (s.compare(i, 5, "EMPTY") == 0 || s.compare(i, 5, "empty") == 0) {
             i += 5;
@@ -560,8 +562,13 @@ std::vector<Feature> parseGml(const std::vector<std::uint8_t>& bytes, std::vecto
             }
             if (ln == "boundedBy") continue;
             std::string value = c.text().as_string();
+            std::string ns = c.name();
+            bool own = ns.rfind("ote:", 0) == 0;
             if (ln == "name" && f.name.empty()) f.name = value;
             else if (ln == "description" && f.description.empty()) f.description = value;
+            else if (own && ln == "uid") f.uid = value;
+            else if (own && ln == "type") f.type = value;
+            else if (own && ln == "time") f.time = parseIsoTime(value);
             else setAttribute(f, ln, value);
         }
         if (f.name.empty()) f.name = !f.uid.empty() ? f.uid : localName(m.name());

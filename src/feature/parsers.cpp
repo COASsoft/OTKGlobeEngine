@@ -8,6 +8,7 @@
 #include <pugixml.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <cctype>
 #include <cstdio>
 #include <cstring>
@@ -145,6 +146,11 @@ AltitudeMode kmlAltitude(const pugi::xml_node& g) {
     return AltitudeMode::ClampToGround;
 }
 
+std::vector<Coord> openRing(std::vector<Coord> r) {
+    if (r.size() >= 2 && std::abs(r.front().lat - r.back().lat) < 1e-12 && std::abs(r.front().lon - r.back().lon) < 1e-12) r.pop_back();
+    return r;
+}
+
 void kmlGeometry(const pugi::xml_node& g, Feature& f) {
     std::string name = g.name();
     if (name == "MultiGeometry") {
@@ -160,9 +166,9 @@ void kmlGeometry(const pugi::xml_node& g, Feature& f) {
         geom.points = kmlCoords(g.child_value("coordinates"));
     } else if (name == "Polygon") {
         geom.type = GeometryType::Polygon;
-        geom.points = kmlCoords(g.child("outerBoundaryIs").child("LinearRing").child_value("coordinates"));
+        geom.points = openRing(kmlCoords(g.child("outerBoundaryIs").child("LinearRing").child_value("coordinates")));
         for (auto in : g.children("innerBoundaryIs"))
-            geom.holes.push_back(kmlCoords(in.child("LinearRing").child_value("coordinates")));
+            geom.holes.push_back(openRing(kmlCoords(in.child("LinearRing").child_value("coordinates"))));
     } else if (name == "gx:Track") {
         geom.type = GeometryType::LineString;
         for (auto c : g.children("gx:coord")) {
@@ -263,6 +269,21 @@ std::vector<Feature> parseKmlText(const char* text, size_t size, const Resolver&
             readKmlStyle(s, k, icons);
             applyKmlStyle(k, f.style);
         }
+        f.uid = pm.attribute("id").as_string();
+        if (auto ext = pm.child("ExtendedData")) {
+            for (auto d : ext.children("Data")) {
+                std::string key = d.attribute("name").as_string();
+                if (key == "cot_type") f.type = d.child_value("value");
+                else setAttribute(f, key, d.child_value("value"));
+            }
+            for (auto sd : ext.children("SchemaData"))
+                for (auto v : sd.children("SimpleData")) setAttribute(f, v.attribute("name").as_string(), v.text().as_string());
+        }
+        if (auto ts = pm.child("TimeStamp")) f.time = parseIsoTime(ts.child_value("when"));
+        if (auto span = pm.child("TimeSpan")) {
+            f.start = parseIsoTime(span.child_value("begin"));
+            f.stale = parseIsoTime(span.child_value("end"));
+        }
         for (auto c : pm.children()) kmlGeometry(c, f);
         if (!f.geometries.empty()) out.push_back(std::move(f));
     }
@@ -334,8 +355,8 @@ void jsonGeometry(const nlohmann::json& g, Feature& f) {
         if (!rings.is_array() || rings.empty()) return;
         Geometry geom;
         geom.type = GeometryType::Polygon;
-        geom.points = jsonCoords(rings[0]);
-        for (size_t i = 1; i < rings.size(); ++i) geom.holes.push_back(jsonCoords(rings[i]));
+        geom.points = openRing(jsonCoords(rings[0]));
+        for (size_t i = 1; i < rings.size(); ++i) geom.holes.push_back(openRing(jsonCoords(rings[i])));
         f.geometries.push_back(std::move(geom));
     };
     if (type == "Point") {
@@ -357,8 +378,22 @@ void jsonGeometry(const nlohmann::json& g, Feature& f) {
 
 void jsonFeature(const nlohmann::json& j, std::vector<Feature>& out) {
     Feature f;
+    if (j.contains("id")) f.uid = j["id"].is_string() ? j["id"].get<std::string>() : j["id"].dump();
     if (j.contains("properties") && j["properties"].is_object()) {
         const auto& p = j["properties"];
+        static const char* const known[] = {"name", "description", "cot_type", "time", "start", "stale", "altitude_mode", "stroke",
+                                            "stroke-width", "stroke-opacity", "fill", "fill-opacity", "marker-color", "marker-size", "marker-symbol"};
+        for (auto it = p.begin(); it != p.end(); ++it) {
+            if (std::find(std::begin(known), std::end(known), it.key()) != std::end(known)) continue;
+            setAttribute(f, it.key(), it.value().is_string() ? it.value().get<std::string>() : it.value().dump());
+        }
+        auto str = [&](const char* k) { return p.contains(k) && p[k].is_string() ? p[k].get<std::string>() : std::string(); };
+        f.type = str("cot_type");
+        f.time = parseIsoTime(str("time"));
+        f.start = parseIsoTime(str("start"));
+        f.stale = parseIsoTime(str("stale"));
+        if (str("altitude_mode") == "absolute") f.altitudeMode = AltitudeMode::Absolute;
+        if (str("altitude_mode") == "relativeToGround") f.altitudeMode = AltitudeMode::RelativeToGround;
         for (const char* k : {"name", "title", "NAME", "Name", "label"})
             if (p.contains(k) && p[k].is_string()) {
                 f.name = p[k].get<std::string>();
@@ -403,15 +438,23 @@ std::vector<Feature> parseGpx(const std::vector<std::uint8_t>& bytes) {
     auto pt = [](const pugi::xml_node& n) {
         return Coord{n.attribute("lat").as_double(), n.attribute("lon").as_double(), n.child("ele").text().as_double(0)};
     };
+    auto common = [](const pugi::xml_node& n, Feature& f) {
+        f.name = n.child_value("name");
+        f.description = n.child_value("desc");
+        if (n.child("type")) setAttribute(f, "type", n.child_value("type"));
+        if (n.child("sym")) setAttribute(f, "sym", n.child_value("sym"));
+        if (n.child("cmt")) setAttribute(f, "cmt", n.child_value("cmt"));
+    };
     for (auto w : gpx.children("wpt")) {
         Feature f;
-        f.name = w.child_value("name");
+        common(w, f);
+        f.time = parseIsoTime(w.child_value("time"));
         f.geometries.push_back({GeometryType::Point, {pt(w)}, {}});
         out.push_back(std::move(f));
     }
     for (auto r : gpx.children("rte")) {
         Feature f;
-        f.name = r.child_value("name");
+        common(r, f);
         Geometry g{GeometryType::LineString, {}, {}};
         for (auto p : r.children("rtept")) g.points.push_back(pt(p));
         f.geometries.push_back(std::move(g));
@@ -421,10 +464,17 @@ std::vector<Feature> parseGpx(const std::vector<std::uint8_t>& bytes) {
     }
     for (auto t : gpx.children("trk")) {
         Feature f;
-        f.name = t.child_value("name");
+        common(t, f);
         for (auto s : t.children("trkseg")) {
             Geometry g{GeometryType::LineString, {}, {}};
-            for (auto p : s.children("trkpt")) g.points.push_back(pt(p));
+            for (auto p : s.children("trkpt")) {
+                g.points.push_back(pt(p));
+                double when = parseIsoTime(p.child_value("time"));
+                if (when > 0) {
+                    if (f.start == 0) f.start = when;
+                    f.stale = when;
+                }
+            }
             if (!g.points.empty()) f.geometries.push_back(std::move(g));
         }
         f.style.strokeColor = 0xFFFFD000;
@@ -442,30 +492,44 @@ double le64(const std::uint8_t* p) {
     return d;
 }
 
-std::vector<std::string> dbfNames(const std::filesystem::path& path) {
-    std::vector<std::string> out;
+struct DbfTable {
+    std::vector<std::vector<std::pair<std::string, std::string>>> rows;
+    int nameField = -1;
+};
+
+DbfTable readDbf(const std::filesystem::path& path) {
+    DbfTable out;
     std::vector<std::uint8_t> b = readAll(path);
     if (b.size() < 32) return out;
     std::uint32_t count = static_cast<std::uint32_t>(le32(&b[4]));
     std::uint16_t header = static_cast<std::uint16_t>(b[8] | (b[9] << 8)), record = static_cast<std::uint16_t>(b[10] | (b[11] << 8));
-    int field = -1, offset = 1, cursor = 1;
+    struct Field {
+        std::string name;
+        int offset;
+        int length;
+    };
+    std::vector<Field> fields;
+    int cursor = 1;
     for (size_t p = 32; p + 32 <= b.size() && b[p] != 0x0D; p += 32) {
         std::string name(reinterpret_cast<const char*>(&b[p]), strnlen(reinterpret_cast<const char*>(&b[p]), 11));
         int len = b[p + 16];
         std::string l = lower(name);
-        if (field < 0 && b[p + 11] == 'C' && (l == "name" || l == "label" || l == "title" || l == "id")) {
-            offset = cursor;
-            field = len;
-        }
+        if (out.nameField < 0 && b[p + 11] == 'C' && (l == "name" || l == "label" || l == "title" || l == "id"))
+            out.nameField = static_cast<int>(fields.size());
+        fields.push_back({name, cursor, len});
         cursor += len;
     }
-    if (field < 0) return out;
-    for (std::uint32_t i = 0; i < count; ++i) {
-        size_t at = header + static_cast<size_t>(i) * record + offset;
-        if (at + field > b.size()) break;
-        std::string v(reinterpret_cast<const char*>(&b[at]), field);
-        v.erase(v.find_last_not_of(' ') + 1);
-        out.push_back(v);
+    for (std::uint32_t i = 0; i < count && i < 10000000u; ++i) {
+        size_t base = header + static_cast<size_t>(i) * record;
+        if (base + record > b.size()) break;
+        std::vector<std::pair<std::string, std::string>> row;
+        for (const Field& f : fields) {
+            std::string v(reinterpret_cast<const char*>(&b[base + f.offset]), f.length);
+            v.erase(v.find_last_not_of(' ') + 1);
+            v.erase(0, std::min(v.find_first_not_of(' '), v.size()));
+            row.emplace_back(f.name, v);
+        }
+        out.rows.push_back(std::move(row));
     }
     return out;
 }
@@ -476,7 +540,7 @@ std::vector<Feature> parseShapefile(const std::filesystem::path& path) {
     if (b.size() < 100 || be32(&b[0]) != 9994) return out;
     std::filesystem::path dbf = path;
     dbf.replace_extension(".dbf");
-    std::vector<std::string> names = dbfNames(dbf);
+    DbfTable table = readDbf(dbf);
     size_t p = 100;
     size_t rec = 0;
     while (p + 12 <= b.size()) {
@@ -485,7 +549,10 @@ std::vector<Feature> parseShapefile(const std::filesystem::path& path) {
         if (p + 8 + static_cast<size_t>(len) > b.size()) break;
         int type = le32(c);
         Feature f;
-        if (rec < names.size()) f.name = names[rec];
+        if (rec < table.rows.size()) {
+            f.attributes = table.rows[rec];
+            if (table.nameField >= 0) f.name = table.rows[rec][static_cast<size_t>(table.nameField)].second;
+        }
         int base = type % 10;
         if (type != 0 && (base == 1)) {
             f.geometries.push_back({GeometryType::Point, {Coord{le64(c + 12), le64(c + 4), 0}}, {}});
@@ -524,6 +591,25 @@ std::vector<Feature> parseShapefile(const std::filesystem::path& path) {
 
 }
 
+ParsedFile parseBytes(const std::vector<std::uint8_t>& bytes, const std::string& extension, const std::string& baseDirectory) {
+    ParsedFile out;
+    std::string ext = lower(extension);
+    if (!ext.empty() && ext[0] != '.') ext = "." + ext;
+    if (ext == ".kmz") {
+        out.features = parseKmz(bytes, &out.overlays);
+    } else if (ext == ".kml") {
+        std::filesystem::path dir = std::filesystem::u8path(baseDirectory);
+        Resolver resolve;
+        if (!baseDirectory.empty()) resolve = [dir](const std::string& href) { return readAll(dir / std::filesystem::u8path(href)); };
+        out.features = parseKmlText(reinterpret_cast<const char*>(bytes.data()), bytes.size(), resolve, &out.overlays);
+    } else if (ext == ".gpx") {
+        out.features = parseGpx(bytes);
+    } else if (ext == ".json" || ext == ".geojson") {
+        out.features = parseGeoJson(bytes);
+    }
+    return out;
+}
+
 ParsedFile parseFile(const std::string& path) {
     ParsedFile out;
     std::filesystem::path p = std::filesystem::u8path(path);
@@ -535,20 +621,85 @@ ParsedFile parseFile(const std::string& path) {
     std::vector<std::uint8_t> bytes = readAll(p);
     if (bytes.empty()) {
         out.features = parseWithOgr(path);
-    } else if (ext == ".kmz") {
-        out.features = parseKmz(bytes, &out.overlays);
-    } else if (ext == ".kml") {
-        std::filesystem::path dir = p.parent_path();
-        Resolver resolve = [dir](const std::string& href) { return readAll(dir / std::filesystem::u8path(href)); };
-        out.features = parseKmlText(reinterpret_cast<const char*>(bytes.data()), bytes.size(), resolve, &out.overlays);
-    } else if (ext == ".gpx") {
-        out.features = parseGpx(bytes);
-    } else if (ext == ".json" || ext == ".geojson") {
-        out.features = parseGeoJson(bytes);
+    } else if (ext == ".kmz" || ext == ".kml" || ext == ".gpx" || ext == ".json" || ext == ".geojson") {
+        std::u8string dir = p.parent_path().u8string();
+        out = parseBytes(bytes, ext, std::string(dir.begin(), dir.end()));
     } else {
         out.features = parseWithOgr(path);
     }
     return out;
+}
+
+namespace {
+
+std::int64_t daysFromCivil(std::int64_t y, unsigned m, unsigned d) {
+    y -= m <= 2;
+    const std::int64_t era = (y >= 0 ? y : y - 399) / 400;
+    const unsigned yoe = static_cast<unsigned>(y - era * 400);
+    const unsigned doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+    const unsigned doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    return era * 146097 + static_cast<std::int64_t>(doe) - 719468;
+}
+
+}
+
+double parseIsoTime(const std::string& text) {
+    int y = 0, mo = 0, d = 0, h = 0, mi = 0;
+    double sec = 0;
+    if (std::sscanf(text.c_str(), "%d-%d-%d", &y, &mo, &d) != 3 || mo < 1 || mo > 12 || d < 1 || d > 31) return 0;
+    size_t t = text.find_first_of("Tt ");
+    double offset = 0;
+    if (t != std::string::npos) {
+        std::sscanf(text.c_str() + t + 1, "%d:%d:%lf", &h, &mi, &sec);
+        size_t z = text.find_first_of("Zz+-", t + 1);
+        if (z != std::string::npos && (text[z] == '+' || text[z] == '-')) {
+            int oh = 0, om = 0;
+            if (std::sscanf(text.c_str() + z + 1, "%d:%d", &oh, &om) >= 1) offset = (text[z] == '-' ? -1.0 : 1.0) * (oh * 3600.0 + om * 60.0);
+        }
+    }
+    return static_cast<double>(daysFromCivil(y, static_cast<unsigned>(mo), static_cast<unsigned>(d))) * 86400.0 + h * 3600.0 +
+           mi * 60.0 + sec - offset;
+}
+
+std::string formatIsoTime(double unixSeconds) {
+    std::int64_t total = static_cast<std::int64_t>(std::floor(unixSeconds));
+    int millis = static_cast<int>(std::lround((unixSeconds - static_cast<double>(total)) * 1000.0));
+    if (millis >= 1000) {
+        ++total;
+        millis -= 1000;
+    }
+    std::int64_t days = total >= 0 ? total / 86400 : (total - 86399) / 86400;
+    std::int64_t rem = total - days * 86400;
+    std::int64_t z = days + 719468;
+    const std::int64_t era = (z >= 0 ? z : z - 146096) / 146097;
+    const unsigned doe = static_cast<unsigned>(z - era * 146097);
+    const unsigned yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    std::int64_t y = static_cast<std::int64_t>(yoe) + era * 400;
+    const unsigned doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    const unsigned mp = (5 * doy + 2) / 153;
+    const unsigned d = doy - (153 * mp + 2) / 5 + 1;
+    const unsigned m = mp < 10 ? mp + 3 : mp - 9;
+    y += m <= 2;
+    char buf[40];
+    std::snprintf(buf, sizeof(buf), "%04lld-%02u-%02uT%02d:%02d:%02d.%03dZ", static_cast<long long>(y), m, d, static_cast<int>(rem / 3600),
+                  static_cast<int>(rem % 3600 / 60), static_cast<int>(rem % 60), millis);
+    return buf;
+}
+
+const std::string* findAttribute(const Feature& feature, const std::string& key) {
+    for (const auto& kv : feature.attributes)
+        if (kv.first == key) return &kv.second;
+    return nullptr;
+}
+
+void setAttribute(Feature& feature, const std::string& key, const std::string& value) {
+    if (key.empty()) return;
+    for (auto& kv : feature.attributes)
+        if (kv.first == key) {
+            kv.second = value;
+            return;
+        }
+    feature.attributes.emplace_back(key, value);
 }
 
 std::vector<Feature> parseFeatures(const std::string& path) { return parseFile(path).features; }

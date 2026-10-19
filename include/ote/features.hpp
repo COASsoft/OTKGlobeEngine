@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace ote {
@@ -46,8 +47,14 @@ struct Style {
 
 struct Feature {
     std::uint64_t id = 0;
+    std::string uid;
+    std::string type;
     std::string name;
     std::string description;
+    std::vector<std::pair<std::string, std::string>> attributes;
+    double time = 0;
+    double start = 0;
+    double stale = 0;
     std::vector<Geometry> geometries;
     Style style;
     AltitudeMode altitudeMode = AltitudeMode::ClampToGround;
@@ -82,6 +89,11 @@ struct ParsedFile {
 };
 
 ParsedFile parseFile(const std::string& path);
+ParsedFile parseBytes(const std::vector<std::uint8_t>& bytes, const std::string& extension, const std::string& baseDirectory = {});
+double parseIsoTime(const std::string& text);
+std::string formatIsoTime(double unixSeconds);
+const std::string* findAttribute(const Feature& feature, const std::string& key);
+void setAttribute(Feature& feature, const std::string& key, const std::string& value);
 std::vector<Feature> parseFeatures(const std::string& path);
 
 inline std::uint32_t argb(std::uint8_t a, std::uint8_t r, std::uint8_t g, std::uint8_t b) {
