@@ -75,6 +75,7 @@ struct ViewerState {
     sapp_mousebutton mouseButton = SAPP_MOUSEBUTTON_LEFT;
     bool diag = false;
     bool holes = false;
+    long long scriptFrames = 0, scriptIncomplete = 0, scriptCoarse = 0, scriptMaxDepth = 0, scriptLoads0 = -1, scriptLoads = 0;
     int holeChecks = 0;
     int holeFrames = 0;
     int holeMax = 0;
@@ -357,6 +358,15 @@ void frame() {
             }
         }
         bool scripting = runScript();
+        if (scripting && state->scriptNext > 0) {
+            ote::Stats ss = state->engine.stats();
+            if (state->scriptLoads0 < 0) state->scriptLoads0 = ss.imageryLoads;
+            state->scriptLoads = ss.imageryLoads - state->scriptLoads0;
+            ++state->scriptFrames;
+            if (ss.incompleteTiles > 0) ++state->scriptIncomplete;
+            if (ss.coarseTiles > 0) ++state->scriptCoarse;
+            state->scriptMaxDepth = std::max<long long>(state->scriptMaxDepth, ss.maxFallbackDepth);
+        }
         bool zooming = scripting || (state->zoomTest && (!state->zoomStarted || state->engine.animating()));
         if (state->bench > 0 && state->shotElapsed > 1.0 && state->settledFrames > 10 && !zooming) {
             state->engine.rotate(0.05);
@@ -381,6 +391,11 @@ void frame() {
             if (FILE* f = std::fopen(logPath.c_str(), "w")) {
                 std::fprintf(f, "resources invalid=%d terrain=%d surfaces=%d free=%d imagery=%d gpu_mb=%.0f\n", s.invalidResources, s.terrainMeshes, s.surfaces,
                              s.freeSurfaces, s.imageryTextures, s.gpuMegabytes);
+                if (state->scriptFrames > 0)
+                    std::fprintf(f, "script frames=%lld incomplete_frames=%lld coarse_frames=%lld max_depth=%lld imagery_loads=%lld\n", state->scriptFrames,
+                                 state->scriptIncomplete, state->scriptCoarse, state->scriptMaxDepth, state->scriptLoads);
+                std::fprintf(f, "evictions surfaces=%lld imagery=%lld terrain=%lld loads=%lld\n", s.surfaceEvictions, s.imageryEvictions, s.terrainEvictions,
+                             s.imageryLoads);
                 if (state->holes) std::fprintf(f, "holes checked=%d frames=%d max_blocks=%d\n", state->holeChecks, state->holeFrames, state->holeMax);
                 std::fprintf(f, "%s frames=%d seconds=%.1f settled=%d tiles=%d L%d imagery=%d pending=%d img_pending=%d elev_pending=%d\n",
                              ok ? "saved" : "failed", state->frames, state->shotElapsed, settled ? 1 : 0,
@@ -806,8 +821,9 @@ bool runScript() {
         if (const char* dp = std::getenv("OTE_DIAG"))
             if (FILE* df = std::fopen(dp, "a")) {
                 ote::View cv = state->engine.view();
-                std::fprintf(df, "input t=%.2f %s %.0f %.0f %.0f %.0f %.2f | view %.5f %.5f gsd %.2f tilt %.1f az %.1f\n", t, st.op.c_str(), st.v[0], st.v[1], st.v[2],
-                             st.v[3], st.v[4], cv.lat, cv.lon, cv.gsd, cv.tilt, cv.azimuth);
+                std::fprintf(df, "input t=%.2f %s %.0f %.0f %.0f %.0f %.2f | view %.5f %.5f gsd %.2f tilt %.1f az %.1f | so far frames %lld incomplete %lld coarse %lld loads %lld\n", t,
+                             st.op.c_str(), st.v[0], st.v[1], st.v[2], st.v[3], st.v[4], cv.lat, cv.lon, cv.gsd, cv.tilt, cv.azimuth, state->scriptFrames,
+                             state->scriptIncomplete, state->scriptCoarse, state->scriptLoads);
                 std::fclose(df);
             }
         if (st.op == "wheel") in.wheel(st.v[0], st.v[1], 0, st.v[2], false, 0);
