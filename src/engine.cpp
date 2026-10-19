@@ -572,10 +572,12 @@ std::vector<ProfileSample> Engine::elevationProfile(const std::vector<Coord>& pa
 }
 
 void Engine::frame(const sg_swapchain& swapchain) {
+    auto cpuStart = std::chrono::steady_clock::now();
     impl_->animate();
     impl_->followTerrain();
     impl_->globe.render(impl_->camera, &swapchain, nullptr, swapchain.width, swapchain.height);
     impl_->dirty = false;
+    impl_->globe.setCpuMs(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - cpuStart).count());
 }
 
 void Engine::frameOffscreen(const sg_attachments& attachments, int width, int height) {

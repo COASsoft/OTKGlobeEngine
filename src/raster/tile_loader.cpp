@@ -113,6 +113,11 @@ std::string TileLoader::debug() const {
     return s;
 }
 
+void TileLoader::giveBack(DecodedTile& tile) {
+    std::lock_guard lock(mutex_);
+    if (doneIds_.insert(tile.id).second) done_.push_front(std::move(tile));
+}
+
 int TileLoader::pending() const {
     std::lock_guard lock(mutex_);
     return static_cast<int>(queue_.size() + inflight_.size());

@@ -1,4 +1,5 @@
 #if defined(__ANDROID__)
+#include <android/log.h>
 #include <android/native_activity.h>
 #endif
 #if defined(_WIN32)
@@ -67,6 +68,9 @@ struct ViewerState {
     bool shotViewshed = false;
     bool zoomTest = false;
     int bench = 0;
+    int perfFrames = 0;
+    double perfFrameMs = 0, perfFrameMax = 0, perfCpuMs = 0, perfCpuMax = 0;
+    long long perfRenders = 0, perfBuilds = 0, perfUploads = 0;
     float xray = 1.0f;
     int benchDone = 0;
     double benchTotal = 0, benchMax = 0;
@@ -322,6 +326,34 @@ void frame() {
     state->engine.setViewport(sapp_width(), sapp_height(), sapp_dpi_scale());
     state->engine.frame(sglue_swapchain());
     sg_commit();
+    {
+        ote::Stats ps = state->engine.stats();
+        double ft = sapp_frame_duration() * 1000.0;
+        state->perfFrames++;
+        state->perfFrameMs += ft;
+        state->perfFrameMax = std::max(state->perfFrameMax, ft);
+        state->perfCpuMs += ps.cpuMs;
+        state->perfCpuMax = std::max(state->perfCpuMax, ps.cpuMs);
+        state->perfRenders += ps.surfaceRenders;
+        state->perfBuilds += ps.terrainBuilds;
+        state->perfUploads += ps.uploads;
+        if (state->perfFrames >= 60) {
+            char line[256];
+            std::snprintf(line, sizeof(line),
+                          "perf frame avg %.1f max %.1f ms | engine cpu avg %.2f max %.2f ms | per frame: surface %.1f terrain %.1f uploads %.1f | tiles %d",
+                          state->perfFrameMs / state->perfFrames, state->perfFrameMax, state->perfCpuMs / state->perfFrames,
+                          state->perfCpuMax, state->perfRenders / double(state->perfFrames), state->perfBuilds / double(state->perfFrames),
+                          state->perfUploads / double(state->perfFrames), ps.terrainTiles);
+#if defined(__ANDROID__)
+            __android_log_write(ANDROID_LOG_INFO, "OpenTAKEngine", line);
+#else
+            if (std::getenv("OTE_PERF")) std::fprintf(stderr, "%s\n", line);
+#endif
+            state->perfFrames = 0;
+            state->perfFrameMs = state->perfFrameMax = state->perfCpuMs = state->perfCpuMax = 0;
+            state->perfRenders = state->perfBuilds = state->perfUploads = 0;
+        }
+    }
     state->titleTimer += sapp_frame_duration();
     if (state->titleTimer > 0.5) {
         state->titleTimer = 0;

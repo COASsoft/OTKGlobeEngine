@@ -66,6 +66,9 @@ struct Stats {
     int pendingRequests = 0;
     int maxLevel = 0;
     int incompleteTiles = 0;
+    int terrainBuilds = 0;
+    int uploads = 0;
+    double cpuMs = 0;
 };
 
 struct DownloadStatus {

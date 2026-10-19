@@ -18,6 +18,11 @@ namespace ote {
 
 namespace {
 
+#if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
+constexpr double budgetMs = 6.0;
+#else
+constexpr double budgetMs = 12.0;
+#endif
 constexpr int kGrid = 32;
 constexpr int kPosts = kGrid + 1;
 constexpr int kVertexCount = kPosts * kPosts + 4 * kPosts;
@@ -666,7 +671,13 @@ void GlobeRenderer::traverse(const Camera& cam, const QuadKey& k, std::vector<Dr
 }
 
 void GlobeRenderer::processLoads() {
-    for (auto& t : loader_.take(kUploadsPerFrame)) {
+    auto taken = loader_.take(kUploadsPerFrame);
+    stats_.uploads = static_cast<int>(taken.size());
+    for (auto& t : taken) {
+        if (std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - frameStart_).count() > budgetMs * 0.3) {
+            loader_.giveBack(t);
+            continue;
+        }
         if (t.ok && t.vector) {
             ImageryTexture tex;
             tex.vector = t.vector;
@@ -917,6 +928,7 @@ bool GlobeRenderer::buildSurfaceJob(const QuadKey& k, double priority, SurfaceJo
 void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_attachments* attachments, int width,
                            int height) {
     if (!ready_) return;
+    frameStart_ = std::chrono::steady_clock::now();
     if (!trace_)
         if (const char* path = std::getenv("OTE_TRACE")) trace_ = std::fopen(path, "w");
     ++frame_;
@@ -1044,7 +1056,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     for (const Need& n : needs_) {
         auto it = terrain_.find(n.key);
         if (it == terrain_.end()) {
-            if (builds < kTerrainBuildsPerFrame) {
+            if (builds < kTerrainBuildsPerFrame && elapsedMs() < budgetMs * 0.6) {
                 TerrainTile& t = terrain_[n.key];
                 buildTerrain(n.key, t, n.priority);
                 t.used = frame_;
@@ -1053,7 +1065,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             continue;
         }
         it->second.used = frame_;
-        if (!it->second.complete && it->second.version != currentTerrain && builds < kTerrainBuildsPerFrame) {
+        if (!it->second.complete && it->second.version != currentTerrain && builds < kTerrainBuildsPerFrame &&
+            elapsedMs() < budgetMs * 0.6) {
             buildTerrain(n.key, it->second, n.priority);
             ++builds;
         } else if (!it->second.complete && terrainEnabled_ && !elevation_.empty()) {
@@ -1085,7 +1098,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     std::unordered_map<QuadKey, double, QuadKeyHash> jobTexel;
     int renders = 0;
     for (auto& [kind, i] : work) {
-        if (renders >= kSurfaceRendersPerFrame || verts.size() * sizeof(float) > kSurfaceBufferBytes / 2) {
+        if (renders >= kSurfaceRendersPerFrame || verts.size() * sizeof(float) > kSurfaceBufferBytes / 2 ||
+            (renders > 0 && elapsedMs() > budgetMs)) {
             buildSurfaceJob(needs_[i].key, needs_[i].priority, nullptr, nullptr);
             continue;
         }
@@ -1386,6 +1400,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         }
     stats_.terrainTiles = static_cast<int>(tiles.size());
     stats_.surfaceRenders = renders;
+    stats_.terrainBuilds = builds;
     stats_.imageryTextures = static_cast<int>(imagery_.size());
     stats_.pendingRequests = loader_.pending() + elevation_.pending();
     stats_.maxLevel = maxLevel;

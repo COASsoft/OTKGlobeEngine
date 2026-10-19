@@ -77,6 +77,7 @@ public:
     void render(Camera& cam, const sg_swapchain* swapchain, const sg_attachments* attachments, int width, int height);
     bool busy() const { return busy_; }
     Stats stats() const { return stats_; }
+    void setCpuMs(double ms) { stats_.cpuMs = ms; }
 
 private:
     struct Bounds {
@@ -174,6 +175,8 @@ private:
     void invalidateTerrain();
     void markDirty(const GeoRect& rect);
     double now() const;
+    std::chrono::steady_clock::time_point frameStart_;
+    double elapsedMs() const { return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - frameStart_).count(); }
 
     TileCache cache_;
     TileLoader loader_{3, 8};

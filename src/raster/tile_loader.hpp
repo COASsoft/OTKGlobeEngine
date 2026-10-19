@@ -70,6 +70,7 @@ public:
     int generation() const { return generation_; }
     void submit(std::vector<std::pair<TileId, double>>& requests);
     std::vector<DecodedTile> take(size_t max);
+    void giveBack(DecodedTile& tile);
     int pending() const;
     std::string debug() const;
 
