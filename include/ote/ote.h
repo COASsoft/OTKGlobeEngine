@@ -55,6 +55,7 @@ OTE_API int ote_needs_redraw(const ote_engine* e);
 OTE_API void ote_set_android_vm(void* java_vm);
 OTE_API void ote_set_cache_directory(ote_engine* e, const char* dir);
 OTE_API void ote_set_offline(ote_engine* e, int offline);
+OTE_API void ote_set_memory_budget(ote_engine* e, int megabytes);
 
 OTE_API void ote_clear_layers(ote_engine* e);
 OTE_API int ote_add_layer(ote_engine* e, ote_source type, const char* name, const char* url_or_path, int min_zoom,

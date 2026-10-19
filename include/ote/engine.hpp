@@ -123,6 +123,7 @@ public:
     void setImageryScale(double scale);
     void setCacheDirectory(const std::string& dir);
     void setOffline(bool offline);
+    void setMemoryBudget(int megabytes);
     void setElevation(const std::vector<ElevationLayer>& layers);
     void setTerrainEnabled(bool enabled);
     void setTerrainExaggeration(double factor);

@@ -139,6 +139,8 @@ void ote_set_cache_directory(ote_engine* e, const char* dir) { e->engine.setCach
 
 void ote_set_offline(ote_engine* e, int offline) { e->engine.setOffline(offline != 0); }
 
+void ote_set_memory_budget(ote_engine* e, int megabytes) { e->engine.setMemoryBudget(megabytes); }
+
 void ote_clear_layers(ote_engine* e) {
     e->layers.clear();
     e->engine.setLayers(e->layers);

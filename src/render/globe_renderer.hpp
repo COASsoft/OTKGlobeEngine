@@ -9,6 +9,9 @@
 
 #include <sokol_gfx.h>
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
 #include <chrono>
 #include <cstdio>
 #include <unordered_map>
@@ -42,6 +45,7 @@ public:
     const std::vector<TileMatrix>& matrices() const { return matrices_; }
     void setCacheDirectory(const std::string& dir);
     void setOffline(bool offline);
+    void setMemoryBudget(int megabytes);
     void setElevation(const std::vector<ElevationLayer>& layers);
     void setTerrainEnabled(bool enabled);
     void setTerrainExaggeration(double factor);
@@ -180,6 +184,11 @@ private:
     std::vector<SurfaceTile> freeSurfaces_;
     std::vector<std::pair<TileId, double>> requests_;
     std::vector<Need> needs_;
+#if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
+    size_t surfaceCapacity_ = 400, imageryCapacity_ = 244, terrainCapacity_ = 1500, freeSurfacePool_ = 25;
+#else
+    size_t surfaceCapacity_ = 800, imageryCapacity_ = 488, terrainCapacity_ = 3000, freeSurfacePool_ = 50;
+#endif
     std::unordered_map<QuadKey, Fade, QuadKeyHash> fades_;
     double needScale_ = 1.0;
     bool prefetching_ = false;

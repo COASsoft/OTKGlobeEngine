@@ -26,10 +26,6 @@ constexpr int kSurfaceSize = 256;
 constexpr int kMinLevel = 2;
 constexpr int kMaxLevel = 22;
 constexpr int kKeepLevel = 3;
-constexpr size_t kTerrainCapacity = 2500;
-constexpr size_t kSurfaceCapacity = 900;
-constexpr size_t kImageryCapacity = 1200;
-constexpr size_t kFreeSurfacePool = 64;
 constexpr int kSurfaceRendersPerFrame = 32;
 constexpr int kTerrainBuildsPerFrame = 32;
 constexpr size_t kUploadsPerFrame = 48;
@@ -277,6 +273,14 @@ void GlobeRenderer::setCacheDirectory(const std::string& dir) {
         if (!layers_.empty()) setLayers(std::vector<ImageryLayer>(layers_));
         if (!elevation_.sources().empty()) setElevation(std::vector<ElevationLayer>(elevation_.sources()));
     }
+}
+
+void GlobeRenderer::setMemoryBudget(int megabytes) {
+    double mb = std::clamp(megabytes, 96, 8192);
+    surfaceCapacity_ = static_cast<size_t>(mb * 0.55 / 0.35);
+    imageryCapacity_ = static_cast<size_t>(mb * 0.25 / 0.262);
+    terrainCapacity_ = static_cast<size_t>(mb * 0.20 / 0.034);
+    freeSurfacePool_ = std::max<size_t>(16, surfaceCapacity_ / 16);
 }
 
 void GlobeRenderer::setOffline(bool offline) {
@@ -684,35 +688,35 @@ void GlobeRenderer::processLoads() {
 }
 
 void GlobeRenderer::evict() {
-    if (imagery_.size() > kImageryCapacity) {
+    if (imagery_.size() > imageryCapacity_) {
         std::vector<std::pair<std::uint64_t, TileId>> c;
         for (auto& [k, t] : imagery_)
             if (k.z > kBaseZoom && t.used + 1 < frame_) c.push_back({t.used, k});
         std::sort(c.begin(), c.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
-        for (size_t i = 0; i < c.size() && imagery_.size() > kImageryCapacity; ++i) {
+        for (size_t i = 0; i < c.size() && imagery_.size() > imageryCapacity_; ++i) {
             auto it = imagery_.find(c[i].second);
             dropImagery(it->second);
             imagery_.erase(it);
         }
     }
-    if (surface_.size() > kSurfaceCapacity) {
+    if (surface_.size() > surfaceCapacity_) {
         std::vector<std::pair<std::uint64_t, QuadKey>> c;
         for (auto& [k, s] : surface_)
             if (k.level > kKeepLevel && s.used + 1 < frame_) c.push_back({s.used, k});
         std::sort(c.begin(), c.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
-        for (size_t i = 0; i < c.size() && surface_.size() > kSurfaceCapacity; ++i) {
+        for (size_t i = 0; i < c.size() && surface_.size() > surfaceCapacity_; ++i) {
             auto it = surface_.find(c[i].second);
-            if (freeSurfaces_.size() < kFreeSurfacePool) freeSurfaces_.push_back(it->second);
+            if (freeSurfaces_.size() < freeSurfacePool_) freeSurfaces_.push_back(it->second);
             else dropSurface(it->second);
             surface_.erase(it);
         }
     }
-    if (terrain_.size() > kTerrainCapacity) {
+    if (terrain_.size() > terrainCapacity_) {
         std::vector<std::pair<std::uint64_t, QuadKey>> c;
         for (auto& [k, t] : terrain_)
             if (k.level > kKeepLevel && t.used + 1 < frame_) c.push_back({t.used, k});
         std::sort(c.begin(), c.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
-        for (size_t i = 0; i < c.size() && terrain_.size() > kTerrainCapacity; ++i) {
+        for (size_t i = 0; i < c.size() && terrain_.size() > terrainCapacity_; ++i) {
             auto it = terrain_.find(c[i].second);
             sg_destroy_buffer(it->second.vbuf);
             terrain_.erase(it);
@@ -986,10 +990,10 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         for (const auto& [id, t] : imagery_)
             if (t.used + 1 >= frame_) ++activeImagery;
         size_t visible = needs_.size();
-        double room = std::min(1.0 - static_cast<double>(activeImagery) / kImageryCapacity,
-                               1.0 - static_cast<double>(visible) / kSurfaceCapacity);
+        double room = std::min(1.0 - static_cast<double>(activeImagery) / imageryCapacity_,
+                               1.0 - static_cast<double>(visible) / surfaceCapacity_);
         if (room > 0.35) {
-            size_t budget = static_cast<size_t>(std::min(256.0, (room - 0.35) * kSurfaceCapacity));
+            size_t budget = static_cast<size_t>(std::min(256.0, (room - 0.35) * surfaceCapacity_));
             std::sort(prefetch_.begin(), prefetch_.end(), [](const Need& a, const Need& b) { return a.priority < b.priority; });
             for (size_t i = 0; i < prefetch_.size() && i < budget; ++i) needs_.push_back(prefetch_[i]);
         }

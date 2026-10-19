@@ -63,6 +63,7 @@ struct ViewerState {
     std::uint64_t viewshed = 0;
     bool shotViewshed = false;
     bool zoomTest = false;
+    int memory = 0;
     bool shotFirstPerson = false;
     double fpHeading = 0, fpPitch = 0, fpHeight = 2.0;
     ote::View zoomTarget;
@@ -146,6 +147,7 @@ void init() {
         state->engine.setCacheDirectory(cache);
     }
     state->engine.setOffline(state->offline);
+    if (state->memory > 0) state->engine.setMemoryBudget(state->memory);
     {
         std::vector<ote::ElevationLayer> elev;
         if (!state->elevationDir.empty()) {
@@ -512,6 +514,8 @@ sapp_desc sokol_main(int argc, char* argv[]) {
                                           &state->zoomSeconds) >= 3;
         } else if (a == "--first-person") {
             state->shotFirstPerson = std::sscanf(argv[++i], "%lf,%lf,%lf", &state->fpHeading, &state->fpPitch, &state->fpHeight) >= 2;
+        } else if (a == "--memory") {
+            state->memory = std::atoi(argv[++i]);
         } else if (a == "--grid") {
             state->grid = std::atoi(argv[++i]) != 0;
         } else if (a == "--viewshed") {

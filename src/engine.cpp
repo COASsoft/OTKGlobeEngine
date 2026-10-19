@@ -126,6 +126,8 @@ void Engine::setCacheDirectory(const std::string& dir) {
     impl_->dirty = true;
 }
 
+void Engine::setMemoryBudget(int megabytes) { impl_->globe.setMemoryBudget(megabytes); }
+
 void Engine::setOffline(bool offline) {
     impl_->globe.setOffline(offline);
     impl_->dirty = true;
