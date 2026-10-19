@@ -1,0 +1,258 @@
+#include "raster/vector_tile.hpp"
+
+#include <earcut.hpp>
+#include <miniz.h>
+
+#include <cmath>
+#include <cstring>
+#include <string>
+#include <string_view>
+
+namespace ote {
+
+namespace {
+
+constexpr double kPi = 3.14159265358979323846;
+
+struct Reader {
+    const std::uint8_t* p;
+    const std::uint8_t* end;
+    bool ok() const { return p < end; }
+    std::uint64_t varint() {
+        std::uint64_t v = 0;
+        int shift = 0;
+        while (p < end) {
+            std::uint8_t b = *p++;
+            v |= static_cast<std::uint64_t>(b & 0x7F) << shift;
+            if (!(b & 0x80)) break;
+            shift += 7;
+            if (shift > 63) break;
+        }
+        return v;
+    }
+    Reader sub() {
+        std::uint64_t n = varint();
+        if (n > static_cast<std::uint64_t>(end - p)) n = static_cast<std::uint64_t>(end - p);
+        Reader r{p, p + n};
+        p += n;
+        return r;
+    }
+    void skip(int wire) {
+        if (wire == 0) varint();
+        else if (wire == 1) p += std::min<std::ptrdiff_t>(8, end - p);
+        else if (wire == 2) sub();
+        else if (wire == 5) p += std::min<std::ptrdiff_t>(4, end - p);
+        else p = end;
+    }
+};
+
+std::vector<std::uint8_t> gunzip(const std::vector<std::uint8_t>& in) {
+    if (in.size() < 18 || in[0] != 0x1F || in[1] != 0x8B) return in;
+    size_t pos = 10;
+    std::uint8_t flags = in[3];
+    if (flags & 4) pos += 2 + (in[10] | (in[11] << 8));
+    if (flags & 8)
+        while (pos < in.size() && in[pos++]) {
+        }
+    if (flags & 16)
+        while (pos < in.size() && in[pos++]) {
+        }
+    if (flags & 2) pos += 2;
+    if (pos >= in.size()) return {};
+    size_t outLen = 0;
+    void* out = tinfl_decompress_mem_to_heap(in.data() + pos, in.size() - pos - 8, &outLen, 0);
+    if (!out) return {};
+    std::vector<std::uint8_t> r(static_cast<std::uint8_t*>(out), static_cast<std::uint8_t*>(out) + outLen);
+    mz_free(out);
+    return r;
+}
+
+struct Rule {
+    std::uint32_t color;
+    float width;
+    bool fill;
+};
+
+bool styleFor(std::string_view layer, std::string_view cls, int z, Rule& r) {
+    if (layer == "water") return r = {0xFFA0C8F0, 0, true}, true;
+    if (layer == "landcover") {
+        if (cls == "wood" || cls == "forest") return r = {0xFFADD19E, 0, true}, true;
+        if (cls == "grass" || cls == "farmland") return r = {0xFFCDEBB0, 0, true}, true;
+        if (cls == "ice" || cls == "glacier") return r = {0xFFF2F8FF, 0, true}, true;
+        if (cls == "sand" || cls == "rock") return r = {0xFFEDE4C8, 0, true}, true;
+        if (cls == "wetland") return r = {0xFFC8E0D8, 0, true}, true;
+        return false;
+    }
+    if (layer == "landuse") {
+        if (cls == "residential") return r = {0xFFE6E1DA, 0, true}, true;
+        if (cls == "industrial" || cls == "commercial" || cls == "retail") return r = {0xFFEBDBE8, 0, true}, true;
+        if (cls == "cemetery" || cls == "stadium" || cls == "pitch") return r = {0xFFD5ECC9, 0, true}, true;
+        return false;
+    }
+    if (layer == "park") return r = {0xFFC8FACC, 0, true}, true;
+    if (layer == "building") return z >= 13 ? (r = {0xFFD9D0C9, 0, true}, true) : false;
+    if (layer == "aeroway") return r = {0xFFDADAE0, 1.0f, cls != "runway" && cls != "taxiway"}, true;
+    if (layer == "waterway") return r = {0xFFA0C8F0, cls == "river" ? 2.0f : 1.0f, false}, true;
+    if (layer == "boundary") return r = {0xFF9E9CAB, 1.0f, false}, true;
+    if (layer == "transportation") {
+        if (cls == "motorway") return r = {0xFFE892A2, 3.0f, false}, true;
+        if (cls == "trunk" || cls == "primary") return r = {0xFFFCD6A4, 2.6f, false}, true;
+        if (cls == "secondary" || cls == "tertiary") return r = {0xFFF7FABF, 2.2f, false}, true;
+        if (cls == "minor" || cls == "service") return z >= 12 ? (r = {0xFFFFFFFF, 1.4f, false}, true) : false;
+        if (cls == "rail" || cls == "transit") return r = {0xFF999999, 1.0f, false}, true;
+        if (cls == "path" || cls == "track") return z >= 13 ? (r = {0xFFB0A090, 0.8f, false}, true) : false;
+        return false;
+    }
+    return false;
+}
+
+void toLonLat(int z, int x, int y, double u, double v, float out[2]) {
+    double n = static_cast<double>(1 << z);
+    double mx = (x + u) / n, my = (y + v) / n;
+    out[0] = static_cast<float>(mx * 360.0 - 180.0);
+    out[1] = static_cast<float>(std::atan(std::sinh(kPi * (1.0 - 2.0 * my))) * 180.0 / kPi);
+}
+
+}
+
+bool looksLikeVectorTile(const std::vector<std::uint8_t>& d) {
+    if (d.size() >= 2 && d[0] == 0x1F && d[1] == 0x8B) return true;
+    return !d.empty() && d[0] == 0x1A;
+}
+
+std::shared_ptr<VectorTile> decodeVectorTile(const std::vector<std::uint8_t>& raw, int z, int x, int y) {
+    std::vector<std::uint8_t> data = gunzip(raw);
+    if (data.empty()) return nullptr;
+    auto tile = std::make_shared<VectorTile>();
+    Reader t{data.data(), data.data() + data.size()};
+    while (t.ok()) {
+        std::uint64_t key = t.varint();
+        if ((key >> 3) != 3 || (key & 7) != 2) {
+            t.skip(static_cast<int>(key & 7));
+            continue;
+        }
+        Reader layer = t.sub();
+        std::string_view name;
+        std::vector<std::string_view> keys;
+        std::vector<std::string_view> values;
+        std::vector<Reader> features;
+        std::uint32_t extent = 4096;
+        while (layer.ok()) {
+            std::uint64_t k = layer.varint();
+            int field = static_cast<int>(k >> 3), wire = static_cast<int>(k & 7);
+            if (field == 1 && wire == 2) {
+                Reader s = layer.sub();
+                name = std::string_view(reinterpret_cast<const char*>(s.p), static_cast<size_t>(s.end - s.p));
+            } else if (field == 2 && wire == 2) {
+                features.push_back(layer.sub());
+            } else if (field == 3 && wire == 2) {
+                Reader s = layer.sub();
+                keys.emplace_back(reinterpret_cast<const char*>(s.p), static_cast<size_t>(s.end - s.p));
+            } else if (field == 4 && wire == 2) {
+                Reader v = layer.sub();
+                std::string_view sv;
+                while (v.ok()) {
+                    std::uint64_t vk = v.varint();
+                    if ((vk >> 3) == 1 && (vk & 7) == 2) {
+                        Reader s = v.sub();
+                        sv = std::string_view(reinterpret_cast<const char*>(s.p), static_cast<size_t>(s.end - s.p));
+                    } else {
+                        v.skip(static_cast<int>(vk & 7));
+                    }
+                }
+                values.push_back(sv);
+            } else if (field == 5 && wire == 0) {
+                extent = static_cast<std::uint32_t>(layer.varint());
+            } else {
+                layer.skip(wire);
+            }
+        }
+        int classKey = -1;
+        for (size_t i = 0; i < keys.size(); ++i)
+            if (keys[i] == "class") classKey = static_cast<int>(i);
+        for (Reader f : features) {
+            int type = 0;
+            std::string_view cls;
+            Reader geom{nullptr, nullptr};
+            while (f.ok()) {
+                std::uint64_t k = f.varint();
+                int field = static_cast<int>(k >> 3), wire = static_cast<int>(k & 7);
+                if (field == 2 && wire == 2) {
+                    Reader tags = f.sub();
+                    while (tags.ok()) {
+                        std::uint64_t tk = tags.varint(), tv = tags.varint();
+                        if (static_cast<int>(tk) == classKey && tv < values.size()) cls = values[tv];
+                    }
+                } else if (field == 3 && wire == 0) {
+                    type = static_cast<int>(f.varint());
+                } else if (field == 4 && wire == 2) {
+                    geom = f.sub();
+                } else {
+                    f.skip(wire);
+                }
+            }
+            Rule rule;
+            if (type < 2 || !geom.p || !styleFor(name, cls, z, rule)) continue;
+            std::vector<std::vector<std::array<double, 2>>> rings;
+            long cx = 0, cy = 0;
+            while (geom.ok()) {
+                std::uint32_t cmd = static_cast<std::uint32_t>(geom.varint());
+                std::uint32_t id = cmd & 7, count = cmd >> 3;
+                if (id == 1 || id == 2) {
+                    for (std::uint32_t i = 0; i < count && geom.ok(); ++i) {
+                        std::uint32_t dx = static_cast<std::uint32_t>(geom.varint()), dy = static_cast<std::uint32_t>(geom.varint());
+                        cx += static_cast<long>((dx >> 1) ^ (~(dx & 1) + 1));
+                        cy += static_cast<long>((dy >> 1) ^ (~(dy & 1) + 1));
+                        if (id == 1) rings.emplace_back();
+                        if (!rings.empty()) rings.back().push_back({static_cast<double>(cx) / extent, static_cast<double>(cy) / extent});
+                    }
+                } else if (id == 7) {
+                    if (!rings.empty() && !rings.back().empty()) rings.back().push_back(rings.back().front());
+                }
+            }
+            if (rule.fill && type == 3) {
+                std::vector<std::vector<std::array<double, 2>>> poly;
+                auto flush = [&]() {
+                    if (poly.empty()) return;
+                    VectorShape s;
+                    s.color = rule.color;
+                    std::vector<std::uint32_t> idx = mapbox::earcut<std::uint32_t>(poly);
+                    std::vector<std::array<double, 2>> flat;
+                    for (const auto& r : poly) flat.insert(flat.end(), r.begin(), r.end());
+                    for (std::uint32_t i : idx) {
+                        float ll[2];
+                        toLonLat(z, x, y, flat[i][0], flat[i][1], ll);
+                        s.triangles.push_back({ll[0], ll[1]});
+                    }
+                    if (!s.triangles.empty()) tile->fills.push_back(std::move(s));
+                    poly.clear();
+                };
+                for (auto& ring : rings) {
+                    double area = 0;
+                    for (size_t i = 1; i < ring.size(); ++i)
+                        area += ring[i - 1][0] * ring[i][1] - ring[i][0] * ring[i - 1][1];
+                    if (area > 0) flush();
+                    if (area != 0 && (area > 0 || !poly.empty())) poly.push_back(ring);
+                }
+                flush();
+            } else if (rule.width > 0) {
+                VectorShape s;
+                s.color = rule.color;
+                s.width = rule.width;
+                for (auto& ring : rings) {
+                    if (ring.size() < 2) continue;
+                    s.breaks.push_back(static_cast<std::uint32_t>(s.points.size()));
+                    for (auto& p : ring) {
+                        float ll[2];
+                        toLonLat(z, x, y, p[0], p[1], ll);
+                        s.points.push_back({ll[0], ll[1]});
+                    }
+                }
+                if (!s.points.empty()) tile->lines.push_back(std::move(s));
+            }
+        }
+    }
+    return tile;
+}
+
+}
