@@ -1,6 +1,9 @@
 #include "render/globe_renderer.hpp"
 
+#include "feature/grid.hpp"
+
 #include "globe.glsl.h"
+#include "mip.glsl.h"
 #include "sky.glsl.h"
 #include "surface.glsl.h"
 
@@ -122,8 +125,11 @@ bool GlobeRenderer::init() {
     smp.mag_filter = SG_FILTER_LINEAR;
     smp.wrap_u = SG_WRAP_CLAMP_TO_EDGE;
     smp.wrap_v = SG_WRAP_CLAMP_TO_EDGE;
-    sampler_ = sg_make_sampler(&smp);
     imagerySampler_ = sg_make_sampler(&smp);
+    mipSampler_ = sg_make_sampler(&smp);
+    smp.mipmap_filter = SG_FILTER_LINEAR;
+    smp.max_anisotropy = 8;
+    sampler_ = sg_make_sampler(&smp);
 
     globeShader_ = sg_make_shader(globe_shader_desc(backend));
     surfaceShader_ = sg_make_shader(surface_shader_desc(backend));
@@ -161,6 +167,28 @@ bool GlobeRenderer::init() {
     kp.depth.write_enabled = false;
     skyPipeline_ = sg_make_pipeline(&kp);
 
+    mipShader_ = sg_make_shader(mip_shader_desc(backend));
+    sg_pipeline_desc mp{};
+    mp.shader = mipShader_;
+    mp.layout.attrs[ATTR_mip_position].format = SG_VERTEXFORMAT_FLOAT2;
+    mp.colors[0].pixel_format = SG_PIXELFORMAT_RGBA8;
+    mp.depth.pixel_format = SG_PIXELFORMAT_NONE;
+    mp.sample_count = 1;
+    mipPipeline_ = sg_make_pipeline(&mp);
+    sg_image_desc sd{};
+    sd.usage.color_attachment = true;
+    sd.width = kSurfaceSize;
+    sd.height = kSurfaceSize;
+    sd.pixel_format = SG_PIXELFORMAT_RGBA8;
+    sd.sample_count = 1;
+    scratch_ = sg_make_image(&sd);
+    sg_view_desc sa{};
+    sa.color_attachment.image = scratch_;
+    scratchAttachment_ = sg_make_view(&sa);
+    sg_view_desc st{};
+    st.texture.image = scratch_;
+    scratchTexture_ = sg_make_view(&st);
+
     ready_ = true;
     return true;
 }
@@ -169,11 +197,6 @@ void GlobeRenderer::shutdown() {
     if (!ready_) return;
     if (sg_isvalid()) {
         for (auto& [k, t] : terrain_) sg_destroy_buffer(t.vbuf);
-        auto dropSurface = [](SurfaceTile& s) {
-            sg_destroy_view(s.texture);
-            sg_destroy_view(s.attachment);
-            sg_destroy_image(s.image);
-        };
         for (auto& [k, s] : surface_) dropSurface(s);
         for (auto& s : freeSurfaces_) dropSurface(s);
         for (auto& [k, t] : imagery_) {
@@ -183,6 +206,12 @@ void GlobeRenderer::shutdown() {
         sg_destroy_pipeline(globePipeline_);
         sg_destroy_pipeline(surfacePipeline_);
         sg_destroy_pipeline(skyPipeline_);
+        sg_destroy_pipeline(mipPipeline_);
+        sg_destroy_shader(mipShader_);
+        sg_destroy_sampler(mipSampler_);
+        sg_destroy_view(scratchAttachment_);
+        sg_destroy_view(scratchTexture_);
+        sg_destroy_image(scratch_);
         sg_destroy_shader(globeShader_);
         sg_destroy_shader(surfaceShader_);
         sg_destroy_shader(skyShader_);
@@ -194,6 +223,11 @@ void GlobeRenderer::shutdown() {
         sg_destroy_buffer(skyBuffer_);
         sg_destroy_buffer(surfaceBuffer_);
         sg_destroy_buffer(featureBuffer_);
+        for (auto& [id, o] : overlays_) {
+            sg_destroy_view(o.view);
+            sg_destroy_image(o.image);
+        }
+        overlays_.clear();
         features_.shutdown();
     }
     terrain_.clear();
@@ -252,6 +286,54 @@ void GlobeRenderer::setTerrainExaggeration(double factor) {
     if (!(factor > 0) || factor == exaggeration_) return;
     exaggeration_ = factor;
     invalidateTerrain();
+}
+
+void GlobeRenderer::markDirty(const GeoRect& rect) {
+    for (auto& [k, s] : surface_) {
+        Bounds b = bounds(k);
+        if (rect.intersects({b.west, b.south, b.east, b.north})) {
+            s.complete = false;
+            s.missing.clear();
+        }
+    }
+    busy_ = true;
+}
+
+void GlobeRenderer::setGrid(bool enabled) {
+    if (grid_ == enabled) return;
+    grid_ = enabled;
+    markDirty({-180, -90, 180, 90});
+}
+
+std::uint64_t GlobeRenderer::addOverlay(const GeoRect& rect, int width, int height, const std::vector<std::uint8_t>& rgba,
+                                        float opacity) {
+    if (width <= 0 || height <= 0 || rgba.size() < static_cast<size_t>(width) * height * 4) return 0;
+    Overlay o;
+    o.rect = rect;
+    o.opacity = opacity;
+    sg_image_desc d{};
+    d.width = width;
+    d.height = height;
+    d.pixel_format = SG_PIXELFORMAT_RGBA8;
+    d.data.mip_levels[0] = {rgba.data(), static_cast<size_t>(width) * height * 4};
+    o.image = sg_make_image(&d);
+    sg_view_desc v{};
+    v.texture.image = o.image;
+    o.view = sg_make_view(&v);
+    std::uint64_t id = nextOverlay_++;
+    overlays_[id] = o;
+    markDirty(rect);
+    return id;
+}
+
+bool GlobeRenderer::removeOverlay(std::uint64_t id) {
+    auto it = overlays_.find(id);
+    if (it == overlays_.end()) return false;
+    markDirty(it->second.rect);
+    sg_destroy_view(it->second.view);
+    sg_destroy_image(it->second.image);
+    overlays_.erase(it);
+    return true;
 }
 
 void GlobeRenderer::invalidateTerrain() {
@@ -342,6 +424,15 @@ GlobeRenderer::TerrainTile& GlobeRenderer::terrain(const QuadKey& k) {
     return t;
 }
 
+void GlobeRenderer::dropSurface(SurfaceTile& s) {
+    sg_destroy_view(s.texture);
+    for (int i = 0; i < kMips; ++i) {
+        sg_destroy_view(s.levels[i]);
+        sg_destroy_view(s.sources[i]);
+    }
+    sg_destroy_image(s.image);
+}
+
 GlobeRenderer::SurfaceTile* GlobeRenderer::acquireSurface(const QuadKey& k) {
     auto it = surface_.find(k);
     if (it != surface_.end()) return &it->second;
@@ -356,10 +447,20 @@ GlobeRenderer::SurfaceTile* GlobeRenderer::acquireSurface(const QuadKey& k) {
         d.height = kSurfaceSize;
         d.pixel_format = SG_PIXELFORMAT_RGBA8;
         d.sample_count = 1;
+        d.num_mipmaps = kMips;
         s.image = sg_make_image(&d);
-        sg_view_desc a{};
-        a.color_attachment.image = s.image;
-        s.attachment = sg_make_view(&a);
+        for (int i = 0; i < kMips; ++i) {
+            sg_view_desc a{};
+            a.color_attachment.image = s.image;
+            a.color_attachment.mip_level = i;
+            s.levels[i] = sg_make_view(&a);
+            sg_view_desc t{};
+            t.texture.image = s.image;
+            t.texture.mip_levels.base = i;
+            t.texture.mip_levels.count = 1;
+            s.sources[i] = sg_make_view(&t);
+        }
+        s.attachment = s.levels[0];
         sg_view_desc t{};
         t.texture.image = s.image;
         s.texture = sg_make_view(&t);
@@ -538,13 +639,8 @@ void GlobeRenderer::evict() {
         std::sort(c.begin(), c.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
         for (size_t i = 0; i < c.size() && surface_.size() > kSurfaceCapacity; ++i) {
             auto it = surface_.find(c[i].second);
-            if (freeSurfaces_.size() < kFreeSurfacePool) {
-                freeSurfaces_.push_back(it->second);
-            } else {
-                sg_destroy_view(it->second.texture);
-                sg_destroy_view(it->second.attachment);
-                sg_destroy_image(it->second.image);
-            }
+            if (freeSurfaces_.size() < kFreeSurfacePool) freeSurfaces_.push_back(it->second);
+            else dropSurface(it->second);
             surface_.erase(it);
         }
     }
@@ -671,7 +767,30 @@ bool GlobeRenderer::buildSurfaceJob(const QuadKey& k, double priority, SurfaceJo
                 job->draws.push_back({tex->view, layers_[l].opacity, first, rows * 6});
             }
     }
-    if (job) job->complete = complete;
+    if (job) {
+        for (const auto& [id, o] : overlays_) {
+            const GeoRect& r = o.rect;
+            double w = std::max(b.west, r.west), e = std::min(b.east, r.east);
+            double s = std::max(b.south, r.south), nn = std::min(b.north, r.north);
+            if (w >= e || s >= nn) continue;
+            int first = static_cast<int>(verts->size() / 4);
+            auto emit = [&](double lon, double lat) {
+                float px = static_cast<float>((lon - b.west) / span * 2.0 - 1.0);
+                float py = static_cast<float>((lat - b.south) / span * 2.0 - 1.0);
+                float u = static_cast<float>((lon - r.west) / (r.east - r.west));
+                float v = static_cast<float>((r.north - lat) / (r.north - r.south));
+                verts->insert(verts->end(), {px, py, u, v});
+            };
+            emit(w, s);
+            emit(e, s);
+            emit(e, nn);
+            emit(w, s);
+            emit(e, nn);
+            emit(w, nn);
+            job->draws.push_back({o.view, o.opacity, first, 6});
+        }
+        job->complete = complete;
+    }
     return complete;
 }
 
@@ -710,6 +829,14 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     cam.zeroToOneDepth = backend != SG_BACKEND_GLCORE && backend != SG_BACKEND_GLES3;
     cam.update();
     eye_ = cam.eye();
+    if (grid_) {
+        double s = cam.gsd * 70.0 * dpiScale_;
+        double spacing = s <= 1000.0 ? 1000.0 : s <= 10000.0 ? 10000.0 : s <= 100000.0 ? 100000.0 : 0.0;
+        if (spacing != gridSpacing_) {
+            gridSpacing_ = spacing;
+            markDirty({-180, -90, 180, 90});
+        }
+    }
 
     const Mat4& m = cam.viewProjRel();
     for (int p = 0; p < 4; ++p) {
@@ -798,7 +925,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         SurfaceJob job;
         job.key = needs_[i].key;
         buildSurfaceJob(job.key, needs_[i].priority, &job, &verts);
-        if (!features_.empty() && fverts.size() * sizeof(float) < kSurfaceBufferBytes / 2) {
+        if ((!features_.empty() || grid_) && fverts.size() * sizeof(float) < kSurfaceBufferBytes / 2) {
             Bounds b = bounds(job.key);
             size_t before = fverts.size();
             Vec3 c = geodeticToEcef(0.5 * (b.south + b.north), 0.5 * (b.west + b.east), 0.0);
@@ -806,6 +933,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             double dist = std::max(length(c - cam.eye()) - radius, cam.eyeAboveGround());
             double texelDeg = std::min((b.north - b.south) / kSurfaceSize, cam.pixelSizeAt(dist) / 111320.0);
             features_.buildSurface({b.west, b.south, b.east, b.north}, texelDeg, dpiScale_, fverts);
+            if (grid_) buildGrid({b.west, b.south, b.east, b.north}, texelDeg, dpiScale_, gridSpacing_, fverts);
             job.featureFirst = static_cast<int>(before / 6);
             job.featureCount = static_cast<int>((fverts.size() - before) / 6);
         }
@@ -852,7 +980,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         sg_pass pass{};
         pass.action.colors[0].load_action = SG_LOADACTION_CLEAR;
         pass.action.colors[0].clear_value = {10 / 255.0f, 30 / 255.0f, 62 / 255.0f, 1.0f};
-        pass.attachments.colors[0] = s->attachment;
+        pass.attachments.colors[0] = scratchAttachment_;
         sg_begin_pass(&pass);
         if (!job.draws.empty()) {
             sg_apply_pipeline(surfacePipeline_);
@@ -872,6 +1000,27 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         if (job.featureCount > 0 && (job.featureFirst + job.featureCount) * 6 * sizeof(float) <= kSurfaceBufferBytes)
             features_.drawSurface(featureBuffer_, job.featureFirst, job.featureCount);
         sg_end_pass();
+        for (int level = 0; level < kMips; ++level) {
+            sg_pass mp{};
+            mp.action.colors[0].load_action = SG_LOADACTION_DONTCARE;
+            mp.attachments.colors[0] = s->levels[level];
+            sg_begin_pass(&mp);
+            sg_apply_pipeline(mipPipeline_);
+            sg_bindings mb{};
+            mb.vertex_buffers[0] = skyBuffer_;
+            mb.views[VIEW_tex] = scratchTexture_;
+            mb.samplers[SMP_smp] = mipSampler_;
+            sg_apply_bindings(&mb);
+            mip_params_t mpp{};
+            float block = static_cast<float>(1 << level);
+            mpp.params[0] = flipSurface_ ? 1.0f : 0.0f;
+            mpp.params[1] = block;
+            mpp.params[2] = std::min(block, 16.0f);
+            mpp.params[3] = 1.0f / kSurfaceSize;
+            sg_apply_uniforms(UB_mip_params, SG_RANGE(mpp));
+            sg_draw(0, 3, 1);
+            sg_end_pass();
+        }
         s->complete = job.complete;
         s->version = imageryVersion_;
         s->missing = std::move(job.missing);

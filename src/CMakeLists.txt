@@ -2,6 +2,7 @@ add_library(opentakengine STATIC
     engine.cpp
     core/geo.cpp
     core/camera.cpp
+    core/mgrs.cpp
     raster/tile_loader.cpp
     raster/tile_matrix.cpp
     raster/tile_cache.cpp
@@ -11,6 +12,7 @@ add_library(opentakengine STATIC
     feature/parsers.cpp
     feature/text.cpp
     feature/feature_layer.cpp
+    feature/grid.cpp
     render/globe_renderer.cpp
     render/gfx_impl.cpp)
 
@@ -64,5 +66,6 @@ ote_add_shaders(opentakengine
     render/shaders/globe.glsl
     render/shaders/surface.glsl
     render/shaders/sky.glsl
-    render/shaders/feature.glsl)
+    render/shaders/feature.glsl
+    render/shaders/mip.glsl)
 ote_embed(opentakengine font_bold ${PROJECT_SOURCE_DIR}/assets/fonts/NotoSans-Bold-subset.ttf)

@@ -45,6 +45,9 @@ public:
     void setTerrainEnabled(bool enabled);
     void setTerrainExaggeration(double factor);
     void setDepthPerception(bool enabled) { depthPerception_ = enabled; }
+    void setGrid(bool enabled);
+    std::uint64_t addOverlay(const GeoRect& rect, int width, int height, const std::vector<std::uint8_t>& rgba, float opacity);
+    bool removeOverlay(std::uint64_t id);
     double elevationAt(double lat, double lon) const;
     TileLoader& loader() { return loader_; }
     FeatureLayer& features() { return features_; }
@@ -69,10 +72,13 @@ private:
         bool complete = false;
         std::uint64_t used = 0;
     };
+    static constexpr int kMips = 9;
     struct SurfaceTile {
         sg_image image{};
         sg_view attachment{};
         sg_view texture{};
+        std::array<sg_view, kMips> levels{};
+        std::array<sg_view, kMips> sources{};
         bool complete = false;
         int version = -1;
         std::uint64_t used = 0;
@@ -120,6 +126,7 @@ private:
     TerrainTile& terrain(const QuadKey& k);
     void buildTerrain(const QuadKey& k, TerrainTile& t, double priority);
     SurfaceTile* acquireSurface(const QuadKey& k);
+    static void dropSurface(SurfaceTile& s);
     void processLoads();
     void evict();
     bool buildSurfaceJob(const QuadKey& k, double priority, SurfaceJob* job, std::vector<float>* verts);
@@ -127,6 +134,7 @@ private:
     void want(const TileId& id, double priority);
     ImageryTexture* findTexture(const TileId& id, const TileMatrix& m, double priority, bool& missing, TileId& src);
     void invalidateTerrain();
+    void markDirty(const GeoRect& rect);
     double now() const;
 
     TileCache cache_;
@@ -143,6 +151,16 @@ private:
     std::vector<SurfaceTile> freeSurfaces_;
     std::vector<std::pair<TileId, double>> requests_;
     std::vector<Need> needs_;
+    struct Overlay {
+        GeoRect rect;
+        sg_image image{};
+        sg_view view{};
+        float opacity = 1.0f;
+    };
+    std::unordered_map<std::uint64_t, Overlay> overlays_;
+    std::uint64_t nextOverlay_ = 1;
+    bool grid_ = false;
+    double gridSpacing_ = 0;
 
     sg_buffer indexBuffer_{};
     sg_buffer skyBuffer_{};
@@ -158,6 +176,12 @@ private:
     sg_pipeline globePipeline_{};
     sg_pipeline surfacePipeline_{};
     sg_pipeline skyPipeline_{};
+    sg_shader mipShader_{};
+    sg_pipeline mipPipeline_{};
+    sg_sampler mipSampler_{};
+    sg_image scratch_{};
+    sg_view scratchAttachment_{};
+    sg_view scratchTexture_{};
 
     std::array<double, 16> frustum_{};
     Vec3 eye_;

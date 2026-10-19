@@ -141,6 +141,98 @@ std::uint64_t Engine::hitTest(double sx, double sy, double radiusPx) const {
         sx, sy, radiusPx);
 }
 
+void Engine::setGridEnabled(bool enabled) {
+    impl_->globe.setGrid(enabled);
+    impl_->dirty = true;
+}
+
+std::uint64_t Engine::addImageOverlay(const ImageOverlay& o) {
+    impl_->dirty = true;
+    return impl_->globe.addOverlay({o.west, o.south, o.east, o.north}, o.width, o.height, o.rgba, o.opacity);
+}
+
+bool Engine::removeImageOverlay(std::uint64_t id) {
+    impl_->dirty = true;
+    return impl_->globe.removeOverlay(id);
+}
+
+LineOfSight Engine::lineOfSight(const Coord& from, double fromHeight, const Coord& to, double toHeight) const {
+    const GlobeRenderer& g = impl_->globe;
+    LineOfSight r;
+    Vec3 a = geodeticToEcef(from.lat, from.lon, g.elevationAt(from.lat, from.lon) + fromHeight);
+    Vec3 b = geodeticToEcef(to.lat, to.lon, g.elevationAt(to.lat, to.lon) + toHeight);
+    double d = length(b - a);
+    r.distance = d;
+    int n = static_cast<int>(std::clamp(d / 20.0, 32.0, 6000.0));
+    for (int i = 1; i < n; ++i) {
+        GeoPoint p = ecefToGeodetic(a + (b - a) * (static_cast<double>(i) / n));
+        double ground = g.elevationAt(p.lat, p.lon);
+        if (p.alt < ground) {
+            r.visible = false;
+            r.obstruction = {p.lat, p.lon, ground};
+            r.distance = d * i / n;
+            break;
+        }
+    }
+    return r;
+}
+
+std::uint64_t Engine::computeViewshed(const Coord& o, double height, double radius, int res) {
+    const GlobeRenderer& g = impl_->globe;
+    res = std::clamp(res, 32, 1024);
+    double dLat = radius / 111320.0, dLon = radius / (111320.0 * std::max(std::cos(o.lat * kDegToRad), 0.01));
+    double north = o.lat + dLat, south = o.lat - dLat, west = o.lon - dLon, east = o.lon + dLon;
+    std::vector<float> h(static_cast<size_t>(res) * res);
+    for (int j = 0; j < res; ++j)
+        for (int i = 0; i < res; ++i)
+            h[static_cast<size_t>(j) * res + i] = static_cast<float>(
+                g.elevationAt(north - (j + 0.5) * (north - south) / res, west + (i + 0.5) * (east - west) / res));
+    int c = res / 2;
+    double cell = 2.0 * radius / res;
+    double h0 = g.elevationAt(o.lat, o.lon) + height;
+    std::vector<std::uint8_t> vis(static_cast<size_t>(res) * res, 0);
+    vis[static_cast<size_t>(c) * res + c] = 1;
+    auto ray = [&](int tx, int ty) {
+        double dx = tx - c, dy = ty - c;
+        int steps = static_cast<int>(std::max(std::abs(dx), std::abs(dy)));
+        double maxSlope = -1e9;
+        for (int s = 1; s <= steps; ++s) {
+            int x = c + static_cast<int>(std::lround(dx * s / steps)), y = c + static_cast<int>(std::lround(dy * s / steps));
+            if (x < 0 || y < 0 || x >= res || y >= res) break;
+            double dist = std::hypot(x - c, y - c) * cell;
+            if (dist > radius) break;
+            double drop = dist * dist / (2.0 * 6371000.0) * 0.87;
+            double slope = (h[static_cast<size_t>(y) * res + x] - drop - h0) / dist;
+            if (slope >= maxSlope) vis[static_cast<size_t>(y) * res + x] = 1;
+            maxSlope = std::max(maxSlope, slope);
+        }
+    };
+    for (int i = 0; i < res; ++i) {
+        ray(i, 0);
+        ray(i, res - 1);
+        ray(0, i);
+        ray(res - 1, i);
+    }
+    ImageOverlay ov;
+    ov.north = north;
+    ov.south = south;
+    ov.east = east;
+    ov.west = west;
+    ov.width = ov.height = res;
+    ov.rgba.assign(static_cast<size_t>(res) * res * 4, 0);
+    for (int j = 0; j < res; ++j)
+        for (int i = 0; i < res; ++i) {
+            if (std::hypot(i - c, j - c) * cell > radius) continue;
+            std::uint8_t* p = &ov.rgba[(static_cast<size_t>(j) * res + i) * 4];
+            bool v = vis[static_cast<size_t>(j) * res + i] != 0;
+            p[0] = v ? 0 : 230;
+            p[1] = v ? 220 : 30;
+            p[2] = 0;
+            p[3] = 110;
+        }
+    return addImageOverlay(ov);
+}
+
 int Engine::downloadRegion(int layer, const Region& region, int minZoom, int maxZoom) {
     return impl_->globe.loader().startDownload(layer, region, minZoom, maxZoom);
 }
@@ -271,7 +363,7 @@ void setAndroidJavaVm(void* vm) { net::setJavaVm(vm); }
 void configureGfx(sg_desc& desc) {
     desc.buffer_pool_size = 4096;
     desc.image_pool_size = 4096;
-    desc.view_pool_size = 8192;
+    desc.view_pool_size = 32768;
     desc.sampler_pool_size = 64;
     desc.shader_pool_size = 64;
     desc.pipeline_pool_size = 128;

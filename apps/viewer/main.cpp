@@ -56,6 +56,9 @@ struct ViewerState {
     double hitX = 0, hitY = 0;
     float downX = 0, downY = 0;
     bool terrain = true;
+    bool grid = false;
+    std::uint64_t viewshed = 0;
+    bool shotViewshed = false;
     bool depth = true;
     double exaggeration = 1.0;
     std::string elevationDir;
@@ -148,6 +151,7 @@ void init() {
     }
     state->engine.setLayers(state->customLayers.empty() ? preset(state->preset) : state->customLayers);
     for (const auto& f : state->featureFiles) state->engine.loadFeatures(f);
+    state->engine.setGridEnabled(state->grid);
     if (state->hasDownload)
         state->downloadId = state->engine.downloadRegion(0, state->download, state->downloadMin, state->downloadMax);
     state->engine.setView(state->startView);
@@ -194,6 +198,10 @@ void frame() {
         sg_commit();
         ++state->frames;
         state->shotElapsed += sapp_frame_duration();
+        if (state->shotViewshed && !state->viewshed && state->shotElapsed > 3.0 && !state->engine.needsRedraw()) {
+            ote::View v = state->engine.view();
+            state->viewshed = state->engine.computeViewshed({v.lat, v.lon, 0}, 2.0, 5000.0);
+        }
         state->settledFrames = state->engine.needsRedraw() ? 0 : state->settledFrames + 1;
         bool downloading = state->downloadId && !state->engine.downloadStatus(state->downloadId).finished;
         bool settled = state->shotElapsed > 1.0 && state->settledFrames > 10 && !downloading;
@@ -214,7 +222,8 @@ void frame() {
                 ote::View fv = state->engine.view();
                 std::fprintf(f, "focus %.5f %.5f elevation %.1f", fv.lat, fv.lon, state->engine.elevationAt(fv.lat, fv.lon));
                 std::fputc(10, f);
-                std::fprintf(f, "features %zu", state->engine.featureIds().size());
+                std::fprintf(f, "features %zu viewshed %llu", state->engine.featureIds().size(),
+                             static_cast<unsigned long long>(state->viewshed));
                 std::fputc(10, f);
                 if (state->hasHit) {
                     ote::Feature hf;
@@ -333,6 +342,15 @@ void event(const sapp_event* e) {
         if (e->key_code >= SAPP_KEYCODE_1 && e->key_code <= SAPP_KEYCODE_3) {
             state->preset = e->key_code - SAPP_KEYCODE_1;
             eng.setLayers(preset(state->preset));
+        } else if (e->key_code == SAPP_KEYCODE_G) {
+            state->grid = !state->grid;
+            eng.setGridEnabled(state->grid);
+        } else if (e->key_code == SAPP_KEYCODE_V) {
+            double lat, lon;
+            if (eng.pick(state->mouseX, state->mouseY, lat, lon)) {
+                if (state->viewshed) eng.removeImageOverlay(state->viewshed);
+                state->viewshed = eng.computeViewshed({lat, lon, 0}, 2.0, 5000.0);
+            }
         } else if (e->key_code == SAPP_KEYCODE_T) {
             state->terrain = !state->terrain;
             eng.setTerrainEnabled(state->terrain);
@@ -416,6 +434,10 @@ sapp_desc sokol_main(int argc, char* argv[]) {
             state->hasHit = std::sscanf(argv[++i], "%lf,%lf", &state->hitX, &state->hitY) == 2;
         } else if (a == "--features") {
             state->featureFiles.push_back(argv[++i]);
+        } else if (a == "--grid") {
+            state->grid = std::atoi(argv[++i]) != 0;
+        } else if (a == "--viewshed") {
+            state->shotViewshed = std::atoi(argv[++i]) != 0;
         } else if (a == "--terrain") {
             state->terrain = std::atoi(argv[++i]) != 0;
         } else if (a == "--exaggeration") {

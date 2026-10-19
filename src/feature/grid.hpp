@@ -6,6 +6,6 @@
 
 namespace ote {
 
-void buildGrid(const GeoRect& tile, double texelDeg, double dpi, std::vector<float>& verts);
+void buildGrid(const GeoRect& tile, double texelDeg, double dpi, double spacing, std::vector<float>& verts);
 
 }

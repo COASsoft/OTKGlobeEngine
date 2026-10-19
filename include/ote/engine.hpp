@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "ote/features.hpp"
+#include "ote/mgrs.hpp"
 
 struct sg_swapchain;
 struct sg_attachments;
@@ -73,6 +74,23 @@ struct DownloadStatus {
     bool cancelled = false;
 };
 
+struct ImageOverlay {
+    double north = 0;
+    double south = 0;
+    double east = 0;
+    double west = 0;
+    int width = 0;
+    int height = 0;
+    std::vector<std::uint8_t> rgba;
+    float opacity = 1.0f;
+};
+
+struct LineOfSight {
+    bool visible = true;
+    Coord obstruction;
+    double distance = 0;
+};
+
 struct Region {
     double west = 0;
     double south = 0;
@@ -119,6 +137,12 @@ public:
     std::vector<std::uint64_t> featureIds() const;
     std::vector<std::uint64_t> loadFeatures(const std::string& path);
     std::uint64_t hitTest(double sx, double sy, double radiusPx = 16.0) const;
+
+    void setGridEnabled(bool enabled);
+    std::uint64_t addImageOverlay(const ImageOverlay& overlay);
+    bool removeImageOverlay(std::uint64_t id);
+    LineOfSight lineOfSight(const Coord& from, double fromHeight, const Coord& to, double toHeight) const;
+    std::uint64_t computeViewshed(const Coord& observer, double heightAboveGround, double radiusMeters, int resolution = 256);
 
     int downloadRegion(int layer, const Region& region, int minZoom, int maxZoom);
     std::int64_t countRegionTiles(int layer, const Region& region, int minZoom, int maxZoom) const;

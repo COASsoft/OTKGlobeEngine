@@ -35,7 +35,7 @@ struct Emitter {
 
 }
 
-void buildGrid(const GeoRect& tile, double texelDeg, double dpi, std::vector<float>& verts) {
+void buildGrid(const GeoRect& tile, double texelDeg, double dpi, double spacing, std::vector<float>& verts) {
     double span = tile.north - tile.south;
     if (tile.south >= 84.0 || tile.north <= -80.0) return;
     double coslat = std::max(std::cos((tile.south + tile.north) * 0.5 * kD2R), 0.05);
@@ -45,8 +45,7 @@ void buildGrid(const GeoRect& tile, double texelDeg, double dpi, std::vector<flo
     for (double lat = std::ceil(std::max(tile.south, -80.0) / 8.0) * 8.0; lat <= std::min(tile.north, 84.0); lat += 8.0)
         gzd.segment(tile.west, lat, tile.east, lat);
 
-    double spacing = span > 6.0 ? 0 : span > 0.7 ? 100000.0 : span > 0.07 ? 10000.0 : 1000.0;
-    if (spacing <= 0) return;
+    if (spacing <= 0 || span > 12.0) return;
     Emitter grid{tile, span, coslat, 1.0 * dpi * texelDeg * 0.5, {1.0f, 1.0f, 1.0f, spacing >= 100000.0 ? 0.8f : 0.6f}, verts};
     double south = std::max(tile.south, -80.0), north = std::min(tile.north, 84.0);
     int z0 = static_cast<int>(std::floor((tile.west + 180.0) / 6.0)) + 1;
@@ -76,7 +75,7 @@ void buildGrid(const GeoRect& tile, double texelDeg, double dpi, std::vector<flo
         const int steps = 16;
         double e0 = std::floor(minE / spacing) * spacing, n0 = std::floor(minN / spacing) * spacing;
         int lines = 0;
-        for (double ev = e0; ev <= maxE && lines < 200; ev += spacing, ++lines) {
+        for (double ev = e0; ev <= maxE && lines < 400; ev += spacing, ++lines) {
             double plat = 0, plon = 0;
             bool have = false;
             for (int i = 0; i <= steps; ++i) {
@@ -90,7 +89,7 @@ void buildGrid(const GeoRect& tile, double texelDeg, double dpi, std::vector<flo
             }
         }
         lines = 0;
-        for (double nv = n0; nv <= maxN && lines < 200; nv += spacing, ++lines) {
+        for (double nv = n0; nv <= maxN && lines < 400; nv += spacing, ++lines) {
             double plat = 0, plon = 0;
             bool have = false;
             for (int i = 0; i <= steps; ++i) {
