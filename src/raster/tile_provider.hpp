@@ -29,6 +29,7 @@ public:
     virtual FetchResult fetch(int z, int x, int y) = 0;
     virtual bool remote() const { return false; }
     virtual bool cached(int, int, int) { return false; }
+    virtual bool vector() const { return false; }
 
 protected:
     TileMatrix matrix_;

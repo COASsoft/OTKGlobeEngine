@@ -3,6 +3,8 @@
 #include "db/sqlite.hpp"
 #include "gdal/gdal_sources.hpp"
 #include "net/http.hpp"
+
+#include <json.hpp>
 #include "raster/tile_cache.hpp"
 
 #include <algorithm>
@@ -50,10 +52,24 @@ public:
     }
 
     bool remote() const override { return true; }
+    bool vector() const override { return layer_.type == SourceType::Mvt; }
     bool cached(int z, int x, int y) override { return cache_ && layer_.cache && cache_->has(key_, z, x, y); }
+
+    void resolveTileJson() {
+        std::lock_guard lock(resolveMutex_);
+        if (resolved_) return;
+        resolved_ = true;
+        if (layer_.type != SourceType::Mvt || layer_.url.find("{z}") != std::string::npos) return;
+        net::Response res = net::get(layer_.url, ua_);
+        if (res.status != 200) return;
+        nlohmann::json j = nlohmann::json::parse(res.body.begin(), res.body.end(), nullptr, false);
+        if (j.is_discarded() || !j.contains("tiles") || !j["tiles"].is_array() || j["tiles"].empty()) return;
+        layer_.url = j["tiles"][0].get<std::string>();
+    }
 
     FetchResult fetch(int z, int x, int y) override {
         FetchResult r;
+        if (!resolved_) resolveTileJson();
         std::vector<std::uint8_t> data;
         std::int64_t expires = 0;
         bool useCache = cache_ && cache_->isOpen() && layer_.cache;
@@ -92,6 +108,8 @@ private:
     std::atomic<bool>* offline_;
     std::string key_;
     std::string ua_;
+    std::mutex resolveMutex_;
+    std::atomic<bool> resolved_{false};
 };
 
 class SqliteProvider : public TileProvider {
@@ -129,13 +147,17 @@ public:
                 maxZ = st.integer(1);
             }
             tile_ = db_.prepare("SELECT tile_data FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=?");
+            auto fmt = db_.prepare("SELECT value FROM metadata WHERE name='format'");
+            if (fmt.valid() && fmt.step()) vector_ = fmt.text(0) == "pbf" || fmt.text(0) == "mvt";
         }
         matrix_ = TileMatrix::webMercator(minZ, maxZ, layer.tileSize);
     }
+    bool vector() const override { return vector_; }
     FetchResult fetch(int z, int x, int y) override { return query(tile_, z, x, (1 << z) - 1 - y); }
 
 private:
     db::Statement tile_;
+    bool vector_ = false;
 };
 
 class OsmdroidProvider : public SqliteProvider {

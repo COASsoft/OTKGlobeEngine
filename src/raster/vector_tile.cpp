@@ -252,6 +252,40 @@ std::shared_ptr<VectorTile> decodeVectorTile(const std::vector<std::uint8_t>& ra
             }
         }
     }
+    float ll[2];
+    toLonLat(z, x, y, 0.0, 1.0, ll);
+    tile->originLon = ll[0];
+    tile->originLat = ll[1];
+    auto color = [](std::uint32_t argb, float c[4]) {
+        c[0] = ((argb >> 16) & 0xFF) / 255.0f;
+        c[1] = ((argb >> 8) & 0xFF) / 255.0f;
+        c[2] = (argb & 0xFF) / 255.0f;
+        c[3] = ((argb >> 24) & 0xFF) / 255.0f;
+    };
+    float c[4];
+    for (const VectorShape& s : tile->fills) {
+        color(s.color, c);
+        for (const auto& p : s.triangles)
+            tile->fillVertices.insert(tile->fillVertices.end(),
+                                      {static_cast<float>(p[0] - tile->originLon), static_cast<float>(p[1] - tile->originLat), c[0], c[1], c[2], c[3]});
+    }
+    for (const VectorShape& s : tile->lines) {
+        color(s.color, c);
+        for (size_t r = 0; r < s.breaks.size(); ++r) {
+            size_t from = s.breaks[r], to = r + 1 < s.breaks.size() ? s.breaks[r + 1] : s.points.size();
+            for (size_t i = from; i + 1 < to; ++i) {
+                float ax = static_cast<float>(s.points[i][0] - tile->originLon), ay = static_cast<float>(s.points[i][1] - tile->originLat);
+                float bx = static_cast<float>(s.points[i + 1][0] - tile->originLon), by = static_cast<float>(s.points[i + 1][1] - tile->originLat);
+                if (ax == bx && ay == by) continue;
+                float v[4][5] = {{ax, ay, bx, by, 1}, {bx, by, ax, ay, -1}, {bx, by, ax, ay, 1}, {ax, ay, bx, by, -1}};
+                for (int k : {0, 1, 2, 0, 2, 3})
+                    tile->lineVertices.insert(tile->lineVertices.end(),
+                                              {v[k][0], v[k][1], v[k][2], v[k][3], v[k][4], s.width * 0.5f, c[0], c[1], c[2], c[3]});
+            }
+        }
+    }
+    tile->fills.clear();
+    tile->lines.clear();
     return tile;
 }
 

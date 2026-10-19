@@ -149,7 +149,7 @@ int ote_add_layer(ote_engine* e, ote_source type, const char* name, const char* 
     ote::ImageryLayer l;
     l.type = static_cast<ote::SourceType>(type);
     l.name = name ? name : "";
-    if (type == OTE_SOURCE_URL || type == OTE_SOURCE_WMTS) l.url = url_or_path ? url_or_path : "";
+    if (type == OTE_SOURCE_URL || type == OTE_SOURCE_WMTS || type == OTE_SOURCE_MVT) l.url = url_or_path ? url_or_path : "";
     else l.path = url_or_path ? url_or_path : "";
     l.minZoom = min_zoom;
     l.maxZoom = max_zoom;

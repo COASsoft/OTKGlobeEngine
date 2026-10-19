@@ -14,7 +14,7 @@ struct sg_desc;
 
 namespace ote {
 
-enum class SourceType { Url, Wms, Wmts, MBTiles, GeoPackage, Osmdroid, Gdal };
+enum class SourceType { Url, Wms, Wmts, MBTiles, GeoPackage, Osmdroid, Gdal, Mvt };
 
 struct ImageryLayer {
     std::string name;

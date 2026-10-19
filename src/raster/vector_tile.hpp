@@ -19,6 +19,10 @@ struct VectorTile {
     std::vector<VectorShape> fills;
     std::vector<VectorShape> lines;
     std::uint32_t background = 0xFFF2EFE9;
+    double originLon = 0;
+    double originLat = 0;
+    std::vector<float> fillVertices;
+    std::vector<float> lineVertices;
 };
 
 std::shared_ptr<VectorTile> decodeVectorTile(const std::vector<std::uint8_t>& data, int z, int x, int y);

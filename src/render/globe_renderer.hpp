@@ -96,6 +96,11 @@ private:
         sg_image image{};
         sg_view view{};
         std::uint64_t used = 0;
+        std::shared_ptr<VectorTile> vector;
+        sg_buffer fill{};
+        sg_buffer line{};
+        int fillCount = 0;
+        int lineCount = 0;
     };
     struct DrawTile {
         QuadKey key;
@@ -116,10 +121,16 @@ private:
         int first = 0;
         int count = 0;
     };
+    struct VectorDraw {
+        const ImageryTexture* tile = nullptr;
+        float xform[4];
+    };
     struct SurfaceJob {
         QuadKey key;
         std::vector<SurfaceDraw> draws;
         std::vector<TileId> missing;
+        std::vector<VectorDraw> vectors;
+        bool background = false;
         int featureFirst = 0;
         int featureCount = 0;
         bool complete = false;
@@ -137,7 +148,9 @@ private:
     static void dropSurface(SurfaceTile& s);
     void processLoads();
     void evict();
-    bool buildSurfaceJob(const QuadKey& k, double priority, SurfaceJob* job, std::vector<float>* verts);
+    bool buildSurfaceJob(const QuadKey& k, double priority, SurfaceJob* job, std::vector<float>* verts,
+                         std::vector<float>* fverts = nullptr, double texelDeg = 0);
+    static void dropImagery(ImageryTexture& t);
     void requestBase();
     void want(const TileId& id, double priority);
     ImageryTexture* findTexture(const TileId& id, const TileMatrix& m, double priority, bool& missing, TileId& src);
@@ -153,6 +166,7 @@ private:
     std::atomic<bool> offline_{false};
     std::vector<ImageryLayer> layers_;
     std::vector<TileMatrix> matrices_;
+    std::vector<bool> vectorLayers_;
     std::unordered_map<QuadKey, TerrainTile, QuadKeyHash> terrain_;
     std::unordered_map<QuadKey, SurfaceTile, QuadKeyHash> surface_;
     std::unordered_map<TileId, ImageryTexture, TileIdHash> imagery_;
@@ -185,6 +199,10 @@ private:
     sg_pipeline globePipeline_{};
     sg_pipeline surfacePipeline_{};
     sg_pipeline skyPipeline_{};
+    sg_shader vfillShader_{};
+    sg_shader vlineShader_{};
+    sg_pipeline vfillPipeline_{};
+    sg_pipeline vlinePipeline_{};
     sg_shader mipShader_{};
     sg_pipeline mipPipeline_{};
     sg_sampler mipSampler_{};

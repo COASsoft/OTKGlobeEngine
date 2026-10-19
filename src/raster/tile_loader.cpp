@@ -52,6 +52,13 @@ void TileLoader::setLayers(const std::vector<ImageryLayer>& layers) {
     ++generation_;
 }
 
+std::vector<bool> TileLoader::vectorLayers() const {
+    std::lock_guard lock(mutex_);
+    std::vector<bool> out;
+    for (const auto& p : providers_) out.push_back(p->vector());
+    return out;
+}
+
 std::vector<TileMatrix> TileLoader::matrices() const {
     std::lock_guard lock(mutex_);
     std::vector<TileMatrix> out;
@@ -180,7 +187,11 @@ void TileLoader::run() {
         tile.id = id;
         tile.generation = gen;
         FetchResult res = provider->fetch(id.z, id.x, id.y);
-        if (res.status == 200 && res.raw) {
+        if (res.status == 200 && provider->vector()) {
+            tile.vector = decodeVectorTile(res.data, id.z, id.x, id.y);
+            tile.ok = tile.vector != nullptr;
+            tile.permanent = !tile.ok;
+        } else if (res.status == 200 && res.raw) {
             tile.ok = true;
             tile.width = res.width;
             tile.height = res.height;

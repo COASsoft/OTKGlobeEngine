@@ -10,6 +10,7 @@ add_library(opentakengine STATIC
     raster/tile_cache.cpp
     raster/tile_provider.cpp
     raster/mobac.cpp
+    raster/vector_tile.cpp
     elevation/elevation.cpp
     feature/parsers.cpp
     feature/text.cpp
@@ -72,7 +73,8 @@ ote_add_shaders(opentakengine
     render/shaders/sky.glsl
     render/shaders/feature.glsl
     render/shaders/mip.glsl
-    render/shaders/model.glsl)
+    render/shaders/model.glsl
+    render/shaders/vector.glsl)
 ote_embed(opentakengine font_bold ${PROJECT_SOURCE_DIR}/assets/fonts/NotoSans-Bold-subset.ttf)
 ote_embed(opentakengine geoid_egm96 ${PROJECT_SOURCE_DIR}/assets/geoid/egm96-1deg.bin)
 

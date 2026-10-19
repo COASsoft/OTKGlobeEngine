@@ -90,6 +90,13 @@ std::vector<ote::ImageryLayer> preset(int i) {
         topo.minZoom = 3;
         topo.maxZoom = 16;
         layers.push_back(topo);
+    } else if (i == 3) {
+        ote::ImageryLayer v;
+        v.name = "OpenFreeMap";
+        v.type = ote::SourceType::Mvt;
+        v.url = "https://tiles.openfreemap.org/planet";
+        v.maxZoom = 14;
+        layers = {v};
     } else if (i == 2) {
         ote::ImageryLayer osm;
         osm.name = "OpenStreetMap";
@@ -343,7 +350,7 @@ void event(const sapp_event* e) {
         state->touchCount = 0;
         break;
     case SAPP_EVENTTYPE_KEY_DOWN:
-        if (e->key_code >= SAPP_KEYCODE_1 && e->key_code <= SAPP_KEYCODE_3) {
+        if (e->key_code >= SAPP_KEYCODE_1 && e->key_code <= SAPP_KEYCODE_4) {
             state->preset = e->key_code - SAPP_KEYCODE_1;
             eng.setLayers(preset(state->preset));
         } else if (e->key_code == SAPP_KEYCODE_H) {

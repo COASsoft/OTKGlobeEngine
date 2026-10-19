@@ -28,7 +28,8 @@ typedef enum ote_source {
     OTE_SOURCE_MBTILES = 3,
     OTE_SOURCE_GEOPACKAGE = 4,
     OTE_SOURCE_OSMDROID = 5,
-    OTE_SOURCE_GDAL = 6
+    OTE_SOURCE_GDAL = 6,
+    OTE_SOURCE_MVT = 7
 } ote_source;
 
 typedef struct ote_view {

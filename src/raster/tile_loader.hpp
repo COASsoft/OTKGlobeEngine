@@ -3,6 +3,7 @@
 #include "ote/engine.hpp"
 #include "raster/tile_matrix.hpp"
 #include "raster/tile_provider.hpp"
+#include "raster/vector_tile.hpp"
 
 #include <atomic>
 #include <condition_variable>
@@ -43,6 +44,7 @@ struct DecodedTile {
     int width = 0;
     int height = 0;
     std::vector<std::uint8_t> rgba;
+    std::shared_ptr<VectorTile> vector;
 };
 
 struct TileRange {
@@ -62,6 +64,7 @@ public:
     void setOffline(bool offline) { offline_ = offline; }
     void setLayers(const std::vector<ImageryLayer>& layers);
     std::vector<TileMatrix> matrices() const;
+    std::vector<bool> vectorLayers() const;
     int generation() const { return generation_; }
     void submit(std::vector<std::pair<TileId, double>>& requests);
     std::vector<DecodedTile> take(size_t max);
