@@ -8,8 +8,11 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>
 
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <thread>
 #include <vector>
 
@@ -20,6 +23,8 @@ int main(int argc, char** argv) {
     ID3D11DeviceContext* ctx = nullptr;
     D3D_FEATURE_LEVEL level;
     if (FAILED(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, nullptr, 0,
+                                 D3D11_SDK_VERSION, &dev, &level, &ctx)) &&
+        FAILED(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, nullptr, 0,
                                  D3D11_SDK_VERSION, &dev, &level, &ctx))) {
         std::printf("no d3d11 device\n");
         return 2;
@@ -82,6 +87,127 @@ int main(int argc, char** argv) {
         }
     ctx->Unmap(staging, 0);
     int ok = stbi_write_png(out, w, h, 4, px.data(), w * 4);
+    int fails = 0;
+    auto pump = [&](int n) {
+        for (int i = 0; i < n; ++i) {
+            ote_frame_d3d11(e, w, h, rtv, nullptr, dsv, 1.0f);
+            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        }
+    };
+    auto check = [&](bool c, const char* what, double got) {
+        std::printf("%s %s (%.4f)\n", c ? "PASS" : "FAIL", what, got);
+        if (!c) ++fails;
+    };
+    const double cx = w * 0.5, cy = h * 0.5;
+    ote_view a{}, b{};
+    ote_view flat{47.0, -122.0, 20.0, 0.0, 0.0};
+    ote_set_view(e, &flat);
+    pump(3);
+    ote_get_view(e, &a);
+    ote_pointer_down(e, 1, cx - 50, cy, OTE_POINTER_TOUCH, OTE_BUTTON_LEFT, 0);
+    ote_pointer_down(e, 2, cx + 50, cy, OTE_POINTER_TOUCH, OTE_BUTTON_LEFT, 0);
+    for (int i = 1; i <= 10; ++i) {
+        ote_pointer_move(e, 1, cx - 50 - 15 * i, cy, 0);
+        ote_pointer_move(e, 2, cx + 50 + 15 * i, cy, 0);
+    }
+    ote_pointer_up(e, 1, cx - 200, cy);
+    ote_pointer_up(e, 2, cx + 200, cy);
+    ote_get_view(e, &b);
+    check(std::abs(b.gsd / a.gsd - 0.25) < 0.03, "pinch zooms in by the finger spread ratio", b.gsd / a.gsd);
+
+    ote_view rotated{47.0, -122.0, 20.0, 30.0, 0.0};
+    ote_set_view(e, &rotated);
+    pump(2);
+    ote_get_view(e, &a);
+    ote_pointer_down(e, 3, cx, cy, OTE_POINTER_TOUCH, OTE_BUTTON_LEFT, 0);
+    for (int i = 1; i <= 10; ++i) ote_pointer_move(e, 3, cx + 20 * i, cy, 0);
+    ote_pointer_up(e, 3, cx + 200, cy);
+    ote_get_view(e, &b);
+    check(std::abs(b.azimuth - a.azimuth) < 0.01 && std::abs(b.lon - a.lon) > 1e-5, "one finger pan keeps heading", b.azimuth);
+
+    ote_set_view(e, &flat);
+    pump(2);
+    ote_get_view(e, &a);
+    ote_pointer_down(e, 4, cx - 100, cy, OTE_POINTER_TOUCH, OTE_BUTTON_LEFT, 0);
+    ote_pointer_down(e, 5, cx + 100, cy, OTE_POINTER_TOUCH, OTE_BUTTON_LEFT, 0);
+    for (int i = 1; i <= 9; ++i) {
+        double t = -0.0872664626 * i;
+        ote_pointer_move(e, 4, cx - 100 * std::cos(t), cy - 100 * std::sin(t), 0);
+        ote_pointer_move(e, 5, cx + 100 * std::cos(t), cy + 100 * std::sin(t), 0);
+    }
+    ote_pointer_up(e, 4, cx - 70.71, cy + 70.71);
+    ote_pointer_up(e, 5, cx + 70.71, cy - 70.71);
+    ote_get_view(e, &b);
+    double turned = std::fmod(b.azimuth - a.azimuth + 540.0, 360.0) - 180.0;
+    check(turned > 30.0 && turned < 40.0, "two finger twist rotates with the fingers past the threshold", turned);
+
+    ote_set_view(e, &flat);
+    pump(2);
+    ote_get_view(e, &a);
+    ote_pointer_down(e, 6, cx - 80, cy + 100, OTE_POINTER_TOUCH, OTE_BUTTON_LEFT, 0);
+    ote_pointer_down(e, 7, cx + 80, cy + 100, OTE_POINTER_TOUCH, OTE_BUTTON_LEFT, 0);
+    for (int i = 1; i <= 10; ++i) {
+        ote_pointer_move(e, 6, cx - 80, cy + 100 - 15 * i, 0);
+        ote_pointer_move(e, 7, cx + 80, cy + 100 - 15 * i, 0);
+    }
+    ote_pointer_up(e, 6, cx - 80, cy - 50);
+    ote_pointer_up(e, 7, cx + 80, cy - 50);
+    ote_get_view(e, &b);
+    check(b.tilt > 20.0 && std::abs(b.gsd / a.gsd - 1.0) < 0.05, "two finger vertical drag tilts without zooming", b.tilt);
+
+    ote_set_view(e, &flat);
+    pump(2);
+    ote_get_view(e, &a);
+    ote_key(e, OTE_KEY_ZOOM_IN, 1, 0);
+    ote_key(e, OTE_KEY_ZOOM_IN, 0, 0);
+    pump(45);
+    ote_get_view(e, &b);
+    check(std::abs(b.gsd / a.gsd - 0.5) < 0.02, "zoom key animates a 2x zoom", b.gsd / a.gsd);
+
+    ote_set_view(e, &flat);
+    pump(2);
+    ote_get_view(e, &a);
+    ote_pointer_down(e, 8, cx + 40, cy + 20, OTE_POINTER_TOUCH, OTE_BUTTON_LEFT, 0);
+    ote_pointer_up(e, 8, cx + 40, cy + 20);
+    ote_pointer_down(e, 9, cx + 42, cy + 21, OTE_POINTER_TOUCH, OTE_BUTTON_LEFT, 0);
+    ote_pointer_up(e, 9, cx + 42, cy + 21);
+    pump(45);
+    ote_get_view(e, &b);
+    check(std::abs(b.gsd / a.gsd - 0.5) < 0.02, "double tap animates a 2x zoom", b.gsd / a.gsd);
+
+    ote_set_view(e, &flat);
+    pump(2);
+    ote_get_view(e, &a);
+    ote_wheel(e, cx, cy, 0, 1, 0, 0);
+    pump(30);
+    ote_get_view(e, &b);
+    check(b.gsd < a.gsd * 0.8, "mouse wheel zooms in", b.gsd / a.gsd);
+
+    ote_view polar{88.5, 10.0, 20000.0, 0.0, 0.0};
+    ote_set_view(e, &polar);
+    pump(2);
+    double minLat = 90, maxLat = -90;
+    for (int k = 0; k < 6; ++k) {
+        ote_pointer_down(e, 20 + k, cx, cy - 100, OTE_POINTER_MOUSE, OTE_BUTTON_LEFT, 0);
+        for (int i = 1; i <= 10; ++i) {
+            ote_pointer_move(e, 20 + k, cx, cy - 100 + 25 * i, 0);
+            ote_get_view(e, &b);
+            if (std::getenv("OTE_TEST_TRACE")) std::printf("drag %d.%d lat %.5f lon %.3f az %.2f gsd %.0f\n", k, i, b.lat, b.lon, b.azimuth, b.gsd);
+            minLat = std::min(minLat, b.lat);
+            maxLat = std::max(maxLat, b.lat);
+        }
+        ote_pointer_up(e, 20 + k, cx, cy + 150);
+    }
+    ote_get_view(e, &b);
+    check(maxLat > 89.9 && maxLat < 90.0 && minLat > 88.0 && std::abs(b.azimuth) < 0.01, "pan reaches the pole without flipping or turning", maxLat);
+    double lon0 = b.lon;
+    ote_pointer_down(e, 40, cx - 100, cy, OTE_POINTER_MOUSE, OTE_BUTTON_LEFT, 0);
+    ote_pointer_move(e, 40, cx + 100, cy, 0);
+    ote_pointer_up(e, 40, cx + 100, cy);
+    ote_get_view(e, &b);
+    double dLon = std::abs(std::fmod(b.lon - lon0 + 540.0, 360.0) - 180.0);
+    check(dLon <= 180.0 * 200.0 / std::min(w, h) + 0.01 && b.lat > 89.0, "sideways pan at the pole turns at a bounded rate", dLon);
+
     char mgrs[32];
     ote_to_mgrs(46.8529, -121.7604, 5, mgrs, sizeof mgrs);
     std::printf("frames %d quiet %d png %d mgrs %s\n", frames, quiet, ok, mgrs);
@@ -93,5 +219,5 @@ int main(int argc, char** argv) {
     color->Release();
     ctx->Release();
     dev->Release();
-    return ok ? 0 : 1;
+    return ok && fails == 0 ? 0 : 1;
 }

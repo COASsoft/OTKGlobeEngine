@@ -62,6 +62,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: bash scripts/apple_xcframework.sh
+      - name: Typecheck Swift view for macOS and iOS
+        run: |
+          mkdir -p build/swiftcheck
+          cp include/ote/ote.h build/swiftcheck/
+          echo 'module OpenTAKEngineC {' > build/swiftcheck/module.modulemap
+          echo '    header "ote.h"' >> build/swiftcheck/module.modulemap
+          echo '    export *' >> build/swiftcheck/module.modulemap
+          echo '}' >> build/swiftcheck/module.modulemap
+          xcrun --sdk macosx swiftc -typecheck -target arm64-apple-macos12 -I build/swiftcheck bindings/apple/OpenTAKView.swift
+          xcrun --sdk iphoneos swiftc -typecheck -target arm64-apple-ios15.0 -I build/swiftcheck bindings/apple/OpenTAKView.swift
       - run: cd build/apple && zip -qry OpenTAKEngine.xcframework.zip OpenTAKEngine.xcframework
       - uses: actions/upload-artifact@v4
         with:

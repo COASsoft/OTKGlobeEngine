@@ -16,11 +16,36 @@ std::string str(JNIEnv* env, jstring s) {
 
 ote_engine* E(jlong h) { return reinterpret_cast<ote_engine*>(h); }
 
+JavaVM* gVm = nullptr;
+
+struct Listener {
+    jobject target = nullptr;
+    jmethodID tap = nullptr;
+    jmethodID press = nullptr;
+};
+
+JNIEnv* env() {
+    JNIEnv* e = nullptr;
+    if (gVm && gVm->GetEnv(reinterpret_cast<void**>(&e), JNI_VERSION_1_6) != JNI_OK) return nullptr;
+    return e;
+}
+
+void onTap(void* user, double x, double y, int taps, int type) {
+    auto* l = static_cast<Listener*>(user);
+    if (JNIEnv* e = env()) e->CallVoidMethod(l->target, l->tap, x, y, taps, type);
+}
+
+void onPress(void* user, double x, double y, int type) {
+    auto* l = static_cast<Listener*>(user);
+    if (JNIEnv* e = env()) e->CallVoidMethod(l->target, l->press, x, y, type);
+}
+
 }
 
 extern "C" {
 
 JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void*) {
+    gVm = vm;
     ote_set_android_vm(vm);
     return JNI_VERSION_1_6;
 }
@@ -140,6 +165,47 @@ JNIEXPORT jstring JNICALL OTE_FN(nativeToMgrs)(JNIEnv* env, jclass, jdouble lat,
     char buf[64];
     ote_to_mgrs(lat, lon, digits, buf, sizeof buf);
     return env->NewStringUTF(buf);
+}
+
+JNIEXPORT void JNICALL OTE_FN(nativePointerDown)(JNIEnv*, jclass, jlong h, jint id, jdouble x, jdouble y, jint type, jint button, jint mods) {
+    ote_pointer_down(E(h), id, x, y, type, button, mods);
+}
+
+JNIEXPORT void JNICALL OTE_FN(nativePointerMove)(JNIEnv*, jclass, jlong h, jint id, jdouble x, jdouble y, jint mods) {
+    ote_pointer_move(E(h), id, x, y, mods);
+}
+
+JNIEXPORT void JNICALL OTE_FN(nativePointerUp)(JNIEnv*, jclass, jlong h, jint id, jdouble x, jdouble y) { ote_pointer_up(E(h), id, x, y); }
+
+JNIEXPORT void JNICALL OTE_FN(nativePointerCancelAll)(JNIEnv*, jclass, jlong h) { ote_pointer_cancel_all(E(h)); }
+
+JNIEXPORT void JNICALL OTE_FN(nativeWheel)(JNIEnv*, jclass, jlong h, jdouble x, jdouble y, jdouble dx, jdouble dy, jboolean precise, jint mods) {
+    ote_wheel(E(h), x, y, dx, dy, precise ? 1 : 0, mods);
+}
+
+JNIEXPORT void JNICALL OTE_FN(nativeKey)(JNIEnv*, jclass, jlong h, jint key, jboolean down, jint mods) { ote_key(E(h), key, down ? 1 : 0, mods); }
+
+JNIEXPORT void JNICALL OTE_FN(nativeSetHeadingLockedPan)(JNIEnv*, jclass, jlong h, jboolean v) { ote_set_heading_locked_pan(E(h), v ? 1 : 0); }
+
+JNIEXPORT jlong JNICALL OTE_FN(nativeSetTapListener)(JNIEnv* env, jclass, jlong h, jobject listener, jlong previous) {
+    if (previous) {
+        auto* old = reinterpret_cast<Listener*>(previous);
+        env->DeleteGlobalRef(old->target);
+        delete old;
+    }
+    if (!listener) {
+        ote_set_tap_callback(E(h), nullptr, nullptr);
+        ote_set_long_press_callback(E(h), nullptr, nullptr);
+        return 0;
+    }
+    auto* l = new Listener();
+    l->target = env->NewGlobalRef(listener);
+    jclass cls = env->GetObjectClass(listener);
+    l->tap = env->GetMethodID(cls, "onTap", "(DDII)V");
+    l->press = env->GetMethodID(cls, "onLongPress", "(DDI)V");
+    ote_set_tap_callback(E(h), onTap, l);
+    ote_set_long_press_callback(E(h), onPress, l);
+    return reinterpret_cast<jlong>(l);
 }
 
 }

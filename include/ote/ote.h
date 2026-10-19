@@ -84,6 +84,40 @@ OTE_API void ote_walk(ote_engine* e, double forward_m, double right_m);
 OTE_API void ote_look(ote_engine* e, double heading_deg, double pitch_deg);
 OTE_API void ote_set_3d(ote_engine* e, int enabled);
 OTE_API void ote_fly_to(ote_engine* e, const ote_view* v, double seconds);
+OTE_API void ote_rotate_at(ote_engine* e, double sx, double sy, double degrees);
+OTE_API void ote_set_heading_locked_pan(ote_engine* e, int enabled);
+
+typedef enum ote_pointer_type { OTE_POINTER_MOUSE = 0, OTE_POINTER_TOUCH = 1, OTE_POINTER_PEN = 2 } ote_pointer_type;
+typedef enum ote_mouse_button { OTE_BUTTON_NONE = 0, OTE_BUTTON_LEFT = 1, OTE_BUTTON_RIGHT = 2, OTE_BUTTON_MIDDLE = 3 } ote_mouse_button;
+typedef enum ote_modifier { OTE_MOD_SHIFT = 1, OTE_MOD_CTRL = 2, OTE_MOD_ALT = 4, OTE_MOD_SUPER = 8 } ote_modifier;
+typedef enum ote_key_code {
+    OTE_KEY_LEFT = 0,
+    OTE_KEY_RIGHT,
+    OTE_KEY_UP,
+    OTE_KEY_DOWN,
+    OTE_KEY_ZOOM_IN,
+    OTE_KEY_ZOOM_OUT,
+    OTE_KEY_ROTATE_LEFT,
+    OTE_KEY_ROTATE_RIGHT,
+    OTE_KEY_TILT_UP,
+    OTE_KEY_TILT_DOWN,
+    OTE_KEY_RESET_NORTH,
+    OTE_KEY_RESET_TILT
+} ote_key_code;
+typedef void (*ote_tap_callback)(void* user, double x, double y, int taps, int pointer_type);
+typedef void (*ote_press_callback)(void* user, double x, double y, int pointer_type);
+
+OTE_API void ote_pointer_down(ote_engine* e, int id, double x, double y, int pointer_type, int button, int modifiers);
+OTE_API void ote_pointer_move(ote_engine* e, int id, double x, double y, int modifiers);
+OTE_API void ote_pointer_up(ote_engine* e, int id, double x, double y);
+OTE_API void ote_pointer_cancel(ote_engine* e, int id);
+OTE_API void ote_pointer_cancel_all(ote_engine* e);
+OTE_API void ote_wheel(ote_engine* e, double x, double y, double dx, double dy, int precise, int modifiers);
+OTE_API void ote_magnify(ote_engine* e, double x, double y, double scale);
+OTE_API void ote_rotate_gesture(ote_engine* e, double x, double y, double degrees);
+OTE_API void ote_key(ote_engine* e, int key, int down, int modifiers);
+OTE_API void ote_set_tap_callback(ote_engine* e, ote_tap_callback callback, void* user);
+OTE_API void ote_set_long_press_callback(ote_engine* e, ote_press_callback callback, void* user);
 
 OTE_API int ote_load_features(ote_engine* e, const char* path);
 OTE_API uint64_t ote_add_point(ote_engine* e, double lat, double lon, double alt, const char* name, uint32_t argb);

@@ -84,38 +84,62 @@ struct Engine::Impl {
 
     double poleLimit() const { return 89.99; }
 
+    double poleSafeFraction(Vec3 f0, Vec3 axis, double angle, double bound) const {
+        if (angle == 0) return 1.0;
+        Vec3 k = normalize(axis);
+        double r = length(f0);
+        if (r <= 0) return 1.0;
+        Vec3 f = f0 * (1.0 / r);
+        double kf = dot(k, f);
+        double A = f.z - k.z * kf, B = cross(k, f).z, C = k.z * kf;
+        double R = std::hypot(A, B);
+        double phi = std::atan2(B, A);
+        double limit = std::sin(bound * kDegToRad);
+        double best = std::abs(angle);
+        for (double target : {limit, -limit}) {
+            double q = target - C;
+            if (R < 1e-15 || std::abs(q) > R) continue;
+            double d = std::acos(std::clamp(q / R, -1.0, 1.0));
+            for (double t0 : {phi + d, phi - d}) {
+                for (int wrap = -2; wrap <= 2; ++wrap) {
+                    double t = t0 + wrap * 2.0 * kPi;
+                    double along = angle > 0 ? t : -t;
+                    if (along > 1e-12 && along < best) best = along;
+                }
+            }
+        }
+        double z0 = f.z;
+        if (std::abs(z0) > limit) return 1.0;
+        return std::max(0.0, best / std::abs(angle) - 1e-9);
+    }
+
     void rotateFocus(Vec3 axis, double angle, double maxLonDelta = 360.0) {
         Vec3 f0 = camera.focusEcef();
         Vec3 e, n, u;
         enuFrame(camera.focus.lat, camera.focus.lon, e, n, u);
         double az = camera.azimuth * kDegToRad;
         Vec3 fwd0 = n * std::cos(az) + e * std::sin(az);
-        double bound = std::max(poleLimit(), std::abs(camera.focus.lat));
-        auto latAt = [&](double s) { return std::abs(ecefToGeodetic(rotateAxis(f0, axis, angle * s)).lat); };
-        double s = 1.0;
-        for (int i = 1; i <= 16; ++i) {
-            double si = i / 16.0;
-            if (latAt(si) > bound) {
-                double lo = (i - 1) / 16.0, hi = si;
-                for (int k = 0; k < 30; ++k) {
-                    double mid = 0.5 * (lo + hi);
-                    if (latAt(mid) > bound) hi = mid;
-                    else lo = mid;
-                }
-                s = lo;
-                break;
-            }
-        }
+        double s = poleSafeFraction(f0, axis, angle, poleLimit());
         GeoPoint g = ecefToGeodetic(rotateAxis(f0, axis, angle * s));
         double dLon = std::fmod(g.lon - camera.focus.lon + 540.0, 360.0) - 180.0;
         if (headingLock && std::abs(dLon) > maxLonDelta) g.lon = camera.focus.lon + std::copysign(maxLonDelta, dLon);
-        camera.focus.lat = g.lat;
-        camera.focus.lon = g.lon;
+        camera.focus.lat = std::clamp(g.lat, -poleLimit(), poleLimit());
+        camera.focus.lon = wrapLon(g.lon);
         if (!headingLock) {
             Vec3 fwd = rotateAxis(fwd0, axis, angle * s);
-            enuFrame(g.lat, g.lon, e, n, u);
+            enuFrame(camera.focus.lat, camera.focus.lon, e, n, u);
             camera.azimuth = std::atan2(dot(fwd, e), dot(fwd, n)) * kRadToDeg;
         }
+        camera.update();
+    }
+
+    void shiftFocus(double east, double north, double maxLonDelta) {
+        double lat0 = camera.focus.lat;
+        double lat = std::clamp(lat0 + north / kWgs84A * kRadToDeg, -poleLimit(), poleLimit());
+        double dLon = east / (kWgs84A * std::max(std::cos(lat0 * kDegToRad), 1e-9)) * kRadToDeg;
+        if (std::abs(dLon) > maxLonDelta) dLon = std::copysign(maxLonDelta, dLon);
+        camera.focus.lat = lat;
+        camera.focus.lon = wrapLon(camera.focus.lon + dLon);
         camera.update();
     }
 
@@ -514,21 +538,33 @@ void Engine::pan(double x0, double y0, double x1, double y1) {
         look((x0 - x1) * 0.15, (y1 - y0) * 0.15);
         return;
     }
-    Vec3 p0, p1;
+    Vec3 e, n, u;
+    enuFrame(c.focus.lat, c.focus.lon, e, n, u);
     double lonCap = 180.0 * std::hypot(x1 - x0, y1 - y0) / std::max(static_cast<double>(std::min(c.width, c.height)), 1.0);
-    if (impl_->pickGround(x0, y0, p0) && impl_->pickGround(x1, y1, p1)) {
-        impl_->moveCamera(p1, p0, lonCap);
+    Vec3 p0, p1;
+    Vec3 move;
+    bool picked = impl_->pickGround(x0, y0, p0) && impl_->pickGround(x1, y1, p1);
+    if (picked) {
+        if (!impl_->headingLock) {
+            impl_->moveCamera(p1, p0, lonCap);
+            impl_->dirty = true;
+            return;
+        }
+        move = p0 - p1;
     } else {
-        Vec3 e, n, u;
-        enuFrame(c.focus.lat, c.focus.lon, e, n, u);
         double az = c.azimuth * kDegToRad;
         double dx = (x0 - x1) * c.gsd, dy = (y1 - y0) * c.gsd;
         Vec3 right = e * std::cos(az) - n * std::sin(az);
         Vec3 fwd = n * std::cos(az) + e * std::sin(az);
-        Vec3 move = right * dx + fwd * dy;
-        double dist = length(move);
-        if (dist > 0) impl_->rotateFocus(cross(u, move * (1.0 / dist)), dist / kWgs84A, lonCap);
+        move = right * dx + fwd * dy;
+        if (!impl_->headingLock) {
+            double dist = length(move);
+            if (dist > 0) impl_->rotateFocus(cross(u, move * (1.0 / dist)), dist / kWgs84A, lonCap);
+            impl_->dirty = true;
+            return;
+        }
     }
+    impl_->shiftFocus(dot(move, e), dot(move, n), lonCap);
     impl_->dirty = true;
 }
 

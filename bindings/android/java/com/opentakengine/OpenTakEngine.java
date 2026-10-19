@@ -14,6 +14,30 @@ public final class OpenTakEngine {
     public static final int SOURCE_GDAL = 6;
     public static final int SOURCE_MVT = 7;
 
+    public static final int POINTER_MOUSE = 0;
+    public static final int POINTER_TOUCH = 1;
+    public static final int POINTER_PEN = 2;
+    public static final int BUTTON_NONE = 0;
+    public static final int BUTTON_LEFT = 1;
+    public static final int BUTTON_RIGHT = 2;
+    public static final int BUTTON_MIDDLE = 3;
+    public static final int MOD_SHIFT = 1;
+    public static final int MOD_CTRL = 2;
+    public static final int MOD_ALT = 4;
+    public static final int MOD_SUPER = 8;
+    public static final int KEY_LEFT = 0;
+    public static final int KEY_RIGHT = 1;
+    public static final int KEY_UP = 2;
+    public static final int KEY_DOWN = 3;
+    public static final int KEY_ZOOM_IN = 4;
+    public static final int KEY_ZOOM_OUT = 5;
+    public static final int KEY_ROTATE_LEFT = 6;
+    public static final int KEY_ROTATE_RIGHT = 7;
+    public static final int KEY_TILT_UP = 8;
+    public static final int KEY_TILT_DOWN = 9;
+    public static final int KEY_RESET_NORTH = 10;
+    public static final int KEY_RESET_TILT = 11;
+
     private OpenTakEngine() {}
 
     static native long nativeCreate(int samples);
@@ -38,6 +62,14 @@ public final class OpenTakEngine {
     static native void nativeZoomAt(long h, double x, double y, double factor);
     static native void nativeRotate(long h, double degrees);
     static native void nativeTilt(long h, double degrees);
+    static native void nativePointerDown(long h, int id, double x, double y, int type, int button, int mods);
+    static native void nativePointerMove(long h, int id, double x, double y, int mods);
+    static native void nativePointerUp(long h, int id, double x, double y);
+    static native void nativePointerCancelAll(long h);
+    static native void nativeWheel(long h, double x, double y, double dx, double dy, boolean precise, int mods);
+    static native void nativeKey(long h, int key, boolean down, int mods);
+    static native void nativeSetHeadingLockedPan(long h, boolean enabled);
+    static native long nativeSetTapListener(long h, Object listener, long previous);
     static native void nativeSetFirstPerson(long h, boolean enabled, double height);
     static native void nativeSet3D(long h, boolean enabled);
     static native int nativeLoadFeatures(long h, String path);

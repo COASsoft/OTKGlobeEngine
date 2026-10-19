@@ -4,6 +4,7 @@
 
 #include <sokol_gfx.h>
 
+#include <algorithm>
 #include <cstring>
 
 struct ote_engine {
@@ -235,6 +236,55 @@ void ote_pan(ote_engine* e, double x0, double y0, double x1, double y1) { e->eng
 void ote_zoom_at(ote_engine* e, double sx, double sy, double factor) { e->engine.zoomAt(sx, sy, factor); }
 
 void ote_rotate(ote_engine* e, double degrees) { e->engine.rotate(degrees); }
+
+void ote_rotate_at(ote_engine* e, double sx, double sy, double degrees) { e->engine.rotateAt(sx, sy, degrees); }
+
+void ote_set_heading_locked_pan(ote_engine* e, int enabled) { e->engine.setHeadingLockedPan(enabled != 0); }
+
+void ote_pointer_down(ote_engine* e, int id, double x, double y, int pointer_type, int button, int modifiers) {
+    e->engine.input().pointerDown(id, x, y, static_cast<ote::PointerType>(std::clamp(pointer_type, 0, 2)),
+                                  static_cast<ote::MouseButton>(std::clamp(button, 0, 3)), modifiers);
+}
+
+void ote_pointer_move(ote_engine* e, int id, double x, double y, int modifiers) { e->engine.input().pointerMove(id, x, y, modifiers); }
+
+void ote_pointer_up(ote_engine* e, int id, double x, double y) { e->engine.input().pointerUp(id, x, y); }
+
+void ote_pointer_cancel(ote_engine* e, int id) { e->engine.input().pointerCancel(id); }
+
+void ote_pointer_cancel_all(ote_engine* e) { e->engine.input().cancelAll(); }
+
+void ote_wheel(ote_engine* e, double x, double y, double dx, double dy, int precise, int modifiers) {
+    e->engine.input().wheel(x, y, dx, dy, precise != 0, modifiers);
+}
+
+void ote_magnify(ote_engine* e, double x, double y, double scale) { e->engine.input().magnify(x, y, scale); }
+
+void ote_rotate_gesture(ote_engine* e, double x, double y, double degrees) { e->engine.input().rotateGesture(x, y, degrees); }
+
+void ote_key(ote_engine* e, int key, int down, int modifiers) {
+    if (key < OTE_KEY_LEFT || key > OTE_KEY_RESET_TILT) return;
+    if (down) e->engine.input().keyDown(static_cast<ote::Key>(key), modifiers);
+    else e->engine.input().keyUp(static_cast<ote::Key>(key));
+}
+
+void ote_set_tap_callback(ote_engine* e, ote_tap_callback callback, void* user) {
+    if (!callback) {
+        e->engine.input().onTap(nullptr);
+        return;
+    }
+    e->engine.input().onTap([callback, user](double x, double y, int taps, ote::PointerType type) {
+        callback(user, x, y, taps, static_cast<int>(type));
+    });
+}
+
+void ote_set_long_press_callback(ote_engine* e, ote_press_callback callback, void* user) {
+    if (!callback) {
+        e->engine.input().onLongPress(nullptr);
+        return;
+    }
+    e->engine.input().onLongPress([callback, user](double x, double y, ote::PointerType type) { callback(user, x, y, static_cast<int>(type)); });
+}
 
 void ote_tilt(ote_engine* e, double degrees) { e->engine.tiltBy(degrees); }
 
