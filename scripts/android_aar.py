@@ -1,4 +1,5 @@
 import argparse
+import re
 import shutil
 import subprocess
 import sys
@@ -35,12 +36,17 @@ def main():
             run(["cmake", "-S", ROOT, "-B", build, "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release",
                  f"-DCMAKE_TOOLCHAIN_FILE={toolchain}", f"-DANDROID_ABI={abi}", "-DANDROID_PLATFORM=android-26"])
         run(["cmake", "--build", build, "--target", "opentakengine_jni"])
-        libs[abi] = next(build.rglob("libopentakengine_jni.so"))
+        lib = next(build.rglob("libopentakengine_jni.so"))
+        stripped = out / abi / lib.name
+        stripped.parent.mkdir(parents=True, exist_ok=True)
+        strip = next((ndk / "toolchains" / "llvm" / "prebuilt").glob("*/bin/llvm-strip*"))
+        run([strip, "--strip-unneeded", "-o", stripped, lib])
+        libs[abi] = stripped
     sources = [str(p) for p in (ROOT / "bindings" / "android" / "java").rglob("*.java")]
     run(["javac", "-source", "1.8", "-target", "1.8", "-nowarn", "-Xlint:-options", "-bootclasspath", platform,
          "-d", out / "classes", *sources])
     run(["jar", "cf", out / "classes.jar", "-C", out / "classes", "."])
-    version = (ROOT / "CMakeLists.txt").read_text().split("VERSION ")[1].split()[0]
+    version = re.search(r"project\(\w+ VERSION ([0-9.]+)", (ROOT / "CMakeLists.txt").read_text()).group(1)
     aar = ROOT / "build" / f"opentakengine-{version}.aar"
     with zipfile.ZipFile(aar, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("AndroidManifest.xml", MANIFEST)

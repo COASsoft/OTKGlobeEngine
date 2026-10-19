@@ -93,3 +93,8 @@ else()
     target_link_options(opentakengine_c PRIVATE -Wl,--whole-archive $<TARGET_FILE:opentakengine> -Wl,--no-whole-archive)
 endif()
 set_source_files_properties(capi.cpp PROPERTIES COMPILE_DEFINITIONS "OTE_SHARED;OTE_BUILDING")
+
+if(ANDROID)
+    add_library(opentakengine_jni SHARED ${PROJECT_SOURCE_DIR}/bindings/android/jni/ote_jni.cpp)
+    target_link_libraries(opentakengine_jni PRIVATE opentakengine)
+endif()

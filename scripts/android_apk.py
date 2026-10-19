@@ -1,4 +1,5 @@
 import argparse
+import re
 import os
 import shutil
 import subprocess
@@ -78,13 +79,16 @@ def main():
     apk_dir = out / "apk"
     shutil.rmtree(apk_dir, ignore_errors=True)
     apk_dir.mkdir(parents=True)
-    version = (ROOT / "CMakeLists.txt").read_text().split("VERSION ")[1].split()[0]
+    version = re.search(r"project\(\w+ VERSION ([0-9.]+)", (ROOT / "CMakeLists.txt").read_text()).group(1)
     (apk_dir / "AndroidManifest.xml").write_text(MANIFEST.format(version=version), encoding="utf-8")
     unsigned = apk_dir / "unsigned.apk"
     run([tool(build_tools, "aapt2"), "link", "-o", unsigned, "--manifest", apk_dir / "AndroidManifest.xml", "-I", platform,
          "--min-sdk-version", "26", "--target-sdk-version", "35"])
+    stripped = apk_dir / "libote_viewer.so"
+    strip = next((ndk / "toolchains" / "llvm" / "prebuilt").glob("*/bin/llvm-strip*"))
+    run([strip, "--strip-unneeded", "-o", stripped, lib])
     with zipfile.ZipFile(unsigned, "a", zipfile.ZIP_DEFLATED) as z:
-        z.write(lib, f"lib/{args.abi}/libote_viewer.so")
+        z.write(stripped, f"lib/{args.abi}/libote_viewer.so")
     aligned = apk_dir / "aligned.apk"
     run([tool(build_tools, "zipalign"), "-f", "-p", "4", unsigned, aligned])
     keystore = Path.home() / ".android" / "debug.keystore"
