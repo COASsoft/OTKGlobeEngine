@@ -2,6 +2,7 @@
 #include "ote/formats.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <chrono>
 #include <unordered_map>
 
@@ -80,7 +81,27 @@ struct Engine::Impl {
         if (std::abs(h - camera.focus.alt) > 0.01) {
             camera.focus.alt = h;
             camera.update();
+            return;
         }
+        if (camera.tilt > 0) {
+            GeoPoint eg = ecefToGeodetic(camera.eye());
+            double g = globe.elevationAt(eg.lat, eg.lon);
+            if (!std::isnan(g) && eg.alt < g + camera.clearance()) {
+                camera.update();
+                dirty = true;
+            }
+        }
+    }
+
+    void grab(double sx, double sy, Vec3& out) const {
+        Vec3 eye = camera.eye();
+        double limit = std::max(camera.range() * 3.0, 2000.0);
+        Vec3 hit;
+        if (pickGround(sx, sy, hit) && length(hit - eye) <= limit) {
+            out = hit;
+            return;
+        }
+        out = eye + camera.rayDirection(sx, sy) * limit;
     }
 
     double poleLimit() const { return 89.99; }
@@ -549,33 +570,18 @@ void Engine::pan(double x0, double y0, double x1, double y1) {
         look((x0 - x1) * 0.15, (y1 - y0) * 0.15);
         return;
     }
-    Vec3 e, n, u;
-    enuFrame(c.focus.lat, c.focus.lon, e, n, u);
     double lonCap = 180.0 * std::hypot(x1 - x0, y1 - y0) / std::max(static_cast<double>(std::min(c.width, c.height)), 1.0);
     Vec3 p0, p1;
-    Vec3 move;
-    bool picked = impl_->pickGround(x0, y0, p0) && impl_->pickGround(x1, y1, p1);
-    if (picked) {
-        if (!impl_->headingLock) {
-            impl_->moveCamera(p1, p0, lonCap);
-            impl_->dirty = true;
-            return;
-        }
-        move = p0 - p1;
+    impl_->grab(x0, y0, p0);
+    impl_->grab(x1, y1, p1);
+    if (!impl_->headingLock) {
+        impl_->moveCamera(p1, p0, lonCap);
     } else {
-        double az = c.azimuth * kDegToRad;
-        double dx = (x0 - x1) * c.gsd, dy = (y1 - y0) * c.gsd;
-        Vec3 right = e * std::cos(az) - n * std::sin(az);
-        Vec3 fwd = n * std::cos(az) + e * std::sin(az);
-        move = right * dx + fwd * dy;
-        if (!impl_->headingLock) {
-            double dist = length(move);
-            if (dist > 0) impl_->rotateFocus(cross(u, move * (1.0 / dist)), dist / kWgs84A, lonCap);
-            impl_->dirty = true;
-            return;
-        }
+        Vec3 e, n, u;
+        enuFrame(c.focus.lat, c.focus.lon, e, n, u);
+        Vec3 move = p0 - p1;
+        impl_->shiftFocus(dot(move, e), dot(move, n), lonCap);
     }
-    impl_->shiftFocus(dot(move, e), dot(move, n), lonCap);
     impl_->dirty = true;
 }
 
@@ -586,22 +592,21 @@ void Engine::zoomAt(double sx, double sy, double factor) {
         return;
     }
     Vec3 before;
-    bool hit = impl_->pickGround(sx, sy, before);
+    impl_->grab(sx, sy, before);
     double ax = sx - c.width * 0.5, ay = sy - c.height * 0.5;
     c.gsd *= factor;
     c.update();
     Vec3 after;
-    if (hit && impl_->pickGround(sx, sy, after)) {
-        if (impl_->headingLock) {
-            Vec3 e, n, u;
-            enuFrame(c.focus.lat, c.focus.lon, e, n, u);
-            Vec3 move = before - after;
-            double shiftPx = std::hypot(ax, ay) * std::abs(1.0 - 1.0 / factor);
-            double cap = 180.0 * shiftPx / std::max(static_cast<double>(std::min(c.width, c.height)), 1.0);
-            impl_->shiftFocus(dot(move, e), dot(move, n), cap);
-        } else {
-            impl_->moveCamera(after, before);
-        }
+    impl_->grab(sx, sy, after);
+    if (impl_->headingLock) {
+        Vec3 e, n, u;
+        enuFrame(c.focus.lat, c.focus.lon, e, n, u);
+        Vec3 move = before - after;
+        double shiftPx = std::hypot(ax, ay) * std::abs(1.0 - 1.0 / factor);
+        double cap = 180.0 * shiftPx / std::max(static_cast<double>(std::min(c.width, c.height)), 1.0);
+        impl_->shiftFocus(dot(move, e), dot(move, n), cap);
+    } else {
+        impl_->moveCamera(after, before);
     }
     impl_->dirty = true;
 }

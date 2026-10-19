@@ -79,12 +79,12 @@ void Camera::update() {
     eye_ = computeEye(tilt);
     GeoPoint eg = ecefToGeodetic(eye_);
     double g = ground(eg);
-    if (eg.alt < g + kCollideRadius && tilt > 0) {
+    if (eg.alt < g + clearance() && tilt > 0) {
         double lo = 0, hi = tilt;
         for (int i = 0; i < 30; ++i) {
             double mid = 0.5 * (lo + hi);
             GeoPoint m = ecefToGeodetic(computeEye(mid));
-            if (m.alt < ground(m) + kCollideRadius) hi = mid;
+            if (m.alt < ground(m) + clearance()) hi = mid;
             else lo = mid;
         }
         tilt = lo;
@@ -92,8 +92,8 @@ void Camera::update() {
         eg = ecefToGeodetic(eye_);
         g = ground(eg);
     }
-    if (eg.alt < g + kCollideRadius) {
-        setRange(range() + (g + kCollideRadius - eg.alt));
+    if (eg.alt < g + clearance()) {
+        setRange(range() + (g + clearance() - eg.alt));
         eye_ = computeEye(tilt);
         eg = ecefToGeodetic(eye_);
     }

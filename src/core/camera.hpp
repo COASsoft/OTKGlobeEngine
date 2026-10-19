@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+
 #include "core/geo.hpp"
 
 #include <functional>
@@ -33,6 +35,7 @@ public:
     void updateFirstPerson();
 
     double range() const { return gsd * (height * 0.5) / std::tan(fovY * 0.5); }
+    double clearance() const { return std::max(kCollideRadius, range() * 0.02); }
     double maxTiltForRange(double r) const;
     void setRange(double r);
     void clamp();
