@@ -104,6 +104,8 @@ private:
         int version = -1;
         std::uint64_t used = 0;
         std::vector<TileId> missing;
+        int imageryZ = -1;
+        int sourceZ = -1;
     };
     struct ImageryTexture {
         sg_image image{};
@@ -155,6 +157,9 @@ private:
         int featureFirst = 0;
         int featureCount = 0;
         bool complete = false;
+        int hollow = 0;
+        int imageryZ = -1;
+        int sourceZ = 99;
     };
 
     static Bounds bounds(const QuadKey& k);
@@ -250,6 +255,7 @@ private:
     void generateMips(const std::vector<sg_image>& images);
     int maxRefine() const;
     bool wasRefined(const QuadKey& k) const;
+    int idealImageryZ(const QuadKey& k) const;
     struct Overlay {
         GeoRect rect;
         sg_image image{};

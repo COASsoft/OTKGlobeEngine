@@ -359,8 +359,15 @@ std::uint64_t GlobeRenderer::addTileset(const std::string& uri, double maxSse, V
 }
 
 void GlobeRenderer::setOffline(bool offline) {
+    bool reconnect = offline_ && !offline;
     offline_ = offline;
     loader_.setOffline(offline);
+    if (reconnect) {
+        failed_.clear();
+        for (auto& [k, s] : surface_)
+            if (!s.complete) s.missing.clear();
+        busy_ = true;
+    }
 }
 
 void GlobeRenderer::setLayers(const std::vector<ImageryLayer>& layers) {
@@ -662,6 +669,17 @@ GlobeRenderer::NodeInfo GlobeRenderer::info(const Camera& cam, const QuadKey& k)
     return ni;
 }
 
+int GlobeRenderer::idealImageryZ(const QuadKey& k) const {
+    for (size_t l = 0; l < matrices_.size() && l < layers_.size(); ++l) {
+        if (layers_[l].polarFill || (l < vectorLayers_.size() && vectorLayers_[l])) continue;
+        const TileMatrix& m = matrices_[l];
+        if (m.levels.empty()) return -1;
+        double target = spanDeg(k.level) / kSurfaceSize * m.unitsPerDegree();
+        return m.bestLevel(target);
+    }
+    return -1;
+}
+
 bool GlobeRenderer::wasRefined(const QuadKey& k) const {
     auto it = refined_.find(k);
     return it != refined_.end() && it->second + 2 >= frame_;
@@ -950,16 +968,23 @@ GlobeRenderer::ImageryTexture* GlobeRenderer::findTexture(const TileId& id, cons
     }
     double cx = m.originX + (id.x + 0.5) * m.spanX(id.z);
     double cy = m.originY - (id.y + 0.5) * m.spanY(id.z);
+    TileId coarse{-1, 0, 0, 0};
     for (int z = id.z - 1; z >= 0; --z) {
         if (!m.hasLevel(z)) continue;
         TileId a{id.layer, z, static_cast<int>(std::floor((cx - m.originX) / m.spanX(z))),
                  static_cast<int>(std::floor((m.originY - cy) / m.spanY(z)))};
         auto ai = imagery_.find(a);
         if (ai != imagery_.end()) {
+            if (missing && coarse.layer >= 0) want(coarse, priority * 0.5);
             src = a;
             return &ai->second;
         }
+        if (z == id.z - 3) {
+            auto fa = failed_.find(a);
+            if (fa == failed_.end() || fa->second <= t) coarse = a;
+        }
     }
+    if (missing && coarse.layer >= 0) want(coarse, priority * 0.5);
     return nullptr;
 }
 
@@ -1024,9 +1049,16 @@ bool GlobeRenderer::buildSurfaceJob(const QuadKey& k, double priority, SurfaceJo
                     complete = false;
                     if (job) job->missing.push_back(id);
                 }
-                if (!tex) continue;
+                if (!tex) {
+                    if (job && !layers_[l].polarFill && !(l < static_cast<int>(vectorLayers_.size()) && vectorLayers_[l])) ++job->hollow;
+                    continue;
+                }
                 tex->used = frame_;
                 if (!job) continue;
+                if (l == 0) {
+                    job->imageryZ = z;
+                    job->sourceZ = std::min(job->sourceZ, src.z);
+                }
                 if (tex->vector) {
                     if (l == 0) job->background = true;
                     VectorDraw vd;
@@ -1481,6 +1513,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         if (!(l < vectorLayers_.size() && vectorLayers_[l])) ++rasterLayers;
     const int maxTouched = std::clamp(static_cast<int>(imageryCapacity_ * 0.8 / (2.5 * std::max(rasterLayers, 1))), 16, 128);
     int touched = 0;
+    int hollowSkipped = 0;
 
     std::vector<SurfaceJob> jobs;
     std::vector<float> verts;
@@ -1503,6 +1536,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         }
         SurfaceJob job;
         job.key = needs_[i].key;
+        size_t vertsBefore = verts.size();
         Bounds jb = bounds(job.key);
         Vec3 jc = geodeticToEcef(0.5 * (jb.south + jb.north), 0.5 * (jb.west + jb.east), 0.0);
         double jr = (jb.north - jb.south) * kDegToRad * kWgs84A * 0.75;
@@ -1510,6 +1544,11 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         double texelDeg = std::min((jb.north - jb.south) / kSurfaceSize, cam.pixelSizeAt(jd) / 111320.0);
         size_t vectorStart = fverts.size();
         buildSurfaceJob(job.key, needs_[i].priority, &job, &verts, nullptr, texelDeg);
+        if (job.hollow > 0) {
+            verts.resize(vertsBefore);
+            ++hollowSkipped;
+            continue;
+        }
         job.featureFirst = static_cast<int>(vectorStart / 6);
         job.featureCount = 0;
         jobTexel[job.key] = texelDeg;
@@ -1616,6 +1655,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             s->complete = job.complete;
             s->version = imageryVersion_;
             s->missing = std::move(job.missing);
+            s->imageryZ = job.imageryZ;
+            s->sourceZ = job.sourceZ;
             continue;
         }
         for (int level = 0; level < kMips; ++level) {
@@ -1642,6 +1683,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         s->complete = job.complete;
         s->version = imageryVersion_;
         s->missing = std::move(job.missing);
+        s->imageryZ = job.imageryZ;
+        s->sourceZ = job.sourceZ;
     }
 
     if (!mipQueue.empty()) generateMips(mipQueue);
@@ -1702,22 +1745,47 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     bool fading = false;
     double tnow = now();
     auto source = [&](const QuadKey& key, int minUp, sg_view& view, float uvx[4]) {
+        int bestK = -1;
+        int bestZ = -1000;
+        SurfaceTile* best = nullptr;
         for (int k = std::max(0, minUp); k <= key.level; ++k) {
             QuadKey a{key.level - k, key.x >> k, key.y >> k};
             auto it = surface_.find(a);
             if (it == surface_.end() || it->second.version < 0) continue;
-            it->second.used = frame_;
-            view = it->second.texture;
-            double sc = 1.0 / (1 << k);
-            int rx = key.x - (a.x << k), ry = key.y - (a.y << k);
-            uvx[0] = static_cast<float>(sc);
-            uvx[1] = static_cast<float>(sc);
-            uvx[2] = static_cast<float>(rx * sc);
-            uvx[3] = static_cast<float>(((1 << k) - 1 - ry) * sc);
-            return a;
+            int z = it->second.complete ? std::max(it->second.sourceZ, it->second.imageryZ) : it->second.sourceZ;
+            if (z > bestZ) {
+                bestZ = z;
+                bestK = k;
+                best = &it->second;
+            }
+            if (it->second.complete) break;
         }
-        return QuadKey{-1, 0, 0};
+        if (!best) return QuadKey{-1, 0, 0};
+        best->used = frame_;
+        view = best->texture;
+        double sc = 1.0 / (1 << bestK);
+        QuadKey a{key.level - bestK, key.x >> bestK, key.y >> bestK};
+        int rx = key.x - (a.x << bestK), ry = key.y - (a.y << bestK);
+        uvx[0] = static_cast<float>(sc);
+        uvx[1] = static_cast<float>(sc);
+        uvx[2] = static_cast<float>(rx * sc);
+        uvx[3] = static_cast<float>(((1 << bestK) - 1 - ry) * sc);
+        return a;
     };
+    if (diagnostics_ && frame_ % 90 == 45 && !tiles.empty()) {
+        const DrawTile& probe = tiles.front();
+        sg_view pv{};
+        float pu[4];
+        QuadKey ps = source(probe.key, 0, pv, pu);
+        auto os = surface_.find(probe.key);
+        auto ss = ps.level >= 0 ? surface_.find(ps) : surface_.end();
+        diag("probe frame %llu: L%d/%d/%d kind %d src L%d own %s v%d imgZ %d srcZ %d missing %zu | src surf imgZ %d srcZ %d | failed %zu imagery %zu",
+             static_cast<unsigned long long>(frame_), probe.key.level, probe.key.x, probe.key.y, probe.kind, ps.level,
+             os == surface_.end() ? "-" : os->second.complete ? "C" : "p", os == surface_.end() ? -9 : os->second.version,
+             os == surface_.end() ? -1 : os->second.imageryZ, os == surface_.end() ? -1 : os->second.sourceZ,
+             os == surface_.end() ? size_t(0) : os->second.missing.size(), ss == surface_.end() ? -1 : ss->second.imageryZ,
+             ss == surface_.end() ? -1 : ss->second.sourceZ, failed_.size(), imagery_.size());
+    }
     for (auto& dt : tiles) {
         auto prev = drawn_.find(dt.key);
         if (prev == drawn_.end() || prev->second + 1 < frame_) {
@@ -1743,9 +1811,15 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         QuadKey src = source(dt.key, 0, view, uvx);
         if (src.level < 0) ++blank;
         else {
-            int depth = dt.key.level - src.level;
             auto ownSurface = surface_.find(src);
-            if (ownSurface != surface_.end() && !ownSurface->second.complete) ++depth;
+            int depth = 0;
+            int ideal = idealImageryZ(dt.key);
+            if (ownSurface != surface_.end()) {
+                const SurfaceTile& st = ownSurface->second;
+                int effective = st.complete ? std::max(st.sourceZ, st.imageryZ) : st.sourceZ;
+                if (ideal >= 0 && effective < 99) depth = std::max(0, ideal - effective);
+                else depth = dt.key.level - src.level + (st.complete ? 0 : 1);
+            }
             if (depth >= 2) ++coarse;
             maxDepth = std::max(maxDepth, depth);
             if (diagnostics_ && depth >= 3 && frame_ % 90 == 0 && deepLogged < 6) {
@@ -1848,9 +1922,13 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     stats_.terrainTiles = static_cast<int>(tiles.size());
     profileMark(6);
     stats_.surfaceRenders = renders;
+    stats_.hollowSkipped = hollowSkipped;
+    stats_.placeholders = loader_.placeholders();
     stats_.terrainBuilds = builds;
     stats_.imageryTextures = static_cast<int>(imagery_.size());
-    stats_.pendingRequests = loader_.pending() + elevation_.pending();
+    stats_.imageryPending = loader_.pending();
+    stats_.elevationPending = elevation_.pending();
+    stats_.pendingRequests = stats_.imageryPending + stats_.elevationPending;
     stats_.maxLevel = maxLevel;
     stats_.incompleteTiles = incomplete;
     stats_.blankTiles = blank;

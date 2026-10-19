@@ -29,6 +29,7 @@ struct ImageryLayer {
     int maxZoom = 19;
     int srid = 3857;
     int tileSize = 256;
+    double level0Resolution = 0;
     bool tms = false;
     bool cache = true;
     float opacity = 1.0f;
@@ -77,6 +78,10 @@ struct Stats {
     int surfaces = 0;
     int freeSurfaces = 0;
     int prefetched = 0;
+    int hollowSkipped = 0;
+    int placeholders = 0;
+    int imageryPending = 0;
+    int elevationPending = 0;
     int terrainMeshes = 0;
     double gpuMegabytes = 0;
     long long surfaceEvictions = 0;

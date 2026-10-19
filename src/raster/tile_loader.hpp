@@ -71,6 +71,7 @@ public:
     void submit(std::vector<std::pair<TileId, double>>& requests);
     std::vector<DecodedTile> take(size_t max);
     void giveBack(DecodedTile& tile);
+    int placeholders() const;
     int pending() const;
     std::string debug() const;
 
@@ -112,6 +113,9 @@ private:
         bool placeholder = false;
     };
     std::unordered_map<std::uint64_t, ContentSeen> content_;
+    int placeholders_ = 0;
+    std::unordered_map<int, int> netLayerBusy_;
+    int netLayerCap_ = 2;
     std::map<int, Download> downloads_;
     int nextDownloadId_ = 1;
     TileCache* cache_ = nullptr;

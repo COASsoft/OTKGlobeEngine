@@ -320,9 +320,9 @@ void frame() {
             ote::Stats s = state->engine.stats();
             std::string logPath = state->shotPath + ".txt";
             if (FILE* f = std::fopen(logPath.c_str(), "w")) {
-                std::fprintf(f, "%s frames=%d seconds=%.1f settled=%d tiles=%d L%d imagery=%d pending=%d\n",
+                std::fprintf(f, "%s frames=%d seconds=%.1f settled=%d tiles=%d L%d imagery=%d pending=%d img_pending=%d elev_pending=%d\n",
                              ok ? "saved" : "failed", state->frames, state->shotElapsed, settled ? 1 : 0,
-                             s.terrainTiles, s.maxLevel, s.imageryTextures, s.pendingRequests);
+                             s.terrainTiles, s.maxLevel, s.imageryTextures, s.pendingRequests, s.imageryPending, s.elevationPending);
                 ote::View fv = state->engine.view();
                 std::fprintf(f, "focus %.5f %.5f elevation %.1f", fv.lat, fv.lon, state->engine.elevationAt(fv.lat, fv.lon));
                 std::fputc(10, f);
@@ -382,11 +382,11 @@ void frame() {
             ote::View pv = state->engine.view();
             std::snprintf(line, sizeof(line),
                           "perf frame avg %.1f max %.1f ms | cpu avg %.2f max %.2f | surf %.1f terr %.1f up %.1f | tiles %d L%d | "
-                          "incomplete frames %d max %d blank max %d coarse frames %d depth %d pre %d | surfaces %d+%d img %d terr %d est %.0fMB | evict s %lld i %lld t %lld loads %lld | view %.4f %.4f gsd %.1f az %.0f tilt %.0f",
+                          "incomplete frames %d max %d blank max %d coarse frames %d depth %d pre %d hollow %d ph %d | surfaces %d+%d img %d terr %d est %.0fMB | evict s %lld i %lld t %lld loads %lld | view %.4f %.4f gsd %.1f az %.0f tilt %.0f",
                           state->perfFrameMs / state->perfFrames, state->perfFrameMax, state->perfCpuMs / state->perfFrames,
                           state->perfCpuMax, state->perfRenders / double(state->perfFrames), state->perfBuilds / double(state->perfFrames),
                           state->perfUploads / double(state->perfFrames), ps.terrainTiles, ps.maxLevel, state->perfIncompleteFrames,
-                          state->perfIncompleteMax, state->perfBlankMax, state->perfCoarseFrames, state->perfMaxDepth, ps.prefetched, ps.surfaces, ps.freeSurfaces, ps.imageryTextures, ps.terrainMeshes, ps.gpuMegabytes, ps.surfaceEvictions, ps.imageryEvictions,
+                          state->perfIncompleteMax, state->perfBlankMax, state->perfCoarseFrames, state->perfMaxDepth, ps.prefetched, ps.hollowSkipped, ps.placeholders, ps.surfaces, ps.freeSurfaces, ps.imageryTextures, ps.terrainMeshes, ps.gpuMegabytes, ps.surfaceEvictions, ps.imageryEvictions,
                           ps.terrainEvictions, ps.imageryLoads, pv.lat, pv.lon, pv.gsd, pv.azimuth, pv.tilt);
             state->perfIncompleteFrames = state->perfIncompleteMax = state->perfBlankMax = 0;
             state->perfCoarseFrames = state->perfMaxDepth = 0;

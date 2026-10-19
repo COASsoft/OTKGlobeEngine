@@ -24,6 +24,7 @@ struct TileMatrix {
 
     static TileMatrix webMercator(int minZoom, int maxZoom, int tileSize = 256);
     static TileMatrix geographic(int minZoom, int maxZoom, int tileSize = 256);
+    static TileMatrix geographicCustom(int minZoom, int maxZoom, int tileSize, double level0Resolution);
 
     bool hasLevel(int z) const { return z >= 0 && z < static_cast<int>(levels.size()) && levels[z].valid; }
     double spanX(int z) const { return levels[z].resolutionX * levels[z].tileWidth; }

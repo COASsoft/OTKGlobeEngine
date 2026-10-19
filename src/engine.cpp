@@ -741,12 +741,10 @@ std::vector<ImageryLayer> defaultLayers() {
 ImageryLayer polarFillLayer() {
     ImageryLayer polar;
     polar.name = "NASA Blue Marble Shaded Relief and Bathymetry (polar fill)";
-    polar.type = SourceType::Wms;
-    polar.url = "https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi";
-    polar.wmsLayers = "BlueMarble_ShadedRelief_Bathymetry";
-    polar.wmsFormat = "image/jpeg";
-    polar.wmsVersion = "1.3.0";
+    polar.url = "https://gibs.earthdata.nasa.gov/wmts/epsg4326/best/BlueMarble_ShadedRelief_Bathymetry/default/500m/{z}/{y}/{x}.jpeg";
     polar.srid = 4326;
+    polar.tileSize = 512;
+    polar.level0Resolution = 0.5625;
     polar.maxZoom = 7;
     polar.polarFill = true;
     const float north[3] = {1.79f, 2.27f, 1.26f}, south[3] = {1.02f, 1.03f, 1.075f};

@@ -1,5 +1,9 @@
 #include "raster/tile_loader.hpp"
 
+#if defined(__ANDROID__)
+#include <android/log.h>
+#endif
+
 #include <stb_image.h>
 
 #include <algorithm>
@@ -30,6 +34,7 @@ std::vector<TileRange> regionRanges(const TileMatrix& m, const Region& r, int mi
 
 TileLoader::TileLoader(int localThreads, int networkThreads) {
     for (int i = 0; i < localThreads; ++i) workers_.emplace_back([this] { runLocal(); });
+    netLayerCap_ = std::max(2, networkThreads * 2 / 3);
     for (int i = 0; i < networkThreads; ++i) workers_.emplace_back([this] { runNetwork(); });
 }
 
@@ -124,6 +129,11 @@ void TileLoader::giveBack(DecodedTile& tile) {
     if (doneIds_.insert(tile.id).second) done_.push_front(std::move(tile));
 }
 
+int TileLoader::placeholders() const {
+    std::lock_guard lock(mutex_);
+    return placeholders_;
+}
+
 int TileLoader::pending() const {
     std::lock_guard lock(mutex_);
     return static_cast<int>(queue_.size() + inflight_.size());
@@ -206,6 +216,12 @@ void TileLoader::finish(const TileId& id, int gen, const std::shared_ptr<TilePro
                     seen.ids.push_back(id);
                     if (seen.ids.size() >= 3) {
                         seen.placeholder = true;
+                        ++placeholders_;
+#if defined(__ANDROID__)
+                        if (placeholders_ <= 8)
+                            __android_log_print(ANDROID_LOG_INFO, "OpenTAKEngine", "placeholder layer %d z%d %d/%d bytes %zu status %d", id.layer, id.z,
+                                                id.x, id.y, res.data.size(), res.status);
+#endif
                         revoke = seen.ids;
                         seen.ids.clear();
                         seen.ids.shrink_to_fit();
@@ -240,7 +256,7 @@ void TileLoader::finish(const TileId& id, int gen, const std::shared_ptr<TilePro
         } else {
             tile.permanent = true;
         }
-    } else if (res.status == 404 || res.status == 204 || res.status == 400 || (res.status == 200 && res.data.empty())) {
+    } else if (res.status == 404 || res.status == 204 || res.status == 400 || res.status == -2 || (res.status == 200 && res.data.empty())) {
         tile.permanent = true;
     }
     std::lock_guard lock(mutex_);
@@ -291,17 +307,39 @@ void TileLoader::runNetwork() {
             });
             if (stop_) return;
             bool picked = false;
+            bool capped = false;
             while (!netQueue_.empty() && !picked) {
-                auto best = netQueue_.begin();
-                double bp = 1e300;
+                auto best = netQueue_.end();
+                auto fallback = netQueue_.end();
+                double bp = 1e300, fp = 1e300;
                 for (auto it = netQueue_.begin(); it != netQueue_.end(); ++it) {
+                    if (!wanted_.count(*it)) {
+                        best = it;
+                        break;
+                    }
                     auto p = netPriority_.find(*it);
                     double v = p == netPriority_.end() ? 1e299 : p->second;
+                    if (netLayerBusy_[it->layer] >= netLayerCap_) {
+                        capped = true;
+                        if (v < fp) {
+                            fp = v;
+                            fallback = it;
+                        }
+                        continue;
+                    }
                     if (v < bp) {
                         bp = v;
                         best = it;
                     }
                 }
+                if (best == netQueue_.end()) {
+                    bool othersBusy = false;
+                    if (fallback != netQueue_.end())
+                        for (const auto& [layer, busy] : netLayerBusy_)
+                            if (layer != fallback->layer && busy > 0) othersBusy = true;
+                    if (fallback != netQueue_.end() && !othersBusy) best = fallback;
+                }
+                if (best == netQueue_.end()) break;
                 id = *best;
                 netQueue_.erase(best);
                 if (!wanted_.count(id)) {
@@ -310,7 +348,11 @@ void TileLoader::runNetwork() {
                 }
                 picked = true;
             }
-            if (!picked && !nextDownload(download, id)) continue;
+            if (!picked && !nextDownload(download, id)) {
+                if (capped) netCv_.wait_for(lock, std::chrono::milliseconds(50));
+                continue;
+            }
+            if (picked) ++netLayerBusy_[id.layer];
             if (id.layer < 0 || id.layer >= static_cast<int>(providers_.size())) {
                 inflight_.erase(id);
                 continue;
@@ -332,6 +374,11 @@ void TileLoader::runNetwork() {
             continue;
         }
         FetchResult res = provider->fetch(id.z, id.x, id.y);
+        {
+            std::lock_guard lock(mutex_);
+            if (--netLayerBusy_[id.layer] < 0) netLayerBusy_[id.layer] = 0;
+        }
+        netCv_.notify_one();
         finish(id, gen, provider, res);
     }
 }

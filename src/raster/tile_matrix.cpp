@@ -49,6 +49,26 @@ TileMatrix TileMatrix::geographic(int minZoom, int maxZoom, int tileSize) {
     return m;
 }
 
+TileMatrix TileMatrix::geographicCustom(int minZoom, int maxZoom, int tileSize, double level0Resolution) {
+    TileMatrix m;
+    m.srid = 4326;
+    m.originX = -180.0;
+    m.originY = 90.0;
+    m.minZoom = minZoom;
+    m.maxZoom = maxZoom;
+    m.levels.resize(maxZoom + 1);
+    for (int z = 0; z <= maxZoom; ++z) {
+        TileLevel& l = m.levels[z];
+        l.valid = z >= minZoom;
+        l.tileWidth = l.tileHeight = tileSize;
+        l.resolutionX = l.resolutionY = level0Resolution / static_cast<double>(1 << z);
+        double span = l.resolutionX * tileSize;
+        l.matrixWidth = static_cast<int>(std::ceil(360.0 / span - 1e-9));
+        l.matrixHeight = static_cast<int>(std::ceil(180.0 / span - 1e-9));
+    }
+    return m;
+}
+
 double TileMatrix::unitsPerDegree() const {
     return srid == 4326 ? 1.0 : kMercR * kDegToRad;
 }

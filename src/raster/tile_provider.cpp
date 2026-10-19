@@ -44,7 +44,8 @@ class HttpProvider : public TileProvider {
 public:
     HttpProvider(const ImageryLayer& layer, TileCache* cache, std::atomic<bool>* offline)
         : layer_(layer), cache_(cache), offline_(offline) {
-        matrix_ = layer.srid == 4326 ? TileMatrix::geographic(layer.minZoom, layer.maxZoom, layer.tileSize)
+        matrix_ = layer.srid == 4326 && layer.level0Resolution > 0 ? TileMatrix::geographicCustom(layer.minZoom, layer.maxZoom, layer.tileSize, layer.level0Resolution)
+                 : layer.srid == 4326 ? TileMatrix::geographic(layer.minZoom, layer.maxZoom, layer.tileSize)
                                      : TileMatrix::webMercator(layer.minZoom, layer.maxZoom, layer.tileSize);
         key_ = layer.url + "|" + layer.wmsLayers + "|" + layer.wmsStyles + "|" + std::to_string(layer.srid) + "|" +
                (layer.tms ? "tms" : "xyz");
@@ -70,7 +71,7 @@ public:
     bool fetchLocal(int z, int x, int y, FetchResult& out) override {
         bool offline = offline_ && offline_->load();
         if (!cache_ || !cache_->isOpen() || !layer_.cache) {
-            if (offline) out.status = 0;
+            if (offline) out.status = -2;
             return offline;
         }
         std::int64_t expires = 0;
@@ -82,7 +83,7 @@ public:
             return true;
         }
         if (offline) {
-            out.status = 0;
+            out.status = -2;
             return true;
         }
         return false;
@@ -103,7 +104,7 @@ public:
             return r;
         }
         if (offline) {
-            r.status = 0;
+            r.status = -2;
             return r;
         }
         std::string url = tileUrl(layer_, matrix_, z, x, y);
