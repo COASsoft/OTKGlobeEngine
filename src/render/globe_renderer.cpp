@@ -573,7 +573,22 @@ void GlobeRenderer::buildTerrain(const QuadKey& k, TerrainTile& t, double priori
                                static_cast<float>(nz), hc});
         }
     }
-    double skirt = std::clamp(std::max({span * 111320.0 * 0.01, static_cast<double>(maxH - minH) * 0.25, 1.0}), 1.0, kSkirtMax) *
+    double edgeDev = 0;
+    for (int e = 0; e < 4; ++e) {
+        auto edge = [&](int i) {
+            int gi = e < 2 ? i : (e == 2 ? 0 : kGrid);
+            int gj = e < 2 ? (e == 0 ? 0 : kGrid) : i;
+            return static_cast<double>(h[static_cast<size_t>(gj + 1) * n + (gi + 1)]);
+        };
+        for (int stride : {2, 4, 8})
+            for (int i = 0; i <= kGrid; ++i) {
+                int a = (i / stride) * stride, z = std::min(a + stride, kGrid);
+                if (i == a || z == a) continue;
+                double f = static_cast<double>(i - a) / (z - a);
+                edgeDev = std::max(edgeDev, std::abs(edge(i) - (edge(a) * (1.0 - f) + edge(z) * f)));
+            }
+    }
+    double skirt = std::clamp(std::max({span * 111320.0 * 0.01, static_cast<double>(maxH - minH) * 0.25, edgeDev * 1.5, 1.0}), 1.0, kSkirtMax) *
                    std::max(1.0, exaggeration_);
     for (int e = 0; e < 4; ++e)
         for (int i = 0; i < kPosts; ++i) {
