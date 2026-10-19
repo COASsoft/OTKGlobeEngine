@@ -391,7 +391,7 @@ bool GlobeRenderer::buildSurfaceJob(const QuadKey& k, double priority, SurfaceJo
         for (int ty = y0; ty <= y1; ++ty)
             for (int tx = x0; tx <= x1; ++tx) {
                 TileId id{l, z, tx, ty};
-                const ImageryTexture* tex = nullptr;
+                ImageryTexture* tex = nullptr;
                 TileId src = id;
                 auto it = imagery_.find(id);
                 if (it != imagery_.end()) {
