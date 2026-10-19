@@ -1,0 +1,86 @@
+#include "net/http.hpp"
+
+#include <chrono>
+#include <cstdlib>
+#include <mutex>
+#include <random>
+#include <thread>
+
+namespace ote::net {
+
+Response getBackend(const std::string& url, const std::string& userAgent);
+
+namespace {
+
+struct Faults {
+    double delayMs = 0;
+    double jitterMs = 0;
+    double failRate = 0;
+    double timeoutRate = 0;
+    double corruptRate = 0;
+    double missingRate = 0;
+    bool any = false;
+};
+
+double envNumber(const char* name) {
+    const char* v = std::getenv(name);
+    return v ? std::atof(v) : 0.0;
+}
+
+const Faults& faults() {
+    static const Faults f = [] {
+        Faults r;
+        r.delayMs = envNumber("OTE_NET_DELAY_MS");
+        r.jitterMs = envNumber("OTE_NET_JITTER_MS");
+        r.failRate = envNumber("OTE_NET_FAIL_RATE");
+        r.timeoutRate = envNumber("OTE_NET_TIMEOUT_RATE");
+        r.corruptRate = envNumber("OTE_NET_CORRUPT_RATE");
+        r.missingRate = envNumber("OTE_NET_404_RATE");
+        r.any = r.delayMs > 0 || r.jitterMs > 0 || r.failRate > 0 || r.timeoutRate > 0 || r.corruptRate > 0 || r.missingRate > 0;
+        return r;
+    }();
+    return f;
+}
+
+double roll() {
+    static std::mutex m;
+    static std::mt19937_64 rng(0x07e5eedull);
+    std::lock_guard lock(m);
+    return std::uniform_real_distribution<double>(0.0, 1.0)(rng);
+}
+
+}
+
+Response get(const std::string& url, const std::string& userAgent) {
+    const Faults& f = faults();
+    if (!f.any) return getBackend(url, userAgent);
+    double wait = f.delayMs + f.jitterMs * roll();
+    if (wait > 0) std::this_thread::sleep_for(std::chrono::microseconds(static_cast<long long>(wait * 1000.0)));
+    double r = roll();
+    Response out;
+    if (r < f.failRate) {
+        out.status = 503;
+        out.error = "injected server error";
+        return out;
+    }
+    r -= f.failRate;
+    if (r < f.timeoutRate) {
+        out.status = 0;
+        out.error = "injected timeout";
+        return out;
+    }
+    r -= f.timeoutRate;
+    if (r < f.missingRate) {
+        out.status = 404;
+        out.error = "injected missing tile";
+        return out;
+    }
+    r -= f.missingRate;
+    out = getBackend(url, userAgent);
+    if (r < f.corruptRate && out.status == 200) {
+        for (size_t i = 0; i < out.body.size(); ++i) out.body[i] = static_cast<std::uint8_t>(roll() * 256.0);
+    }
+    return out;
+}
+
+}
