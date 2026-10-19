@@ -958,28 +958,49 @@ GlobeRenderer::ImageryTexture* GlobeRenderer::findTexture(const TileId& id, cons
     src = id;
     auto it = imagery_.find(id);
     if (it != imagery_.end()) return &it->second;
-    double t = now();
-    auto f = failed_.find(id);
-    if (f == failed_.end() || f->second <= t) {
-        missing = true;
-        want(id, priority);
-    } else if (f->second != std::numeric_limits<double>::infinity()) {
-        missing = true;
+    const double t = now();
+    const double cx = m.originX + (id.x + 0.5) * m.spanX(id.z);
+    const double cy = m.originY - (id.y + 0.5) * m.spanY(id.z);
+    auto ancestor = [&](int z) {
+        if (z == id.z) return id;
+        return TileId{id.layer, z, static_cast<int>(std::floor((cx - m.originX) / m.spanX(z))),
+                      static_cast<int>(std::floor((m.originY - cy) / m.spanY(z)))};
+    };
+    auto unavailable = [&](const TileId& k) {
+        auto f = failed_.find(k);
+        return f != failed_.end() && f->second == std::numeric_limits<double>::infinity();
+    };
+    int target = -1;
+    for (int z = id.z; z >= 0; --z) {
+        if (z != id.z && !m.hasLevel(z)) continue;
+        TileId k = ancestor(z);
+        if (imagery_.count(k) || !unavailable(k)) {
+            target = z;
+            break;
+        }
     }
-    double cx = m.originX + (id.x + 0.5) * m.spanX(id.z);
-    double cy = m.originY - (id.y + 0.5) * m.spanY(id.z);
+    if (target >= 0) {
+        TileId k = ancestor(target);
+        auto ti = imagery_.find(k);
+        if (ti != imagery_.end()) {
+            src = k;
+            return &ti->second;
+        }
+        missing = true;
+        auto f = failed_.find(k);
+        if (f == failed_.end() || f->second <= t) want(k, priority);
+    }
     TileId coarse{-1, 0, 0, 0};
-    for (int z = id.z - 1; z >= 0; --z) {
+    for (int z = (target >= 0 ? target : id.z) - 1; z >= 0; --z) {
         if (!m.hasLevel(z)) continue;
-        TileId a{id.layer, z, static_cast<int>(std::floor((cx - m.originX) / m.spanX(z))),
-                 static_cast<int>(std::floor((m.originY - cy) / m.spanY(z)))};
+        TileId a = ancestor(z);
         auto ai = imagery_.find(a);
         if (ai != imagery_.end()) {
             if (missing && coarse.layer >= 0) want(coarse, priority * 0.5);
             src = a;
             return &ai->second;
         }
-        if (z == id.z - 3) {
+        if (z == target - 3) {
             auto fa = failed_.find(a);
             if (fa == failed_.end() || fa->second <= t) coarse = a;
         }
@@ -1451,6 +1472,16 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         stats_.prefetched = static_cast<int>(admitted);
         admittedCache_.assign(needs_.begin() + static_cast<std::ptrdiff_t>(firstAdmitted), needs_.end());
     }
+    int baseSurfaceLevel = 3;
+    while (baseSurfaceLevel > 0 && static_cast<size_t>(2 * ((1 << (2 * (baseSurfaceLevel + 1))) - 1) / 3) > surfaceCapacity_ / 4) --baseSurfaceLevel;
+    for (int level = 0; level <= baseSurfaceLevel; ++level)
+        for (int y = 0; y < (1 << level); ++y)
+            for (int x = 0; x < (2 << level); ++x) {
+                QuadKey k{level, x, y};
+                auto sf = surface_.find(k);
+                if (sf != surface_.end() && sf->second.complete) sf->second.used = frame_;
+                else needs_.push_back({k, 1e-3 * level, true});
+            }
     std::sort(needs_.begin(), needs_.end(), [](const Need& a, const Need& b) {
         if (!(a.key == b.key)) {
             if (a.key.level != b.key.level) return a.key.level < b.key.level;
@@ -1750,6 +1781,11 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     int coarse = 0;
     int maxDepth = 0;
     int deepLogged = 0;
+    int coverageOnly = 0, retained = 0;
+    for (const DrawTile& dt : tiles) {
+        if (dt.kind == 1) ++coverageOnly;
+        if (dt.kind == 2) ++retained;
+    }
     bool fading = false;
     double tnow = now();
     auto source = [&](const QuadKey& key, int minUp, sg_view& view, float uvx[4]) {
@@ -1824,7 +1860,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             int ideal = idealImageryZ(dt.key);
             if (ownSurface != surface_.end()) {
                 const SurfaceTile& st = ownSurface->second;
-                int effective = st.complete ? std::max(st.sourceZ, st.imageryZ) : st.sourceZ;
+                int effective = st.sourceZ;
                 if (ideal >= 0 && effective < 99) depth = std::max(0, ideal - effective);
                 else depth = dt.key.level - src.level + (st.complete ? 0 : 1);
             }
@@ -1941,6 +1977,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     stats_.incompleteTiles = incomplete;
     stats_.blankTiles = blank;
     stats_.coarseTiles = coarse;
+    stats_.coverageOnlyTiles = coverageOnly;
+    stats_.retainedTiles = retained;
     stats_.maxFallbackDepth = maxDepth;
     stats_.surfaces = static_cast<int>(surface_.size());
     stats_.freeSurfaces = static_cast<int>(freeSurfaces_.size());

@@ -81,6 +81,8 @@ struct Stats {
     int hollowSkipped = 0;
     int placeholders = 0;
     int imageryPending = 0;
+    int coverageOnlyTiles = 0;
+    int retainedTiles = 0;
     int elevationPending = 0;
     int terrainMeshes = 0;
     double gpuMegabytes = 0;

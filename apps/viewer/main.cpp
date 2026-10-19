@@ -27,6 +27,8 @@
 #include <string>
 
 void parseArgs(int argc, char** argv);
+void loadScript(const char* path);
+bool runScript();
 #if defined(_WIN32)
 void installPointerInput(const void* hwnd, ote::InputController* input);
 #endif
@@ -73,6 +75,15 @@ struct ViewerState {
     sapp_mousebutton mouseButton = SAPP_MOUSEBUTTON_LEFT;
     bool diag = false;
     double zoomStartAfter = 0;
+    struct ScriptStep {
+        double at = 0;
+        std::string op;
+        double v[6] = {};
+    };
+    std::vector<ScriptStep> script;
+    size_t scriptNext = 0;
+    bool dragging = false;
+    ScriptStep drag;
     int perfFrames = 0;
     double perfFrameMs = 0, perfFrameMax = 0, perfCpuMs = 0, perfCpuMax = 0;
     long long perfRenders = 0, perfBuilds = 0, perfUploads = 0;
@@ -298,7 +309,8 @@ void frame() {
                 if (inc > 0) ++state->zoomBadFrames;
             }
         }
-        bool zooming = state->zoomTest && (!state->zoomStarted || state->engine.animating());
+        bool scripting = runScript();
+        bool zooming = scripting || (state->zoomTest && (!state->zoomStarted || state->engine.animating()));
         if (state->bench > 0 && state->shotElapsed > 1.0 && state->settledFrames > 10 && !zooming) {
             state->engine.rotate(0.05);
             ++state->benchDone;
@@ -323,6 +335,8 @@ void frame() {
                 std::fprintf(f, "%s frames=%d seconds=%.1f settled=%d tiles=%d L%d imagery=%d pending=%d img_pending=%d elev_pending=%d\n",
                              ok ? "saved" : "failed", state->frames, state->shotElapsed, settled ? 1 : 0,
                              s.terrainTiles, s.maxLevel, s.imageryTextures, s.pendingRequests, s.imageryPending, s.elevationPending);
+                std::fprintf(f, "coverage blank=%d incomplete=%d coarse=%d deficit=%d coverage_only=%d retained=%d\n", s.blankTiles,
+                             s.incompleteTiles, s.coarseTiles, s.maxFallbackDepth, s.coverageOnlyTiles, s.retainedTiles);
                 ote::View fv = state->engine.view();
                 std::fprintf(f, "focus %.5f %.5f elevation %.1f", fv.lat, fv.lon, state->engine.elevationAt(fv.lat, fv.lon));
                 std::fputc(10, f);
@@ -689,6 +703,8 @@ void parseArgs(int argc, char** argv) {
             state->exaggeration = std::atof(argv[++i]);
         } else if (a == "--elevation-dir") {
             state->elevationDir = argv[++i];
+        } else if (a == "--script") {
+            loadScript(argv[++i]);
         } else if (a == "--zoom-start") {
             state->zoomStartAfter = std::atof(argv[++i]);
         } else if (a == "--diag") {
@@ -697,6 +713,56 @@ void parseArgs(int argc, char** argv) {
             state->preset = std::atoi(argv[++i]);
         }
     }
+}
+
+void loadScript(const char* path) {
+    FILE* f = std::fopen(path, "r");
+    if (!f) return;
+    char line[256];
+    while (std::fgets(line, sizeof(line), f)) {
+        ViewerState::ScriptStep st;
+        char op[32] = {0};
+        int n = std::sscanf(line, "%lf %31s %lf %lf %lf %lf %lf %lf", &st.at, op, &st.v[0], &st.v[1], &st.v[2], &st.v[3], &st.v[4], &st.v[5]);
+        if (n >= 2) {
+            st.op = op;
+            state->script.push_back(st);
+        }
+    }
+    std::fclose(f);
+}
+
+bool runScript() {
+    ote::InputController& in = state->engine.input();
+    double t = state->shotElapsed;
+    if (state->dragging) {
+        const auto& d = state->drag;
+        double k = std::clamp((t - d.at) / std::max(d.v[4], 0.01), 0.0, 1.0);
+        double x = d.v[0] + (d.v[2] - d.v[0]) * k, y = d.v[1] + (d.v[3] - d.v[1]) * k;
+        in.pointerMove(77, x, y);
+        if (k >= 1.0) {
+            in.pointerUp(77, x, y);
+            state->dragging = false;
+        }
+    }
+    while (state->scriptNext < state->script.size() && state->script[state->scriptNext].at <= t && !state->dragging) {
+        const auto& st = state->script[state->scriptNext++];
+        if (st.op == "wheel") in.wheel(st.v[0], st.v[1], 0, st.v[2], false, 0);
+        else if (st.op == "drag") {
+            state->drag = st;
+            state->drag.at = t;
+            state->dragging = true;
+            in.pointerDown(77, st.v[0], st.v[1], ote::PointerType::Mouse, ote::MouseButton::Left, 0);
+        } else if (st.op == "view") {
+            ote::View v;
+            v.lat = st.v[0];
+            v.lon = st.v[1];
+            v.gsd = st.v[2];
+            v.tilt = st.v[3];
+            v.azimuth = st.v[4];
+            state->engine.setView(v);
+        }
+    }
+    return state->scriptNext < state->script.size() || state->dragging || in.active();
 }
 
 sapp_desc sokol_main(int argc, char* argv[]) {
