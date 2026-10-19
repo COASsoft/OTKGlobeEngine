@@ -1,7 +1,7 @@
 if(ANDROID)
     add_library(ote_viewer SHARED main.cpp shot.cpp watchdog.cpp)
 else()
-    add_executable(ote_viewer WIN32 MACOSX_BUNDLE main.cpp shot.cpp watchdog.cpp)
+    add_executable(ote_viewer WIN32 MACOSX_BUNDLE main.cpp shot.cpp watchdog.cpp win_pointer.cpp)
 endif()
 
 target_link_libraries(ote_viewer PRIVATE opentakengine)

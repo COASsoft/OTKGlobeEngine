@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ote/input.hpp"
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -66,6 +67,12 @@ struct Stats {
     int pendingRequests = 0;
     int maxLevel = 0;
     int incompleteTiles = 0;
+    int blankTiles = 0;
+    int surfaces = 0;
+    long long surfaceEvictions = 0;
+    long long imageryEvictions = 0;
+    long long terrainEvictions = 0;
+    long long imageryLoads = 0;
     int terrainBuilds = 0;
     int uploads = 0;
     double cpuMs = 0;
@@ -131,6 +138,7 @@ public:
     void setTerrainEnabled(bool enabled);
     void setTerrainExaggeration(double factor);
     void setDepthPerception(bool enabled);
+    void setDiagnostics(bool enabled);
     void setTerrainTransparency(float alpha);
     void setElevationHeatmap(bool enabled, double minHeight = 0, double maxHeight = 4500, float opacity = 0.55f);
     std::vector<ProfileSample> elevationProfile(const std::vector<Coord>& path, int samples) const;
@@ -143,6 +151,9 @@ public:
     void pan(double x0, double y0, double x1, double y1);
     void zoomAt(double sx, double sy, double factor);
     void rotate(double degrees);
+    void rotateAt(double sx, double sy, double degrees);
+    void setHeadingLockedPan(bool enabled);
+    InputController& input();
     void tiltBy(double degrees);
     void flyTo(const View& target, double seconds = 2.0);
     void setFirstPerson(bool enabled, double heightAboveGround = 2.0);

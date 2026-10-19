@@ -53,6 +53,7 @@ public:
     void setTerrainEnabled(bool enabled);
     void setTerrainExaggeration(double factor);
     void setDepthPerception(bool enabled) { depthPerception_ = enabled; }
+    void setDiagnostics(bool enabled) { diagnostics_ = enabled; }
     void setTerrainAlpha(float alpha) { terrainAlpha_ = std::clamp(alpha, 0.0f, 1.0f); }
     void setHeatmap(bool enabled, double minHeight, double maxHeight, float opacity) {
         heatmap_ = enabled;
@@ -214,6 +215,9 @@ private:
     std::vector<Need> prefetch_;
     bool viewComplete_ = false;
     std::unordered_map<QuadKey, std::uint64_t, QuadKeyHash> drawn_;
+    std::unordered_map<QuadKey, std::uint64_t, QuadKeyHash> refined_;
+    int syncBuilds_ = 0;
+    bool wasRefined(const QuadKey& k) const;
     struct Overlay {
         GeoRect rect;
         sg_image image{};
@@ -256,6 +260,11 @@ private:
     double pixelScale_ = 1.0;
     std::uint64_t frame_ = 0;
     int visits_ = 0;
+    bool diagnostics_ = false;
+    int prevMaxLevel_ = 0;
+    double prevGsd_ = 0;
+    void diag(const char* fmt, ...) const;
+    void explainCollapse(const Camera& cam, const std::vector<DrawTile>& tiles);
     FILE* trace_ = nullptr;
     int imageryVersion_ = 0;
     int terrainEpoch_ = 0;

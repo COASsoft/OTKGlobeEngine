@@ -26,15 +26,17 @@
 #include <filesystem>
 #include <string>
 
+void parseArgs(int argc, char** argv);
+#if defined(_WIN32)
+void installPointerInput(const void* hwnd, ote::InputController* input);
+#endif
+
 namespace {
 
 struct ViewerState {
     ote::Engine engine;
-    bool leftDown = false;
-    bool rightDown = false;
     float mouseX = 0, mouseY = 0;
     int preset = 0;
-    int touchCount = 0;
     ote::View startView;
     bool offscreen = false;
     std::string shotPath;
@@ -60,7 +62,6 @@ struct ViewerState {
     std::string selected;
     bool hasHit = false;
     double hitX = 0, hitY = 0;
-    float downX = 0, downY = 0;
     bool terrain = true;
     bool grid = false;
     bool heat = false;
@@ -68,9 +69,13 @@ struct ViewerState {
     bool shotViewshed = false;
     bool zoomTest = false;
     int bench = 0;
+    bool mouseDown = false;
+    sapp_mousebutton mouseButton = SAPP_MOUSEBUTTON_LEFT;
+    bool diag = false;
     int perfFrames = 0;
     double perfFrameMs = 0, perfFrameMax = 0, perfCpuMs = 0, perfCpuMax = 0;
     long long perfRenders = 0, perfBuilds = 0, perfUploads = 0;
+    int perfIncompleteFrames = 0, perfIncompleteMax = 0, perfBlankMax = 0;
     float xray = 1.0f;
     int benchDone = 0;
     double benchTotal = 0, benchMax = 0;
@@ -88,7 +93,6 @@ struct ViewerState {
     std::string quantizedMesh;
     int width = 1600;
     int height = 900;
-    float t0x = 0, t0y = 0, t1x = 0, t1y = 0;
     double titleTimer = 0;
 };
 
@@ -140,12 +144,34 @@ void init() {
     if (const char* wd = std::getenv("OTE_WATCHDOG")) watchdogStart(wd);
     sg_setup(&desc);
     state->engine.init();
+    state->engine.input().onTap([](double x, double y, int taps, ote::PointerType) {
+        if (taps != 1) return;
+        ote::Feature f;
+        std::uint64_t id = state->engine.hitTest(x, y, 16.0 * sapp_dpi_scale());
+        state->selected = id && state->engine.feature(id, f) ? (f.name.empty() ? "feature " + std::to_string(id) : f.name) : "";
+    });
+#if defined(_WIN32)
+    installPointerInput(sapp_win32_get_hwnd(), &state->engine.input());
+#endif
     state->engine.setViewport(sapp_width(), sapp_height(), sapp_dpi_scale());
 #if defined(__ANDROID__)
     {
         auto* activity = static_cast<const ANativeActivity*>(sapp_android_get_native_activity());
         ote::setAndroidJavaVm(activity->vm);
         if (state->cacheDir.empty() && activity->internalDataPath) state->cacheDir = activity->internalDataPath;
+        if (activity->externalDataPath) {
+            std::string path = std::string(activity->externalDataPath) + "/args.txt";
+            if (FILE* f = std::fopen(path.c_str(), "r")) {
+                std::vector<std::string> tokens{"ote_viewer"};
+                char buf[1024];
+                while (std::fscanf(f, "%1023s", buf) == 1) tokens.push_back(buf);
+                std::fclose(f);
+                std::vector<char*> args;
+                for (auto& t : tokens) args.push_back(t.data());
+                parseArgs(static_cast<int>(args.size()), args.data());
+                __android_log_print(ANDROID_LOG_INFO, "OpenTAKEngine", "args %zu from %s", tokens.size() - 1, path.c_str());
+            }
+        }
     }
 #endif
     std::string cache = state->cacheDir;
@@ -185,6 +211,7 @@ void init() {
         for (auto& e : ote::defaultElevation()) elev.push_back(e);
         state->engine.setElevation(elev);
         state->engine.setTerrainEnabled(state->terrain);
+        state->engine.setDiagnostics(state->diag);
         state->engine.setTerrainExaggeration(state->exaggeration);
     }
     state->engine.setLayers(state->customLayers.empty() ? preset(state->preset) : state->customLayers);
@@ -335,15 +362,23 @@ void frame() {
         state->perfCpuMs += ps.cpuMs;
         state->perfCpuMax = std::max(state->perfCpuMax, ps.cpuMs);
         state->perfRenders += ps.surfaceRenders;
+        state->perfIncompleteMax = std::max(state->perfIncompleteMax, ps.incompleteTiles);
+        state->perfBlankMax = std::max(state->perfBlankMax, ps.blankTiles);
+        if (ps.incompleteTiles > 0) state->perfIncompleteFrames++;
         state->perfBuilds += ps.terrainBuilds;
         state->perfUploads += ps.uploads;
-        if (state->perfFrames >= 60) {
-            char line[256];
+        if (state->perfFrames >= 30) {
+            char line[512];
+            ote::View pv = state->engine.view();
             std::snprintf(line, sizeof(line),
-                          "perf frame avg %.1f max %.1f ms | engine cpu avg %.2f max %.2f ms | per frame: surface %.1f terrain %.1f uploads %.1f | tiles %d",
+                          "perf frame avg %.1f max %.1f ms | cpu avg %.2f max %.2f | surf %.1f terr %.1f up %.1f | tiles %d L%d | "
+                          "incomplete frames %d max %d blank max %d | surfaces %d evict s %lld i %lld t %lld loads %lld | view %.4f %.4f gsd %.1f az %.0f tilt %.0f",
                           state->perfFrameMs / state->perfFrames, state->perfFrameMax, state->perfCpuMs / state->perfFrames,
                           state->perfCpuMax, state->perfRenders / double(state->perfFrames), state->perfBuilds / double(state->perfFrames),
-                          state->perfUploads / double(state->perfFrames), ps.terrainTiles);
+                          state->perfUploads / double(state->perfFrames), ps.terrainTiles, ps.maxLevel, state->perfIncompleteFrames,
+                          state->perfIncompleteMax, state->perfBlankMax, ps.surfaces, ps.surfaceEvictions, ps.imageryEvictions,
+                          ps.terrainEvictions, ps.imageryLoads, pv.lat, pv.lon, pv.gsd, pv.azimuth, pv.tilt);
+            state->perfIncompleteFrames = state->perfIncompleteMax = state->perfBlankMax = 0;
 #if defined(__ANDROID__)
             __android_log_write(ANDROID_LOG_INFO, "OpenTAKEngine", line);
 #else
@@ -375,77 +410,135 @@ void cleanup() {
     state = nullptr;
 }
 
+ote::MouseButton mouseButton(sapp_mousebutton b) {
+    switch (b) {
+    case SAPP_MOUSEBUTTON_LEFT:
+        return ote::MouseButton::Left;
+    case SAPP_MOUSEBUTTON_RIGHT:
+        return ote::MouseButton::Right;
+    case SAPP_MOUSEBUTTON_MIDDLE:
+        return ote::MouseButton::Middle;
+    default:
+        return ote::MouseButton::None;
+    }
+}
+
+int touchId(const sapp_touchpoint& t) { return static_cast<int>(t.identifier & 0x3fffffff) + 1; }
+
+ote::PointerType touchType(const sapp_touchpoint& t) {
+    return t.android_tooltype == SAPP_ANDROIDTOOLTYPE_STYLUS ? ote::PointerType::Pen : ote::PointerType::Touch;
+}
+
+bool mapKey(sapp_keycode k, ote::Key& out) {
+    switch (k) {
+    case SAPP_KEYCODE_LEFT:
+    case SAPP_KEYCODE_A:
+        out = ote::Key::Left;
+        return true;
+    case SAPP_KEYCODE_RIGHT:
+    case SAPP_KEYCODE_D:
+        out = ote::Key::Right;
+        return true;
+    case SAPP_KEYCODE_UP:
+    case SAPP_KEYCODE_W:
+        out = ote::Key::Up;
+        return true;
+    case SAPP_KEYCODE_DOWN:
+    case SAPP_KEYCODE_S:
+        out = ote::Key::Down;
+        return true;
+    case SAPP_KEYCODE_EQUAL:
+    case SAPP_KEYCODE_KP_ADD:
+        out = ote::Key::ZoomIn;
+        return true;
+    case SAPP_KEYCODE_MINUS:
+    case SAPP_KEYCODE_KP_SUBTRACT:
+        out = ote::Key::ZoomOut;
+        return true;
+    case SAPP_KEYCODE_Q:
+        out = ote::Key::RotateLeft;
+        return true;
+    case SAPP_KEYCODE_E:
+        out = ote::Key::RotateRight;
+        return true;
+    case SAPP_KEYCODE_PAGE_UP:
+        out = ote::Key::TiltUp;
+        return true;
+    case SAPP_KEYCODE_PAGE_DOWN:
+        out = ote::Key::TiltDown;
+        return true;
+    case SAPP_KEYCODE_N:
+        out = ote::Key::ResetNorth;
+        return true;
+    case SAPP_KEYCODE_T:
+        out = ote::Key::ResetTilt;
+        return true;
+    default:
+        return false;
+    }
+}
+
 void event(const sapp_event* e) {
     ote::Engine& eng = state->engine;
     switch (e->type) {
     case SAPP_EVENTTYPE_MOUSE_DOWN:
-        if (e->mouse_button == SAPP_MOUSEBUTTON_LEFT) {
-            state->leftDown = true;
-            state->downX = e->mouse_x;
-            state->downY = e->mouse_y;
+        if (!state->mouseDown) {
+            state->mouseDown = true;
+            state->mouseButton = e->mouse_button;
+            eng.input().pointerDown(0, e->mouse_x, e->mouse_y, ote::PointerType::Mouse, mouseButton(e->mouse_button), e->modifiers);
         }
-        if (e->mouse_button == SAPP_MOUSEBUTTON_RIGHT) state->rightDown = true;
         state->mouseX = e->mouse_x;
         state->mouseY = e->mouse_y;
         break;
     case SAPP_EVENTTYPE_MOUSE_UP:
-        if (e->mouse_button == SAPP_MOUSEBUTTON_LEFT) {
-            state->leftDown = false;
-            if (std::abs(e->mouse_x - state->downX) < 4 && std::abs(e->mouse_y - state->downY) < 4) {
-                ote::Feature f;
-                std::uint64_t id = eng.hitTest(e->mouse_x, e->mouse_y, 16.0 * sapp_dpi_scale());
-                state->selected = id && eng.feature(id, f) ? (f.name.empty() ? "feature " + std::to_string(id) : f.name) : "";
-            }
+        if (state->mouseDown && e->mouse_button == state->mouseButton) {
+            state->mouseDown = false;
+            eng.input().pointerUp(0, e->mouse_x, e->mouse_y);
         }
-        if (e->mouse_button == SAPP_MOUSEBUTTON_RIGHT) state->rightDown = false;
         break;
     case SAPP_EVENTTYPE_MOUSE_MOVE:
-        if (state->leftDown) eng.pan(state->mouseX, state->mouseY, e->mouse_x, e->mouse_y);
-        if (state->rightDown) {
-            eng.rotate((e->mouse_x - state->mouseX) * 0.25);
-            eng.tiltBy((state->mouseY - e->mouse_y) * 0.2);
-        }
+        if (state->mouseDown) eng.input().pointerMove(0, e->mouse_x, e->mouse_y, e->modifiers);
         state->mouseX = e->mouse_x;
         state->mouseY = e->mouse_y;
         break;
+    case SAPP_EVENTTYPE_MOUSE_LEAVE:
+        break;
     case SAPP_EVENTTYPE_MOUSE_SCROLL:
-        eng.zoomAt(state->mouseX, state->mouseY, std::pow(0.8, e->scroll_y));
+        eng.input().wheel(state->mouseX, state->mouseY, e->scroll_x, e->scroll_y, false, e->modifiers);
         break;
     case SAPP_EVENTTYPE_TOUCHES_BEGAN:
-    case SAPP_EVENTTYPE_TOUCHES_MOVED: {
-        int n = e->num_touches;
-        if (n == 1 && state->touchCount == 1 && e->type == SAPP_EVENTTYPE_TOUCHES_MOVED) {
-            eng.pan(state->t0x, state->t0y, e->touches[0].pos_x, e->touches[0].pos_y);
-        } else if (n >= 2 && state->touchCount >= 2 && e->type == SAPP_EVENTTYPE_TOUCHES_MOVED) {
-            float ax = e->touches[0].pos_x, ay = e->touches[0].pos_y, bx = e->touches[1].pos_x, by = e->touches[1].pos_y;
-            double d0 = std::hypot(state->t1x - state->t0x, state->t1y - state->t0y);
-            double d1 = std::hypot(bx - ax, by - ay);
-            double a0 = std::atan2(state->t1y - state->t0y, state->t1x - state->t0x);
-            double a1 = std::atan2(by - ay, bx - ax);
-            double dy0 = ay - state->t0y, dy1 = by - state->t1y;
-            if (dy0 * dy1 > 0 && std::abs(d1 - d0) < 4.0 && std::abs(dy0) > std::abs(ax - state->t0x)) {
-                eng.tiltBy(-(dy0 + dy1) * 0.5 * 0.15);
-            } else {
-                if (d0 > 1.0 && d1 > 1.0) eng.zoomAt((ax + bx) * 0.5, (ay + by) * 0.5, d0 / d1);
-                eng.rotate((a1 - a0) * 57.29577951308232);
-            }
-        }
-        state->touchCount = n;
-        if (n >= 1) {
-            state->t0x = e->touches[0].pos_x;
-            state->t0y = e->touches[0].pos_y;
-        }
-        if (n >= 2) {
-            state->t1x = e->touches[1].pos_x;
-            state->t1y = e->touches[1].pos_y;
-        }
+        for (int i = 0; i < e->num_touches; ++i)
+            if (e->touches[i].changed)
+                eng.input().pointerDown(touchId(e->touches[i]), e->touches[i].pos_x, e->touches[i].pos_y, touchType(e->touches[i]));
+        break;
+    case SAPP_EVENTTYPE_TOUCHES_MOVED:
+        for (int i = 0; i < e->num_touches; ++i)
+            if (e->touches[i].changed) eng.input().pointerMove(touchId(e->touches[i]), e->touches[i].pos_x, e->touches[i].pos_y);
+        break;
+    case SAPP_EVENTTYPE_TOUCHES_ENDED:
+        for (int i = 0; i < e->num_touches; ++i)
+            if (e->touches[i].changed) eng.input().pointerUp(touchId(e->touches[i]), e->touches[i].pos_x, e->touches[i].pos_y);
+        break;
+    case SAPP_EVENTTYPE_TOUCHES_CANCELLED:
+        eng.input().cancelAll();
+        break;
+    case SAPP_EVENTTYPE_UNFOCUSED:
+        eng.input().cancelAll();
+        for (int k = 0; k <= static_cast<int>(ote::Key::ResetTilt); ++k) eng.input().keyUp(static_cast<ote::Key>(k));
+        state->mouseDown = false;
+        break;
+    case SAPP_EVENTTYPE_KEY_UP: {
+        ote::Key k;
+        if (mapKey(e->key_code, k)) eng.input().keyUp(k);
         break;
     }
-    case SAPP_EVENTTYPE_TOUCHES_ENDED:
-    case SAPP_EVENTTYPE_TOUCHES_CANCELLED:
-        state->touchCount = 0;
-        break;
-    case SAPP_EVENTTYPE_KEY_DOWN:
+    case SAPP_EVENTTYPE_KEY_DOWN: {
+        ote::Key mapped;
+        if (mapKey(e->key_code, mapped)) {
+            if (!e->key_repeat) eng.input().keyDown(mapped, e->modifiers);
+            break;
+        }
+        if (e->key_repeat) break;
         if (e->key_code >= SAPP_KEYCODE_1 && e->key_code <= SAPP_KEYCODE_4) {
             state->preset = e->key_code - SAPP_KEYCODE_1;
             eng.setLayers(preset(state->preset));
@@ -453,14 +546,6 @@ void event(const sapp_event* e) {
             eng.setFirstPerson(!eng.firstPerson(), 2.0);
         } else if (e->key_code == SAPP_KEYCODE_M) {
             eng.set3D(!eng.is3D());
-        } else if (e->key_code == SAPP_KEYCODE_W && eng.firstPerson()) {
-            eng.walk(25, 0);
-        } else if (e->key_code == SAPP_KEYCODE_S && eng.firstPerson()) {
-            eng.walk(-25, 0);
-        } else if (e->key_code == SAPP_KEYCODE_A && eng.firstPerson()) {
-            eng.walk(0, -25);
-        } else if (e->key_code == SAPP_KEYCODE_D && eng.firstPerson()) {
-            eng.walk(0, 25);
         } else if (e->key_code == SAPP_KEYCODE_X) {
             state->xray = state->xray < 0.99f ? 1.0f : 0.45f;
             eng.setTerrainTransparency(state->xray);
@@ -484,34 +569,23 @@ void event(const sapp_event* e) {
                 if (state->viewshed) eng.removeImageOverlay(state->viewshed);
                 state->viewshed = eng.computeViewshed({lat, lon, 0}, 2.0, 5000.0);
             }
-        } else if (e->key_code == SAPP_KEYCODE_T) {
+        } else if (e->key_code == SAPP_KEYCODE_Y) {
             state->terrain = !state->terrain;
             eng.setTerrainEnabled(state->terrain);
-        } else if (e->key_code == SAPP_KEYCODE_D) {
+        } else if (e->key_code == SAPP_KEYCODE_U) {
             state->depth = !state->depth;
             eng.setDepthPerception(state->depth);
-        } else if (e->key_code == SAPP_KEYCODE_E) {
+        } else if (e->key_code == SAPP_KEYCODE_O) {
             state->exaggeration = state->exaggeration >= 3.0 ? 1.0 : state->exaggeration + 0.5;
             eng.setTerrainExaggeration(state->exaggeration);
         } else if (e->key_code == SAPP_KEYCODE_R) {
             ote::View v = eng.view();
             v.azimuth = 0;
             v.tilt = 0;
-            eng.setView(v);
-        } else if (e->key_code == SAPP_KEYCODE_UP) {
-            eng.tiltBy(5);
-        } else if (e->key_code == SAPP_KEYCODE_DOWN) {
-            eng.tiltBy(-5);
-        } else if (e->key_code == SAPP_KEYCODE_LEFT) {
-            eng.rotate(-10);
-        } else if (e->key_code == SAPP_KEYCODE_RIGHT) {
-            eng.rotate(10);
-        } else if (e->key_code == SAPP_KEYCODE_EQUAL || e->key_code == SAPP_KEYCODE_KP_ADD) {
-            eng.zoomAt(sapp_widthf() * 0.5f, sapp_heightf() * 0.5f, 0.5);
-        } else if (e->key_code == SAPP_KEYCODE_MINUS || e->key_code == SAPP_KEYCODE_KP_SUBTRACT) {
-            eng.zoomAt(sapp_widthf() * 0.5f, sapp_heightf() * 0.5f, 2.0);
+            eng.flyTo(v, 0.4);
         }
         break;
+    }
     default:
         break;
     }
@@ -519,11 +593,7 @@ void event(const sapp_event* e) {
 
 }
 
-sapp_desc sokol_main(int argc, char* argv[]) {
-    state = new ViewerState();
-    state->startView.lat = 30.0;
-    state->startView.lon = -100.0;
-    state->startView.gsd = 25000.0;
+void parseArgs(int argc, char** argv) {
     for (int i = 1; i + 1 < argc; ++i) {
         std::string a = argv[i];
         if (a == "--view") {
@@ -602,10 +672,20 @@ sapp_desc sokol_main(int argc, char* argv[]) {
             state->exaggeration = std::atof(argv[++i]);
         } else if (a == "--elevation-dir") {
             state->elevationDir = argv[++i];
+        } else if (a == "--diag") {
+            state->diag = std::atoi(argv[++i]) != 0;
         } else if (a == "--preset") {
             state->preset = std::atoi(argv[++i]);
         }
     }
+}
+
+sapp_desc sokol_main(int argc, char* argv[]) {
+    state = new ViewerState();
+    state->startView.lat = 30.0;
+    state->startView.lon = -100.0;
+    state->startView.gsd = 25000.0;
+    parseArgs(argc, argv);
     sapp_desc d{};
     d.init_cb = init;
     d.frame_cb = frame;

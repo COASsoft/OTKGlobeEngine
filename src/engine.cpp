@@ -18,6 +18,8 @@ struct Engine::Impl {
     Camera camera;
     GlobeRenderer globe;
     bool dirty = true;
+    bool headingLock = true;
+    std::unique_ptr<InputController> input;
     std::unordered_map<std::uint64_t, Vec3> tilesetCenters;
     bool flying = false;
     View flyFrom, flyTo;
@@ -80,20 +82,53 @@ struct Engine::Impl {
         }
     }
 
+    double poleLimit() const {
+        double radius = camera.gsd * 0.5 * std::hypot(static_cast<double>(camera.width), static_cast<double>(camera.height)) / 111320.0;
+        return 90.0 - std::clamp(radius, 0.5, 25.0);
+    }
+
+    void rotateFocus(Vec3 axis, double angle) {
+        Vec3 f0 = camera.focusEcef();
+        Vec3 e, n, u;
+        enuFrame(camera.focus.lat, camera.focus.lon, e, n, u);
+        double az = camera.azimuth * kDegToRad;
+        Vec3 fwd0 = n * std::cos(az) + e * std::sin(az);
+        double bound = std::max(poleLimit(), std::abs(camera.focus.lat));
+        auto latAt = [&](double s) { return std::abs(ecefToGeodetic(rotateAxis(f0, axis, angle * s)).lat); };
+        double s = 1.0;
+        for (int i = 1; i <= 16; ++i) {
+            double si = i / 16.0;
+            if (latAt(si) > bound) {
+                double lo = (i - 1) / 16.0, hi = si;
+                for (int k = 0; k < 30; ++k) {
+                    double mid = 0.5 * (lo + hi);
+                    if (latAt(mid) > bound) hi = mid;
+                    else lo = mid;
+                }
+                s = lo;
+                break;
+            }
+        }
+        GeoPoint g = ecefToGeodetic(rotateAxis(f0, axis, angle * s));
+        camera.focus.lat = g.lat;
+        camera.focus.lon = g.lon;
+        if (!headingLock) {
+            Vec3 fwd = rotateAxis(fwd0, axis, angle * s);
+            enuFrame(g.lat, g.lon, e, n, u);
+            camera.azimuth = std::atan2(dot(fwd, e), dot(fwd, n)) * kRadToDeg;
+        }
+        camera.update();
+    }
+
     void moveCamera(Vec3 from, Vec3 to) {
         Vec3 axis = cross(from, to);
         double len = length(axis);
         if (len < 1e-12) return;
-        double angle = std::atan2(len, dot(from, to));
-        Vec3 f = rotateAxis(camera.focusEcef(), axis, angle);
-        GeoPoint g = ecefToGeodetic(f);
-        camera.focus.lat = g.lat;
-        camera.focus.lon = g.lon;
-        camera.update();
+        rotateFocus(axis, std::atan2(len, dot(from, to)));
     }
 };
 
-Engine::Engine() : impl_(std::make_unique<Impl>()) {}
+Engine::Engine() : impl_(std::make_unique<Impl>()) { impl_->input = std::make_unique<InputController>(*this); }
 
 Engine::~Engine() { shutdown(); }
 
@@ -112,6 +147,7 @@ void Engine::setViewport(int width, int height, float dpiScale) {
     impl_->camera.height = std::max(height, 1);
     impl_->dpiScale = dpiScale;
     impl_->globe.setDpiScale(dpiScale);
+    impl_->input->setViewport(width, height, dpiScale);
     impl_->camera.update();
     impl_->dirty = true;
 }
@@ -379,6 +415,8 @@ void Engine::setDepthPerception(bool enabled) {
     impl_->dirty = true;
 }
 
+void Engine::setDiagnostics(bool enabled) { impl_->globe.setDiagnostics(enabled); }
+
 double Engine::elevationAt(double lat, double lon) const { return impl_->globe.elevationAt(lat, lon); }
 
 void Engine::setImageryScale(double scale) {
@@ -485,11 +523,11 @@ void Engine::pan(double x0, double y0, double x1, double y1) {
         enuFrame(c.focus.lat, c.focus.lon, e, n, u);
         double az = c.azimuth * kDegToRad;
         double dx = (x0 - x1) * c.gsd, dy = (y1 - y0) * c.gsd;
-        double east = dx * std::cos(az) - dy * std::sin(az);
-        double north = dx * std::sin(az) + dy * std::cos(az);
-        c.focus.lat += north / 111320.0;
-        c.focus.lon += east / (111320.0 * std::max(std::cos(c.focus.lat * kDegToRad), 0.01));
-        c.update();
+        Vec3 right = e * std::cos(az) - n * std::sin(az);
+        Vec3 fwd = n * std::cos(az) + e * std::sin(az);
+        Vec3 move = right * dx + fwd * dy;
+        double dist = length(move);
+        if (dist > 0) impl_->rotateFocus(cross(u, move * (1.0 / dist)), dist / kWgs84A);
     }
     impl_->dirty = true;
 }
@@ -508,6 +546,25 @@ void Engine::zoomAt(double sx, double sy, double factor) {
     if (hit && impl_->pickGround(sx, sy, after)) impl_->moveCamera(after, before);
     impl_->dirty = true;
 }
+
+void Engine::rotateAt(double sx, double sy, double degrees) {
+    Camera& c = impl_->camera;
+    if (c.firstPerson) {
+        look(-degrees, 0);
+        return;
+    }
+    Vec3 before;
+    bool hit = impl_->pickGround(sx, sy, before);
+    c.azimuth += degrees;
+    c.update();
+    Vec3 after;
+    if (hit && impl_->pickGround(sx, sy, after)) impl_->moveCamera(after, before);
+    impl_->dirty = true;
+}
+
+void Engine::setHeadingLockedPan(bool enabled) { impl_->headingLock = enabled; }
+
+InputController& Engine::input() { return *impl_->input; }
 
 void Engine::rotate(double degrees) {
     if (impl_->camera.firstPerson) {
@@ -573,6 +630,7 @@ std::vector<ProfileSample> Engine::elevationProfile(const std::vector<Coord>& pa
 
 void Engine::frame(const sg_swapchain& swapchain) {
     auto cpuStart = std::chrono::steady_clock::now();
+    impl_->input->update();
     impl_->animate();
     impl_->followTerrain();
     impl_->globe.render(impl_->camera, &swapchain, nullptr, swapchain.width, swapchain.height);
@@ -581,13 +639,14 @@ void Engine::frame(const sg_swapchain& swapchain) {
 }
 
 void Engine::frameOffscreen(const sg_attachments& attachments, int width, int height) {
+    impl_->input->update();
     impl_->animate();
     impl_->followTerrain();
     impl_->globe.render(impl_->camera, nullptr, &attachments, width, height);
     impl_->dirty = false;
 }
 
-bool Engine::needsRedraw() const { return impl_->dirty || impl_->flying || impl_->globe.busy(); }
+bool Engine::needsRedraw() const { return impl_->dirty || impl_->flying || impl_->globe.busy() || impl_->input->active(); }
 
 Stats Engine::stats() const { return impl_->globe.stats(); }
 

@@ -1,5 +1,9 @@
 #include "render/globe_renderer.hpp"
 
+#if defined(__ANDROID__)
+#include <android/log.h>
+#endif
+
 #include "feature/grid.hpp"
 
 #include "globe.glsl.h"
@@ -9,6 +13,8 @@
 #include "surface.glsl.h"
 
 #include <algorithm>
+#include <cstdarg>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <limits>
@@ -586,9 +592,15 @@ GlobeRenderer::NodeInfo GlobeRenderer::info(const Camera& cam, const QuadKey& k)
     }
     double threshold = std::max(1.0, dpiScale_ * 0.6) / std::max(imageryScale_, 0.1);
     double ratio = texel / (cam.pixelSizeAt(d) * threshold);
-    ni.refine = k.level < kMinLevel || (k.level < kMaxLevel && visits_ < 20000 && ratio > 1.0);
+    bool sticky = wasRefined(k);
+    ni.refine = k.level < kMinLevel || (k.level < kMaxLevel && visits_ < 20000 && (ratio > 1.0 || (sticky && ratio > 0.8)));
     ni.nearRefine = k.level < kMaxLevel && ratio > 0.7;
     return ni;
+}
+
+bool GlobeRenderer::wasRefined(const QuadKey& k) const {
+    auto it = refined_.find(k);
+    return it != refined_.end() && it->second + 2 >= frame_;
 }
 
 bool GlobeRenderer::ready(const QuadKey& k) const {
@@ -638,11 +650,36 @@ void GlobeRenderer::traverse(const Camera& cam, const QuadKey& k, std::vector<Dr
             }
             return;
         }
-        if (allDrawable && (allReady || !ready(k))) {
+        bool sticky = !prefetching_ && wasRefined(k);
+        if (!allDrawable && sticky) {
+            allDrawable = true;
+            for (int i = 0; i < 4; ++i) {
+                if (!ci[i].visible || terrain_.find(kids[i]) != terrain_.end()) continue;
+                if (syncBuilds_ >= 24) {
+                    allDrawable = false;
+                    break;
+                }
+                ++syncBuilds_;
+                terrain(kids[i]).used = frame_;
+            }
+        }
+        if (allDrawable && (allReady || !ready(k) || sticky)) {
+            if (!prefetching_) refined_[k] = frame_;
             for (int i = 0; i < 4; ++i) traverse(cam, kids[i], out);
             return;
         }
     } else if (!ready(k) && k.level < kMaxLevel) {
+        if (!prefetching_ && wasRefined(k)) {
+            bool drawable = true;
+            for (int i = 0; i < 4 && drawable; ++i)
+                if (info(cam, kids[i]).visible && terrain_.find(kids[i]) == terrain_.end()) drawable = false;
+            if (drawable) {
+                need(k, ni.distance);
+                refined_[k] = frame_;
+                for (int i = 0; i < 4; ++i) traverse(cam, kids[i], out);
+                return;
+            }
+        }
         bool kidsReady = true;
         bool any = false;
         NodeInfo ci[4];
@@ -672,12 +709,15 @@ void GlobeRenderer::traverse(const Camera& cam, const QuadKey& k, std::vector<Dr
 
 void GlobeRenderer::processLoads() {
     auto taken = loader_.take(kUploadsPerFrame);
-    stats_.uploads = static_cast<int>(taken.size());
-    for (auto& t : taken) {
-        if (std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - frameStart_).count() > budgetMs * 0.3) {
-            loader_.giveBack(t);
-            continue;
+    int uploaded = 0;
+    size_t keep = taken.size();
+    for (size_t i = 0; i < taken.size(); ++i) {
+        if (uploaded >= 4 && elapsedMs() > budgetMs * 0.3) {
+            keep = i;
+            break;
         }
+        ++uploaded;
+        auto& t = taken[i];
         if (t.ok && t.vector) {
             ImageryTexture tex;
             tex.vector = t.vector;
@@ -725,6 +765,9 @@ void GlobeRenderer::processLoads() {
         }
         ++imageryVersion_;
     }
+    for (size_t i = taken.size(); i-- > keep;) loader_.giveBack(taken[i]);
+    stats_.uploads = uploaded;
+    stats_.imageryLoads += uploaded;
 }
 
 void GlobeRenderer::evict() {
@@ -737,6 +780,7 @@ void GlobeRenderer::evict() {
             auto it = imagery_.find(c[i].second);
             dropImagery(it->second);
             imagery_.erase(it);
+            ++stats_.imageryEvictions;
         }
     }
     if (surface_.size() > surfaceCapacity_) {
@@ -748,6 +792,7 @@ void GlobeRenderer::evict() {
             auto it = surface_.find(c[i].second);
             if (freeSurfaces_.size() < freeSurfacePool_) freeSurfaces_.push_back(it->second);
             else dropSurface(it->second);
+            ++stats_.surfaceEvictions;
             surface_.erase(it);
         }
     }
@@ -760,6 +805,7 @@ void GlobeRenderer::evict() {
             auto it = terrain_.find(c[i].second);
             sg_destroy_buffer(it->second.vbuf);
             terrain_.erase(it);
+            ++stats_.terrainEvictions;
         }
     }
 }
@@ -925,6 +971,44 @@ bool GlobeRenderer::buildSurfaceJob(const QuadKey& k, double priority, SurfaceJo
     return complete;
 }
 
+void GlobeRenderer::diag(const char* fmt, ...) const {
+    if (!diagnostics_) return;
+    char buf[1024];
+    va_list ap;
+    va_start(ap, fmt);
+    std::vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+#if defined(__ANDROID__)
+    __android_log_write(ANDROID_LOG_INFO, "OpenTAKEngine", buf);
+#else
+    std::fprintf(stderr, "%s\n", buf);
+#endif
+}
+
+void GlobeRenderer::explainCollapse(const Camera& cam, const std::vector<DrawTile>& tiles) {
+    const DrawTile* coarse = nullptr;
+    for (const DrawTile& t : tiles)
+        if (!coarse || t.key.level < coarse->key.level) coarse = &t;
+    if (!coarse) {
+        diag("collapse frame %llu: no tiles drawn gsd %.2f", static_cast<unsigned long long>(frame_), cam.gsd);
+        return;
+    }
+    auto state = [&](const QuadKey& k, char* out, size_t n) {
+        auto s = surface_.find(k);
+        auto t = terrain_.find(k);
+        NodeInfo ni = info(cam, k);
+        std::snprintf(out, n, "L%d/%d/%d vis%d ref%d surf%s terr%s", k.level, k.x, k.y, ni.visible ? 1 : 0, ni.refine ? 1 : 0,
+                      s == surface_.end() ? "-" : s->second.complete ? "C" : s->second.version < 0 ? "0" : "p",
+                      t == terrain_.end() ? "-" : t->second.complete ? "C" : "p");
+    };
+    char a[160], kid[4][160];
+    state(coarse->key, a, sizeof(a));
+    for (int i = 0; i < 4; ++i)
+        state({coarse->key.level + 1, coarse->key.x * 2 + (i & 1), coarse->key.y * 2 + (i >> 1)}, kid[i], sizeof(kid[i]));
+    diag("collapse frame %llu: drawn %zu maxL %d -> coarsest %s | kids %s ; %s ; %s ; %s | gsd %.2f prevGsd %.2f",
+         static_cast<unsigned long long>(frame_), tiles.size(), prevMaxLevel_, a, kid[0], kid[1], kid[2], kid[3], cam.gsd, prevGsd_);
+}
+
 void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_attachments* attachments, int width,
                            int height) {
     if (!ready_) return;
@@ -988,6 +1072,9 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
 
     std::vector<DrawTile> tiles;
     visits_ = 0;
+    syncBuilds_ = 0;
+    if (refined_.size() > 20000)
+        for (auto it = refined_.begin(); it != refined_.end();) it = it->second + 3 < frame_ ? refined_.erase(it) : std::next(it);
     terrain({0, 0, 0});
     terrain({0, 1, 0});
     traverse(cam, {0, 0, 0}, tiles);
@@ -1282,6 +1369,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     sg_apply_uniforms(UB_globe_fs_params, SG_RANGE(gfs));
     int maxLevel = 0;
     int incomplete = 0;
+    int blank = 0;
     bool fading = false;
     double tnow = now();
     auto source = [&](const QuadKey& key, int minUp, sg_view& view, float uvx[4]) {
@@ -1324,6 +1412,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         sg_view view = fallbackView_;
         float uvx[4] = {1, 1, 0, 0};
         QuadKey src = source(dt.key, 0, view, uvx);
+        if (src.level < 0) ++blank;
         auto own = surface_.find(dt.key);
         if (own == surface_.end() || !own->second.complete) ++incomplete;
         sg_view view2 = view;
@@ -1398,6 +1487,10 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             pending = true;
             break;
         }
+    if (diagnostics_ && prevGsd_ > 0 && maxLevel + 2 < prevMaxLevel_ && std::abs(std::log2(cam.gsd / prevGsd_)) < 1.0)
+        explainCollapse(cam, tiles);
+    prevMaxLevel_ = maxLevel;
+    prevGsd_ = cam.gsd;
     stats_.terrainTiles = static_cast<int>(tiles.size());
     stats_.surfaceRenders = renders;
     stats_.terrainBuilds = builds;
@@ -1405,6 +1498,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     stats_.pendingRequests = loader_.pending() + elevation_.pending();
     stats_.maxLevel = maxLevel;
     stats_.incompleteTiles = incomplete;
+    stats_.blankTiles = blank;
+    stats_.surfaces = static_cast<int>(surface_.size());
     viewComplete_ = incomplete == 0;
     busy_ = pending || fading || tilesBusy || stats_.pendingRequests > 0 || renders > 0 || builds > 0 || elevationChanged;
     if (trace_) {
