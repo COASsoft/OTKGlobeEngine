@@ -1,14 +1,21 @@
-#define SOKOL_IMPL
-#define SOKOL_NO_ENTRY_OVERRIDE
+#if defined(_WIN32)
+#define NOMINMAX
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
+#define SOKOL_APP_IMPL
+#define SOKOL_GLUE_IMPL
 #include <sokol_app.h>
 #include <sokol_gfx.h>
 #include <sokol_glue.h>
 #include <sokol_log.h>
 
 #include "ote/engine.hpp"
+#include "shot.hpp"
 
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <string>
 
 namespace {
@@ -20,6 +27,18 @@ struct ViewerState {
     float mouseX = 0, mouseY = 0;
     int preset = 0;
     int touchCount = 0;
+    ote::View startView;
+    bool offscreen = false;
+    std::string shotPath;
+    int shotMaxFrames = 900;
+    int shotMinFrames = 30;
+    int frames = 0;
+    sg_image shotColor{};
+    sg_image shotDepth{};
+    sg_view shotColorView{};
+    sg_view shotDepthView{};
+    int width = 1600;
+    int height = 900;
     float t0x = 0, t0y = 0, t1x = 0, t1y = 0;
     double titleTimer = 0;
 };
@@ -52,15 +71,66 @@ void init() {
     sg_setup(&desc);
     state->engine.init();
     state->engine.setViewport(sapp_width(), sapp_height(), sapp_dpi_scale());
-    state->engine.setLayers(preset(0));
-    ote::View v;
-    v.lat = 30.0;
-    v.lon = -100.0;
-    v.gsd = 25000.0;
-    state->engine.setView(v);
+    state->engine.setLayers(preset(state->preset));
+    state->engine.setView(state->startView);
+    if (!state->shotPath.empty()) {
+        sg_environment env = sglue_environment();
+        sg_image_desc c{};
+        c.usage.color_attachment = true;
+        c.width = state->width;
+        c.height = state->height;
+        c.pixel_format = env.defaults.color_format;
+        c.sample_count = 1;
+        state->shotColor = sg_make_image(&c);
+        sg_image_desc dd{};
+        dd.usage.depth_stencil_attachment = true;
+        dd.width = state->width;
+        dd.height = state->height;
+        dd.pixel_format = env.defaults.depth_format;
+        dd.sample_count = 1;
+        state->shotDepth = sg_make_image(&dd);
+        sg_view_desc cv{};
+        cv.color_attachment.image = state->shotColor;
+        state->shotColorView = sg_make_view(&cv);
+        sg_view_desc dv{};
+        dv.depth_stencil_attachment.image = state->shotDepth;
+        state->shotDepthView = sg_make_view(&dv);
+    }
+#if defined(_WIN32)
+    if (state->offscreen) {
+        HWND h = static_cast<HWND>(const_cast<void*>(sapp_win32_get_hwnd()));
+        SetWindowPos(h, HWND_BOTTOM, -6000, 0, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
+        ShowWindow(h, SW_SHOWNOACTIVATE);
+    }
+#endif
 }
 
 void frame() {
+    if (!state->shotPath.empty()) {
+        state->engine.setViewport(state->width, state->height, 1.0f);
+        sg_attachments att{};
+        att.colors[0] = state->shotColorView;
+        att.depth_stencil = state->shotDepthView;
+        state->engine.frameOffscreen(att, state->width, state->height);
+        sg_commit();
+        ++state->frames;
+        bool settled = state->frames >= state->shotMinFrames && !state->engine.needsRedraw();
+        if (settled || state->frames >= state->shotMaxFrames) {
+            bool ok = saveImagePng(state->shotColor, state->width, state->height,
+#if defined(SOKOL_D3D11)
+                                   sg_d3d11_device(), sg_d3d11_device_context(),
+#else
+                                   nullptr, nullptr,
+#endif
+                                   state->shotPath.c_str());
+            ote::Stats s = state->engine.stats();
+            std::printf("%s frames=%d settled=%d tiles=%d L%d imagery=%d pending=%d\n", ok ? "saved" : "failed",
+                        state->frames, settled ? 1 : 0, s.terrainTiles, s.maxLevel, s.imageryTextures, s.pendingRequests);
+            std::fflush(stdout);
+            sapp_quit();
+        }
+        return;
+    }
     state->engine.setViewport(sapp_width(), sapp_height(), sapp_dpi_scale());
     state->engine.frame(sglue_swapchain());
     sg_commit();
@@ -176,14 +246,34 @@ void event(const sapp_event* e) {
 
 sapp_desc sokol_main(int argc, char* argv[]) {
     state = new ViewerState();
+    state->startView.lat = 30.0;
+    state->startView.lon = -100.0;
+    state->startView.gsd = 25000.0;
+    for (int i = 1; i + 1 < argc; ++i) {
+        std::string a = argv[i];
+        if (a == "--view") {
+            ote::View& v = state->startView;
+            std::sscanf(argv[++i], "%lf,%lf,%lf,%lf,%lf", &v.lat, &v.lon, &v.gsd, &v.tilt, &v.azimuth);
+        } else if (a == "--offscreen") {
+            state->offscreen = std::atoi(argv[++i]) != 0;
+        } else if (a == "--shot") {
+            state->shotPath = argv[++i];
+        } else if (a == "--shot-frames") {
+            state->shotMaxFrames = std::atoi(argv[++i]);
+        } else if (a == "--size") {
+            std::sscanf(argv[++i], "%dx%d", &state->width, &state->height);
+        } else if (a == "--preset") {
+            state->preset = std::atoi(argv[++i]);
+        }
+    }
     sapp_desc d{};
     d.init_cb = init;
     d.frame_cb = frame;
     d.cleanup_cb = cleanup;
     d.event_cb = event;
-    d.width = 1600;
-    d.height = 900;
-    d.sample_count = 4;
+    d.width = state->width;
+    d.height = state->height;
+    d.sample_count = state->shotPath.empty() ? 4 : 1;
     d.high_dpi = true;
     d.window_title = "OpenTAKEngine";
     d.logger.func = slog_func;
