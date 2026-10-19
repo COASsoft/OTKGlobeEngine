@@ -19,6 +19,7 @@ namespace {
 constexpr int kGrid = 32;
 constexpr int kPosts = kGrid + 1;
 constexpr int kVertexCount = kPosts * kPosts + 4 * kPosts;
+constexpr int kStride = 7;
 constexpr int kIndexCount = kGrid * kGrid * 6 + 4 * kGrid * 6;
 constexpr int kSurfaceSize = 256;
 constexpr int kMinLevel = 2;
@@ -141,6 +142,7 @@ bool GlobeRenderer::init() {
     gp.layout.attrs[ATTR_globe_position].format = SG_VERTEXFORMAT_FLOAT3;
     gp.layout.attrs[ATTR_globe_texcoord0].format = SG_VERTEXFORMAT_FLOAT2;
     gp.layout.attrs[ATTR_globe_shade].format = SG_VERTEXFORMAT_FLOAT;
+    gp.layout.attrs[ATTR_globe_height].format = SG_VERTEXFORMAT_FLOAT;
     gp.index_type = SG_INDEXTYPE_UINT16;
     gp.depth.compare = SG_COMPAREFUNC_LESS_EQUAL;
     gp.depth.write_enabled = true;
@@ -377,7 +379,7 @@ void GlobeRenderer::buildTerrain(const QuadKey& k, TerrainTile& t, double priori
     t.maxH = maxH;
 
     std::vector<float> v;
-    v.reserve(static_cast<size_t>(kVertexCount) * 6);
+    v.reserve(static_cast<size_t>(kVertexCount) * kStride);
     std::vector<float> shade(static_cast<size_t>(kPosts) * kPosts);
     for (int j = 0; j < kPosts; ++j) {
         double lat = b.south + span * j / kGrid;
@@ -394,7 +396,7 @@ void GlobeRenderer::buildTerrain(const QuadKey& k, TerrainTile& t, double priori
             Vec3 p = geodeticToEcef(lat, lon, hc) - t.center;
             v.insert(v.end(), {static_cast<float>(p.x), static_cast<float>(p.y), static_cast<float>(p.z),
                                static_cast<float>(i) / kGrid, static_cast<float>(j) / kGrid,
-                               static_cast<float>(nz)});
+                               static_cast<float>(nz), hc});
         }
     }
     double skirt = kSkirt * std::max(1.0, exaggeration_);
@@ -407,7 +409,7 @@ void GlobeRenderer::buildTerrain(const QuadKey& k, TerrainTile& t, double priori
             Vec3 p = geodeticToEcef(lat, lon, hc - skirt) - t.center;
             v.insert(v.end(), {static_cast<float>(p.x), static_cast<float>(p.y), static_cast<float>(p.z),
                                static_cast<float>(gi) / kGrid, static_cast<float>(gj) / kGrid,
-                               shade[static_cast<size_t>(gj) * kPosts + gi]});
+                               shade[static_cast<size_t>(gj) * kPosts + gi], hc});
         }
     if (t.vbuf.id) sg_destroy_buffer(t.vbuf);
     sg_buffer_desc d{};
@@ -1057,6 +1059,9 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     globe_fs_params_t gfs{};
     gfs.flags[0] = flipSurface_ ? 1.0f : 0.0f;
     gfs.flags[1] = depthPerception_ && terrainEnabled_ ? 1.0f : 0.0f;
+    gfs.heat[0] = static_cast<float>(heatMin_);
+    gfs.heat[1] = static_cast<float>(1.0 / std::max(heatMax_ - heatMin_, 1.0));
+    gfs.heat[2] = heatmap_ ? heatOpacity_ : 0.0f;
     sg_apply_uniforms(UB_globe_fs_params, SG_RANGE(gfs));
     int maxLevel = 0;
     for (auto& dt : tiles) {

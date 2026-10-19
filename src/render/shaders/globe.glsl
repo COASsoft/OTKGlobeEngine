@@ -7,20 +7,24 @@ layout(binding=0) uniform globe_vs_params {
 in vec3 position;
 in vec2 texcoord0;
 in float shade;
+in float height;
 
 out vec2 uv;
 out float light;
+out float elev;
 
 void main() {
     gl_Position = mvp * vec4(position, 1.0);
     uv = texcoord0 * uv_xform.xy + uv_xform.zw;
     light = shade;
+    elev = height;
 }
 @end
 
 @fs globe_fs
 layout(binding=1) uniform globe_fs_params {
     vec4 flags;
+    vec4 heat;
 };
 
 layout(binding=0) uniform texture2D tex;
@@ -28,12 +32,23 @@ layout(binding=0) uniform sampler smp;
 
 in vec2 uv;
 in float light;
+in float elev;
 out vec4 frag_color;
+
+vec3 ramp(float x) {
+    x = clamp(x, 0.0, 1.0);
+    vec3 a = mix(vec3(0.0, 0.2, 0.8), vec3(0.0, 0.75, 0.3), smoothstep(0.0, 0.25, x));
+    vec3 b = mix(a, vec3(0.95, 0.9, 0.1), smoothstep(0.25, 0.5, x));
+    vec3 c = mix(b, vec3(0.9, 0.4, 0.05), smoothstep(0.5, 0.75, x));
+    return mix(c, vec3(0.95, 0.95, 0.95), smoothstep(0.75, 1.0, x));
+}
 
 void main() {
     vec2 t = vec2(uv.x, flags.x > 0.5 ? 1.0 - uv.y : uv.y);
     float s = mix(1.0, min(0.25 + 0.75 * light, 1.0), flags.y);
-    frag_color = vec4(texture(sampler2D(tex, smp), t).rgb * s, 1.0);
+    vec3 c = texture(sampler2D(tex, smp), t).rgb;
+    c = mix(c, ramp((elev - heat.x) * heat.y), heat.z);
+    frag_color = vec4(c * s, 1.0);
 }
 @end
 

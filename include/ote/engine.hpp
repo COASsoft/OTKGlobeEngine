@@ -91,6 +91,13 @@ struct LineOfSight {
     double distance = 0;
 };
 
+struct ProfileSample {
+    double distance = 0;
+    double lat = 0;
+    double lon = 0;
+    double elevation = 0;
+};
+
 struct Region {
     double west = 0;
     double south = 0;
@@ -118,6 +125,8 @@ public:
     void setTerrainEnabled(bool enabled);
     void setTerrainExaggeration(double factor);
     void setDepthPerception(bool enabled);
+    void setElevationHeatmap(bool enabled, double minHeight = 0, double maxHeight = 4500, float opacity = 0.55f);
+    std::vector<ProfileSample> elevationProfile(const std::vector<Coord>& path, int samples) const;
     double elevationAt(double lat, double lon) const;
 
     View view() const;
@@ -128,6 +137,8 @@ public:
     void zoomAt(double sx, double sy, double factor);
     void rotate(double degrees);
     void tiltBy(double degrees);
+    void flyTo(const View& target, double seconds = 2.0);
+    bool animating() const;
 
     std::uint64_t addFeature(const Feature& feature);
     bool updateFeature(std::uint64_t id, const Feature& feature);

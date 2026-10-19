@@ -1,6 +1,7 @@
 #include "ote/engine.hpp"
 
 #include <algorithm>
+#include <chrono>
 
 #include "core/camera.hpp"
 #include "render/globe_renderer.hpp"
@@ -16,6 +17,35 @@ struct Engine::Impl {
     Camera camera;
     GlobeRenderer globe;
     bool dirty = true;
+    bool flying = false;
+    View flyFrom, flyTo;
+    double flyDuration = 0;
+    double flyPeak = 0;
+    std::chrono::steady_clock::time_point flyStart;
+
+    void animate() {
+        if (!flying) return;
+        double t = std::chrono::duration<double>(std::chrono::steady_clock::now() - flyStart).count() / flyDuration;
+        if (t >= 1.0) {
+            t = 1.0;
+            flying = false;
+        }
+        double s = t * t * (3.0 - 2.0 * t);
+        Vec3 a = normalize(geodeticToEcef(flyFrom.lat, flyFrom.lon, 0)), b = normalize(geodeticToEcef(flyTo.lat, flyTo.lon, 0));
+        double omega = std::acos(std::clamp(dot(a, b), -1.0, 1.0));
+        Vec3 p = omega < 1e-9 ? b : a * (std::sin((1 - s) * omega) / std::sin(omega)) + b * (std::sin(s * omega) / std::sin(omega));
+        GeoPoint g = ecefToGeodetic(p * kWgs84A);
+        double lg0 = std::log(flyFrom.gsd), lg1 = std::log(flyTo.gsd);
+        double lg = lg0 + (lg1 - lg0) * s + (flyPeak - std::max(lg0, lg1)) * std::sin(kPi * s);
+        double daz = std::fmod(flyTo.azimuth - flyFrom.azimuth + 540.0, 360.0) - 180.0;
+        camera.focus.lat = g.lat;
+        camera.focus.lon = g.lon;
+        camera.gsd = std::exp(lg);
+        camera.azimuth = flyFrom.azimuth + daz * s;
+        camera.tilt = flyFrom.tilt + (flyTo.tilt - flyFrom.tilt) * s;
+        camera.update();
+        dirty = true;
+    }
     float dpiScale = 1.0f;
 
     bool pickGround(double sx, double sy, Vec3& out) const {
@@ -371,19 +401,63 @@ void Engine::tiltBy(double degrees) {
     impl_->dirty = true;
 }
 
+void Engine::flyTo(const View& target, double seconds) {
+    Impl& m = *impl_;
+    m.flyFrom = view();
+    m.flyTo = target;
+    m.flyDuration = std::max(seconds, 0.05);
+    Vec3 a = geodeticToEcef(m.flyFrom.lat, m.flyFrom.lon, 0), b = geodeticToEcef(target.lat, target.lon, 0);
+    double distance = length(b - a);
+    double needed = std::log(std::max(distance / std::max(m.camera.height, 1) * 1.5, 1.0));
+    m.flyPeak = std::max({std::log(m.flyFrom.gsd), std::log(target.gsd), needed});
+    m.flyStart = std::chrono::steady_clock::now();
+    m.flying = true;
+    m.dirty = true;
+}
+
+bool Engine::animating() const { return impl_->flying; }
+
+void Engine::setElevationHeatmap(bool enabled, double minHeight, double maxHeight, float opacity) {
+    impl_->globe.setHeatmap(enabled, minHeight, maxHeight, opacity);
+    impl_->dirty = true;
+}
+
+std::vector<ProfileSample> Engine::elevationProfile(const std::vector<Coord>& path, int samples) const {
+    std::vector<ProfileSample> out;
+    if (path.size() < 2 || samples < 2) return out;
+    std::vector<double> cumulative{0.0};
+    for (size_t i = 1; i < path.size(); ++i)
+        cumulative.push_back(cumulative.back() + length(geodeticToEcef(path[i].lat, path[i].lon, 0) -
+                                                        geodeticToEcef(path[i - 1].lat, path[i - 1].lon, 0)));
+    double total = cumulative.back();
+    size_t seg = 1;
+    for (int k = 0; k < samples; ++k) {
+        double d = total * k / (samples - 1);
+        while (seg + 1 < cumulative.size() && cumulative[seg] < d) ++seg;
+        double len = cumulative[seg] - cumulative[seg - 1];
+        double t = len > 0 ? (d - cumulative[seg - 1]) / len : 0;
+        Vec3 a = geodeticToEcef(path[seg - 1].lat, path[seg - 1].lon, 0), b = geodeticToEcef(path[seg].lat, path[seg].lon, 0);
+        GeoPoint g = ecefToGeodetic(a + (b - a) * t);
+        out.push_back({d, g.lat, g.lon, impl_->globe.elevationAt(g.lat, g.lon)});
+    }
+    return out;
+}
+
 void Engine::frame(const sg_swapchain& swapchain) {
+    impl_->animate();
     impl_->followTerrain();
     impl_->globe.render(impl_->camera, &swapchain, nullptr, swapchain.width, swapchain.height);
     impl_->dirty = false;
 }
 
 void Engine::frameOffscreen(const sg_attachments& attachments, int width, int height) {
+    impl_->animate();
     impl_->followTerrain();
     impl_->globe.render(impl_->camera, nullptr, &attachments, width, height);
     impl_->dirty = false;
 }
 
-bool Engine::needsRedraw() const { return impl_->dirty || impl_->globe.busy(); }
+bool Engine::needsRedraw() const { return impl_->dirty || impl_->flying || impl_->globe.busy(); }
 
 Stats Engine::stats() const { return impl_->globe.stats(); }
 

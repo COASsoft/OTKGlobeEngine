@@ -46,6 +46,12 @@ public:
     void setTerrainEnabled(bool enabled);
     void setTerrainExaggeration(double factor);
     void setDepthPerception(bool enabled) { depthPerception_ = enabled; }
+    void setHeatmap(bool enabled, double minHeight, double maxHeight, float opacity) {
+        heatmap_ = enabled;
+        heatMin_ = minHeight;
+        heatMax_ = maxHeight;
+        heatOpacity_ = opacity;
+    }
     void setGrid(bool enabled);
     std::uint64_t addOverlay(const GeoRect& rect, int width, int height, const std::vector<std::uint8_t>& rgba, float opacity);
     bool removeOverlay(std::uint64_t id);
@@ -199,6 +205,9 @@ private:
     double exaggeration_ = 1.0;
     bool terrainEnabled_ = true;
     bool depthPerception_ = true;
+    bool heatmap_ = false;
+    double heatMin_ = 0, heatMax_ = 4500;
+    float heatOpacity_ = 0.55f;
     bool flipSurface_ = false;
     bool busy_ = true;
     bool ready_ = false;

@@ -58,6 +58,7 @@ struct ViewerState {
     float downX = 0, downY = 0;
     bool terrain = true;
     bool grid = false;
+    bool heat = false;
     std::uint64_t viewshed = 0;
     bool shotViewshed = false;
     bool depth = true;
@@ -153,6 +154,7 @@ void init() {
     state->engine.setLayers(state->customLayers.empty() ? preset(state->preset) : state->customLayers);
     for (const auto& f : state->featureFiles) state->engine.loadFeatures(f);
     state->engine.setGridEnabled(state->grid);
+    state->engine.setElevationHeatmap(state->heat);
     for (const auto& [path, placement] : state->models) state->engine.addModel(path, placement);
     if (state->hasDownload)
         state->downloadId = state->engine.downloadRegion(0, state->download, state->downloadMin, state->downloadMax);
@@ -344,6 +346,17 @@ void event(const sapp_event* e) {
         if (e->key_code >= SAPP_KEYCODE_1 && e->key_code <= SAPP_KEYCODE_3) {
             state->preset = e->key_code - SAPP_KEYCODE_1;
             eng.setLayers(preset(state->preset));
+        } else if (e->key_code == SAPP_KEYCODE_H) {
+            state->heat = !state->heat;
+            eng.setElevationHeatmap(state->heat);
+        } else if (e->key_code == SAPP_KEYCODE_F) {
+            ote::View v;
+            v.lat = 46.8529;
+            v.lon = -121.7604;
+            v.gsd = 12;
+            v.tilt = 60;
+            v.azimuth = 20;
+            eng.flyTo(v, 4.0);
         } else if (e->key_code == SAPP_KEYCODE_G) {
             state->grid = !state->grid;
             eng.setGridEnabled(state->grid);
@@ -441,6 +454,8 @@ sapp_desc sokol_main(int argc, char* argv[]) {
                 state->models.push_back({path, p});
         } else if (a == "--features") {
             state->featureFiles.push_back(argv[++i]);
+        } else if (a == "--heatmap") {
+            state->heat = std::atoi(argv[++i]) != 0;
         } else if (a == "--grid") {
             state->grid = std::atoi(argv[++i]) != 0;
         } else if (a == "--viewshed") {
