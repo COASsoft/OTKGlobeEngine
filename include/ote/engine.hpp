@@ -5,6 +5,7 @@
 #include <vector>
 
 struct sg_swapchain;
+struct sg_attachments;
 
 namespace ote {
 
@@ -59,6 +60,7 @@ public:
     void tiltBy(double degrees);
 
     void frame(const sg_swapchain& swapchain);
+    void frameOffscreen(const sg_attachments& attachments, int width, int height);
     bool needsRedraw() const;
     Stats stats() const;
 

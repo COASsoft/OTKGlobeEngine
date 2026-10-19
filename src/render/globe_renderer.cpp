@@ -454,7 +454,8 @@ bool GlobeRenderer::buildSurfaceJob(const QuadKey& k, double priority, SurfaceJo
     return complete;
 }
 
-void GlobeRenderer::render(Camera& cam, const sg_swapchain& swapchain) {
+void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_attachments* attachments, int width,
+                           int height) {
     if (!ready_) return;
     ++frame_;
     loader_.beginFrame(frame_);
@@ -462,8 +463,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain& swapchain) {
     evict();
     requestBase();
 
-    cam.width = swapchain.width;
-    cam.height = swapchain.height;
+    cam.width = std::max(width, 1);
+    cam.height = std::max(height, 1);
     sg_backend backend = sg_query_backend();
     cam.zeroToOneDepth = backend != SG_BACKEND_GLCORE && backend != SG_BACKEND_GLES3;
     cam.update();
@@ -558,7 +559,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain& swapchain) {
     main.action.colors[0].clear_value = {0, 0, 0, 1};
     main.action.depth.load_action = SG_LOADACTION_CLEAR;
     main.action.depth.clear_value = 1.0f;
-    main.swapchain = swapchain;
+    if (swapchain) main.swapchain = *swapchain;
+    if (attachments) main.attachments = *attachments;
     sg_begin_pass(&main);
 
     sg_apply_pipeline(skyPipeline_);

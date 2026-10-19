@@ -1,5 +1,7 @@
 #include "ote/engine.hpp"
 
+#include <algorithm>
+
 #include "core/camera.hpp"
 #include "render/globe_renderer.hpp"
 
@@ -123,7 +125,12 @@ void Engine::tiltBy(double degrees) {
 }
 
 void Engine::frame(const sg_swapchain& swapchain) {
-    impl_->globe.render(impl_->camera, swapchain);
+    impl_->globe.render(impl_->camera, &swapchain, nullptr, swapchain.width, swapchain.height);
+    impl_->dirty = false;
+}
+
+void Engine::frameOffscreen(const sg_attachments& attachments, int width, int height) {
+    impl_->globe.render(impl_->camera, nullptr, &attachments, width, height);
     impl_->dirty = false;
 }
 

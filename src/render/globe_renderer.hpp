@@ -35,7 +35,7 @@ public:
     void setLayers(const std::vector<ImageryLayer>& layers);
     void setImageryScale(double s) { imageryScale_ = s; }
     void setDpiScale(double s) { dpiScale_ = s; }
-    void render(Camera& cam, const sg_swapchain& swapchain);
+    void render(Camera& cam, const sg_swapchain* swapchain, const sg_attachments* attachments, int width, int height);
     bool busy() const { return busy_; }
     Stats stats() const { return stats_; }
 
