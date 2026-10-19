@@ -114,8 +114,10 @@ void frame() {
         state->engine.frameOffscreen(att, state->width, state->height);
         sg_commit();
         ++state->frames;
-        bool settled = state->frames >= state->shotMinFrames && !state->engine.needsRedraw();
-        if (settled || state->frames >= state->shotMaxFrames) {
+        state->shotElapsed += sapp_frame_duration();
+        state->settledFrames = state->engine.needsRedraw() ? 0 : state->settledFrames + 1;
+        bool settled = state->shotElapsed > 1.0 && state->settledFrames > 10;
+        if (settled || state->shotElapsed >= state->shotTimeout) {
             bool ok = saveImagePng(state->shotColor, state->width, state->height,
 #if defined(SOKOL_D3D11)
                                    sg_d3d11_device(), sg_d3d11_device_context(),
