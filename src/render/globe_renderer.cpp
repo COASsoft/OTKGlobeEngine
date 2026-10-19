@@ -29,10 +29,6 @@ constexpr int kBaseZoom = 2;
 
 double spanDeg(int level) { return 180.0 / static_cast<double>(1 << level); }
 
-double mercTileLat(int z, int y) {
-    double n = kPi * (1.0 - 2.0 * y / static_cast<double>(1 << z));
-    return inverseMercatorY(n);
-}
 
 }
 
@@ -179,9 +175,20 @@ void GlobeRenderer::shutdown() {
     ready_ = false;
 }
 
+void GlobeRenderer::setCacheDirectory(const std::string& dir) {
+    std::string path = dir;
+    if (!path.empty() && path.back() != '/' && path.back() != '\\') path += '/';
+    path += "tiles.sqlite";
+    if (cache_.open(path)) {
+        loader_.setCache(&cache_);
+        if (!layers_.empty()) setLayers(std::vector<ImageryLayer>(layers_));
+    }
+}
+
 void GlobeRenderer::setLayers(const std::vector<ImageryLayer>& layers) {
     layers_ = layers;
     loader_.setLayers(layers);
+    matrices_ = loader_.matrices();
     for (auto& [k, t] : imagery_) {
         sg_destroy_view(t.view);
         sg_destroy_image(t.image);
@@ -363,13 +370,15 @@ void GlobeRenderer::want(const TileId& id, double priority) {
 
 void GlobeRenderer::requestBase() {
     double t = now();
-    const int layerCount = static_cast<int>(layers_.size());
-    for (int l = 0; l < layerCount; ++l) {
-        const int first = std::max(layers_[l].minZoom, 0);
-        for (int z = first; z <= kBaseZoom; ++z) {
-            const int n = 1 << z;
-            for (int i = 0; i < n * n; ++i) {
-                TileId id{l, z, i % n, i / n};
+    for (int l = 0; l < static_cast<int>(matrices_.size()); ++l) {
+        const TileMatrix& m = matrices_[l];
+        const int top = std::min(kBaseZoom, static_cast<int>(m.levels.size()) - 1);
+        for (int z = 0; z <= top; ++z) {
+            if (!m.hasLevel(z)) continue;
+            const int w = m.levels[z].matrixWidth, h = m.levels[z].matrixHeight;
+            if (w * h > 64) break;
+            for (int i = 0; i < w * h; ++i) {
+                TileId id{l, z, i % w, i / w};
                 if (imagery_.find(id) != imagery_.end()) continue;
                 auto f = failed_.find(id);
                 if (f != failed_.end() && f->second > t) continue;
@@ -379,77 +388,81 @@ void GlobeRenderer::requestBase() {
     }
 }
 
+GlobeRenderer::ImageryTexture* GlobeRenderer::findTexture(const TileId& id, const TileMatrix& m, double priority,
+                                                          bool& missing, TileId& src) {
+    missing = false;
+    src = id;
+    auto it = imagery_.find(id);
+    if (it != imagery_.end()) return &it->second;
+    double t = now();
+    auto f = failed_.find(id);
+    if (f == failed_.end() || f->second <= t) {
+        missing = true;
+        want(id, priority);
+    } else if (f->second != std::numeric_limits<double>::infinity()) {
+        missing = true;
+    }
+    double cx = m.originX + (id.x + 0.5) * m.spanX(id.z);
+    double cy = m.originY - (id.y + 0.5) * m.spanY(id.z);
+    for (int z = id.z - 1; z >= 0; --z) {
+        if (!m.hasLevel(z)) continue;
+        TileId a{id.layer, z, static_cast<int>(std::floor((cx - m.originX) / m.spanX(z))),
+                 static_cast<int>(std::floor((m.originY - cy) / m.spanY(z)))};
+        auto ai = imagery_.find(a);
+        if (ai != imagery_.end()) {
+            src = a;
+            return &ai->second;
+        }
+    }
+    return nullptr;
+}
+
 bool GlobeRenderer::buildSurfaceJob(const QuadKey& k, double priority, SurfaceJob* job, std::vector<float>* verts) {
     Bounds b = bounds(k);
     double span = b.north - b.south;
-    double t = now();
     bool complete = true;
-    double south = std::max(b.south, -kMercatorMaxLat), north = std::min(b.north, kMercatorMaxLat);
-    if (south >= north) return true;
-
-    for (int l = 0; l < static_cast<int>(layers_.size()); ++l) {
-        const ImageryLayer& layer = layers_[l];
-        int z = std::min(k.level + 1, layer.maxZoom);
-        if (z < layer.minZoom) continue;
-        int n = 1 << z;
-        double eps = 1e-9;
-        int x0 = std::clamp(static_cast<int>(std::floor((b.west + 180.0) / 360.0 * n)), 0, n - 1);
-        int x1 = std::clamp(static_cast<int>(std::floor((b.east + 180.0) / 360.0 * n - eps)), 0, n - 1);
-        int y0 = std::clamp(static_cast<int>(std::floor((1.0 - mercatorY(north) / kPi) * 0.5 * n)), 0, n - 1);
-        int y1 = std::clamp(static_cast<int>(std::floor((1.0 - mercatorY(south) / kPi) * 0.5 * n - eps)), 0, n - 1);
-        for (int ty = y0; ty <= y1; ++ty)
-            for (int tx = x0; tx <= x1; ++tx) {
+    for (int l = 0; l < static_cast<int>(matrices_.size()) && l < static_cast<int>(layers_.size()); ++l) {
+        const TileMatrix& m = matrices_[l];
+        double maxLat = maxLatitude(m.srid);
+        double south = std::max(b.south, -maxLat), north = std::min(b.north, maxLat);
+        if (south >= north) continue;
+        double target = span / kSurfaceSize * m.unitsPerDegree();
+        int z = m.bestLevel(target);
+        if (z < 0 || m.levels[z].resolutionX < target * 0.125) continue;
+        std::vector<TileRange> ranges = regionRanges(m, {b.west, south, b.east, north}, z, z);
+        if (ranges.empty()) continue;
+        const TileRange& r = ranges[0];
+        int rows = (m.srid == 3857 && z < 9) ? 8 : 1;
+        for (int ty = r.y0; ty <= r.y1; ++ty)
+            for (int tx = r.x0; tx <= r.x1; ++tx) {
                 TileId id{l, z, tx, ty};
-                ImageryTexture* tex = nullptr;
-                TileId src = id;
-                auto it = imagery_.find(id);
-                if (it != imagery_.end()) {
-                    tex = &it->second;
-                } else {
-                    auto f = failed_.find(id);
-                    bool failedNow = f != failed_.end();
-                    if (!failedNow || f->second <= t) {
-                        complete = false;
-                        want(id, priority);
-                    } else if (f->second != std::numeric_limits<double>::infinity()) {
-                        complete = false;
-                    }
-                    for (int dz = 1; dz <= z; ++dz) {
-                        TileId a{l, z - dz, tx >> dz, ty >> dz};
-                        auto ai = imagery_.find(a);
-                        if (ai != imagery_.end()) {
-                            tex = &ai->second;
-                            src = a;
-                            break;
-                        }
-                    }
-                }
+                bool missing = false;
+                TileId src;
+                ImageryTexture* tex = findTexture(id, m, priority, missing, src);
+                if (missing) complete = false;
                 if (!tex) continue;
                 tex->used = frame_;
                 if (!job) continue;
 
-                int sn = 1 << src.z;
-                double sw = src.x * 360.0 / sn - 180.0, se = (src.x + 1) * 360.0 / sn - 180.0;
-                double snorth = mercTileLat(src.z, src.y), ssouth = mercTileLat(src.z, src.y + 1);
-                double my0 = mercatorY(snorth), my1 = mercatorY(ssouth);
-
-                double tw = tx * 360.0 / n - 180.0, te = (tx + 1) * 360.0 / n - 180.0;
-                double tn = mercTileLat(z, ty), ts = mercTileLat(z, ty + 1);
-                double w = std::max(b.west, tw), e = std::min(b.east, te);
-                double s = std::max(south, ts), nn = std::min(north, tn);
+                double sMinX, sMinY, sMaxX, sMaxY, tMinX, tMinY, tMaxX, tMaxY;
+                m.tileBounds(src.z, src.x, src.y, sMinX, sMinY, sMaxX, sMaxY);
+                m.tileBounds(z, tx, ty, tMinX, tMinY, tMaxX, tMaxY);
+                double w = std::max(b.west, unprojectX(m.srid, tMinX));
+                double e = std::min(b.east, unprojectX(m.srid, tMaxX));
+                double s = std::max(south, unprojectY(m.srid, tMinY));
+                double nn = std::min(north, unprojectY(m.srid, tMaxY));
                 if (w >= e || s >= nn) continue;
 
-                int rows = z < 9 ? 8 : 1;
                 int first = static_cast<int>(verts->size() / 4);
                 auto emit = [&](double lon, double lat) {
                     float px = static_cast<float>((lon - b.west) / span * 2.0 - 1.0);
                     float py = static_cast<float>((lat - b.south) / span * 2.0 - 1.0);
-                    float u = static_cast<float>((lon - sw) / (se - sw));
-                    float v = static_cast<float>((my0 - mercatorY(lat)) / (my0 - my1));
+                    float u = static_cast<float>((projectX(m.srid, lon) - sMinX) / (sMaxX - sMinX));
+                    float v = static_cast<float>((sMaxY - projectY(m.srid, lat)) / (sMaxY - sMinY));
                     verts->insert(verts->end(), {px, py, u, v});
                 };
-                for (int r = 0; r < rows; ++r) {
-                    double la0 = s + (nn - s) * r / rows, la1 = s + (nn - s) * (r + 1) / rows;
+                for (int rr = 0; rr < rows; ++rr) {
+                    double la0 = s + (nn - s) * rr / rows, la1 = s + (nn - s) * (rr + 1) / rows;
                     emit(w, la0);
                     emit(e, la0);
                     emit(e, la1);
@@ -457,7 +470,7 @@ bool GlobeRenderer::buildSurfaceJob(const QuadKey& k, double priority, SurfaceJo
                     emit(e, la1);
                     emit(w, la1);
                 }
-                job->draws.push_back({tex->view, layer.opacity, first, rows * 6});
+                job->draws.push_back({tex->view, layers_[l].opacity, first, rows * 6});
             }
     }
     if (job) job->complete = complete;
