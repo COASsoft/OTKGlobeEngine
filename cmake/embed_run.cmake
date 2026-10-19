@@ -1,0 +1,6 @@
+file(READ "${IN}" hex HEX)
+string(LENGTH "${hex}" n)
+math(EXPR size "${n} / 2")
+string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," body "${hex}")
+string(REGEX REPLACE "((0x[0-9a-f][0-9a-f],){32})" "\\1\n" body "${body}")
+file(WRITE "${OUT}" "#include <cstddef>\nnamespace ote::embedded {\nextern const unsigned char ${SYMBOL}[] = {\n${body}\n};\nextern const std::size_t ${SYMBOL}_size = ${size};\n}\n")
