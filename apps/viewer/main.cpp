@@ -30,8 +30,9 @@ struct ViewerState {
     ote::View startView;
     bool offscreen = false;
     std::string shotPath;
-    int shotMaxFrames = 900;
-    int shotMinFrames = 30;
+    double shotTimeout = 60.0;
+    double shotElapsed = 0.0;
+    int settledFrames = 0;
     int frames = 0;
     sg_image shotColor{};
     sg_image shotDepth{};
