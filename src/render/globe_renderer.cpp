@@ -1315,6 +1315,19 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                      static_cast<unsigned long long>(frame_), tiles.size(), needs_.size(), work.size(), renders, builds,
                      loader_.pending(), elevation_.pending(), incomplete, waitImagery, unrendered, waitTerrain, maxLevel,
                      cam.gsd);
+        int shown = 0;
+        for (auto& dt : tiles) {
+            auto sf = surface_.find(dt.key);
+            if (sf == surface_.end() || sf->second.complete || shown >= 2) continue;
+            ++shown;
+            std::fprintf(trace_, "  tile L%d %d,%d missing", dt.key.level, dt.key.x, dt.key.y);
+            for (const TileId& m : sf->second.missing) {
+                auto f = failed_.find(m);
+                std::fprintf(trace_, " [%d/%d/%d %s]", m.z, m.x, m.y,
+                             imagery_.count(m) ? "have" : f != failed_.end() ? (std::isinf(f->second) ? "perm" : "retry") : "wait");
+            }
+            std::fprintf(trace_, "\n");
+        }
         std::fflush(trace_);
     }
 }
