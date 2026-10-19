@@ -14,21 +14,27 @@ namespace ote {
 namespace {
 
 constexpr int kGrid = 32;
+constexpr int kPosts = kGrid + 1;
+constexpr int kVertexCount = kPosts * kPosts + 4 * kPosts;
+constexpr int kIndexCount = kGrid * kGrid * 6 + 4 * kGrid * 6;
 constexpr int kSurfaceSize = 256;
 constexpr int kMinLevel = 2;
 constexpr int kMaxLevel = 22;
-constexpr size_t kTerrainCapacity = 2000;
-constexpr size_t kSurfaceCapacity = 600;
-constexpr size_t kImageryCapacity = 700;
+constexpr int kKeepLevel = 3;
+constexpr size_t kTerrainCapacity = 2500;
+constexpr size_t kSurfaceCapacity = 700;
+constexpr size_t kImageryCapacity = 800;
 constexpr size_t kFreeSurfacePool = 64;
-constexpr int kSurfaceRendersPerFrame = 12;
-constexpr size_t kUploadsPerFrame = 16;
+constexpr int kSurfaceRendersPerFrame = 16;
+constexpr int kTerrainBuildsPerFrame = 32;
+constexpr size_t kUploadsPerFrame = 24;
 constexpr size_t kSurfaceBufferBytes = 4 * 1024 * 1024;
 constexpr double kRetrySeconds = 30.0;
 constexpr int kBaseZoom = 2;
+constexpr double kSkirt = 500.0;
+constexpr double kUnknownMaxHeight = 4500.0;
 
 double spanDeg(int level) { return 180.0 / static_cast<double>(1 << level); }
-
 
 }
 
@@ -55,14 +61,31 @@ bool GlobeRenderer::init() {
                    backend == SG_BACKEND_WGPU;
 
     std::vector<std::uint16_t> idx;
-    idx.reserve(kGrid * kGrid * 6);
+    idx.reserve(kIndexCount);
     for (int j = 0; j < kGrid; ++j)
         for (int i = 0; i < kGrid; ++i) {
-            std::uint16_t a = static_cast<std::uint16_t>(j * (kGrid + 1) + i);
-            std::uint16_t b = static_cast<std::uint16_t>(a + 1);
-            std::uint16_t c = static_cast<std::uint16_t>(a + kGrid + 1);
-            std::uint16_t d = static_cast<std::uint16_t>(c + 1);
+            auto a = static_cast<std::uint16_t>(j * kPosts + i);
+            auto b = static_cast<std::uint16_t>(a + 1);
+            auto c = static_cast<std::uint16_t>(a + kPosts);
+            auto d = static_cast<std::uint16_t>(c + 1);
             idx.insert(idx.end(), {a, b, d, a, d, c});
+        }
+    const int skirtBase = kPosts * kPosts;
+    auto edge = [&](int e, int i) -> int {
+        switch (e) {
+        case 0: return i;
+        case 1: return kGrid * kPosts + i;
+        case 2: return i * kPosts;
+        default: return i * kPosts + kGrid;
+        }
+    };
+    for (int e = 0; e < 4; ++e)
+        for (int i = 0; i < kGrid; ++i) {
+            auto a = static_cast<std::uint16_t>(edge(e, i));
+            auto b = static_cast<std::uint16_t>(edge(e, i + 1));
+            auto as = static_cast<std::uint16_t>(skirtBase + e * kPosts + i);
+            auto bs = static_cast<std::uint16_t>(skirtBase + e * kPosts + i + 1);
+            idx.insert(idx.end(), {a, b, bs, a, bs, as});
         }
     sg_buffer_desc ib{};
     ib.usage.index_buffer = true;
@@ -108,6 +131,7 @@ bool GlobeRenderer::init() {
     gp.shader = globeShader_;
     gp.layout.attrs[ATTR_globe_position].format = SG_VERTEXFORMAT_FLOAT3;
     gp.layout.attrs[ATTR_globe_texcoord0].format = SG_VERTEXFORMAT_FLOAT2;
+    gp.layout.attrs[ATTR_globe_shade].format = SG_VERTEXFORMAT_FLOAT;
     gp.index_type = SG_INDEXTYPE_UINT16;
     gp.depth.compare = SG_COMPAREFUNC_LESS_EQUAL;
     gp.depth.write_enabled = true;
@@ -182,7 +206,13 @@ void GlobeRenderer::setCacheDirectory(const std::string& dir) {
     if (cache_.open(path)) {
         loader_.setCache(&cache_);
         if (!layers_.empty()) setLayers(std::vector<ImageryLayer>(layers_));
+        if (!elevation_.sources().empty()) setElevation(std::vector<ElevationLayer>(elevation_.sources()));
     }
+}
+
+void GlobeRenderer::setOffline(bool offline) {
+    offline_ = offline;
+    loader_.setOffline(offline);
 }
 
 void GlobeRenderer::setLayers(const std::vector<ImageryLayer>& layers) {
@@ -203,28 +233,109 @@ void GlobeRenderer::setLayers(const std::vector<ImageryLayer>& layers) {
     busy_ = true;
 }
 
-GlobeRenderer::TerrainTile& GlobeRenderer::terrain(const QuadKey& k) {
-    auto it = terrain_.find(k);
-    if (it != terrain_.end()) return it->second;
+void GlobeRenderer::setElevation(const std::vector<ElevationLayer>& layers) {
+    elevation_.setSources(layers, cache_.isOpen() ? &cache_ : nullptr, &offline_);
+    invalidateTerrain();
+}
+
+void GlobeRenderer::setTerrainEnabled(bool enabled) {
+    if (terrainEnabled_ == enabled) return;
+    terrainEnabled_ = enabled;
+    invalidateTerrain();
+}
+
+void GlobeRenderer::setTerrainExaggeration(double factor) {
+    if (!(factor > 0) || factor == exaggeration_) return;
+    exaggeration_ = factor;
+    invalidateTerrain();
+}
+
+void GlobeRenderer::invalidateTerrain() {
+    ++terrainEpoch_;
+    for (auto& [k, t] : terrain_) t.complete = false;
+    busy_ = true;
+}
+
+double GlobeRenderer::elevationAt(double lat, double lon) const {
+    if (!terrainEnabled_) return 0.0;
+    double h = elevation_.sample(lat, lon);
+    return std::isnan(h) ? 0.0 : h * exaggeration_;
+}
+
+void GlobeRenderer::buildTerrain(const QuadKey& k, TerrainTile& t, double priority) {
     Bounds b = bounds(k);
-    TerrainTile t;
-    t.center = geodeticToEcef(0.5 * (b.south + b.north), 0.5 * (b.west + b.east), 0.0);
+    double span = b.north - b.south;
+    double cell = span / kGrid;
+    std::vector<float> h;
+    bool complete = true;
+    const int n = kPosts + 2;
+    if (terrainEnabled_ && !elevation_.empty()) {
+        complete = elevation_.gridFor(b.west - cell, std::max(b.south - cell, -90.0), b.east + cell,
+                                      std::min(b.north + cell, 90.0), n, priority, h);
+        for (float& v : h) v = std::isnan(v) ? 0.0f : static_cast<float>(v * exaggeration_);
+    } else {
+        h.assign(static_cast<size_t>(n) * n, 0.0f);
+    }
+    float minH = std::numeric_limits<float>::max(), maxH = -std::numeric_limits<float>::max();
+    for (int j = 1; j <= kPosts; ++j)
+        for (int i = 1; i <= kPosts; ++i) {
+            float v = h[static_cast<size_t>(j) * n + i];
+            minH = std::min(minH, v);
+            maxH = std::max(maxH, v);
+        }
+    double clat = 0.5 * (b.south + b.north), clon = 0.5 * (b.west + b.east);
+    t.center = geodeticToEcef(clat, clon, 0.5 * (minH + maxH));
+    t.minH = minH;
+    t.maxH = maxH;
+
     std::vector<float> v;
-    v.reserve((kGrid + 1) * (kGrid + 1) * 5);
-    for (int j = 0; j <= kGrid; ++j) {
-        double lat = b.south + (b.north - b.south) * j / kGrid;
-        for (int i = 0; i <= kGrid; ++i) {
-            double lon = b.west + (b.east - b.west) * i / kGrid;
-            Vec3 p = geodeticToEcef(lat, lon, 0.0) - t.center;
+    v.reserve(static_cast<size_t>(kVertexCount) * 6);
+    std::vector<float> shade(static_cast<size_t>(kPosts) * kPosts);
+    for (int j = 0; j < kPosts; ++j) {
+        double lat = b.south + span * j / kGrid;
+        double dy = 111132.954 * cell;
+        double dx = std::max(111319.49 * std::cos(lat * kDegToRad) * cell, 1e-3);
+        for (int i = 0; i < kPosts; ++i) {
+            double lon = b.west + span * i / kGrid;
+            size_t c = static_cast<size_t>(j + 1) * n + (i + 1);
+            float hc = h[c];
+            double nx = (h[c - 1] - h[c + 1]) / (2.0 * dx);
+            double ny = (h[c - n] - h[c + n]) / (2.0 * dy);
+            double nz = 1.0 / std::sqrt(nx * nx + ny * ny + 1.0);
+            shade[static_cast<size_t>(j) * kPosts + i] = static_cast<float>(nz);
+            Vec3 p = geodeticToEcef(lat, lon, hc) - t.center;
             v.insert(v.end(), {static_cast<float>(p.x), static_cast<float>(p.y), static_cast<float>(p.z),
-                               static_cast<float>(i) / kGrid, static_cast<float>(j) / kGrid});
+                               static_cast<float>(i) / kGrid, static_cast<float>(j) / kGrid,
+                               static_cast<float>(nz)});
         }
     }
+    double skirt = kSkirt * std::max(1.0, exaggeration_);
+    for (int e = 0; e < 4; ++e)
+        for (int i = 0; i < kPosts; ++i) {
+            int gi = e == 0 ? i : e == 1 ? i : e == 2 ? 0 : kGrid;
+            int gj = e == 0 ? 0 : e == 1 ? kGrid : i;
+            double lat = b.south + span * gj / kGrid, lon = b.west + span * gi / kGrid;
+            float hc = h[static_cast<size_t>(gj + 1) * n + (gi + 1)];
+            Vec3 p = geodeticToEcef(lat, lon, hc - skirt) - t.center;
+            v.insert(v.end(), {static_cast<float>(p.x), static_cast<float>(p.y), static_cast<float>(p.z),
+                               static_cast<float>(gi) / kGrid, static_cast<float>(gj) / kGrid,
+                               shade[static_cast<size_t>(gj) * kPosts + gi]});
+        }
+    if (t.vbuf.id) sg_destroy_buffer(t.vbuf);
     sg_buffer_desc d{};
     d.usage.vertex_buffer = true;
     d.data = {v.data(), v.size() * sizeof(float)};
     t.vbuf = sg_make_buffer(&d);
-    return terrain_.emplace(k, t).first->second;
+    t.complete = complete;
+    t.version = elevation_.version() + terrainEpoch_ * 1000000;
+}
+
+GlobeRenderer::TerrainTile& GlobeRenderer::terrain(const QuadKey& k) {
+    auto it = terrain_.find(k);
+    if (it != terrain_.end()) return it->second;
+    TerrainTile& t = terrain_[k];
+    buildTerrain(k, t, 0.0);
+    return t;
 }
 
 GlobeRenderer::SurfaceTile* GlobeRenderer::acquireSurface(const QuadKey& k) {
@@ -254,43 +365,101 @@ GlobeRenderer::SurfaceTile* GlobeRenderer::acquireSurface(const QuadKey& k) {
     return &surface_.emplace(k, s).first->second;
 }
 
-void GlobeRenderer::traverse(const Camera& cam, const QuadKey& k, std::vector<DrawTile>& out) {
-    ++visits_;
+GlobeRenderer::NodeInfo GlobeRenderer::info(const Camera& cam, const QuadKey& k) const {
+    NodeInfo ni;
     Bounds b = bounds(k);
+    double minH = 0, maxH = 0;
+    auto tt = terrain_.find(k);
+    if (tt != terrain_.end() && tt->second.version >= 0) {
+        minH = tt->second.minH;
+        maxH = tt->second.maxH;
+    } else if (terrainEnabled_ && !elevation_.empty()) {
+        maxH = kUnknownMaxHeight * exaggeration_;
+    }
     double clat = 0.5 * (b.south + b.north), clon = 0.5 * (b.west + b.east);
-    Vec3 c = geodeticToEcef(clat, clon, 0.0);
+    Vec3 c = geodeticToEcef(clat, clon, 0.5 * (minH + maxH));
     double r = 0;
     for (double la : {b.south, clat, b.north})
-        for (double lo : {b.west, clon, b.east}) r = std::max(r, length(geodeticToEcef(la, lo, 0.0) - c));
+        for (double lo : {b.west, clon, b.east}) {
+            r = std::max(r, length(geodeticToEcef(la, lo, minH) - c));
+            r = std::max(r, length(geodeticToEcef(la, lo, maxH) - c));
+        }
     r *= 1.02;
-
-    Vec3 eye = cam.eye();
-    Vec3 rel = c - eye;
+    Vec3 rel = c - eye_;
     double dist = length(rel);
+    ni.distance = dist;
+    ni.visible = true;
     if (k.level >= kMinLevel) {
         for (int p = 0; p < 4; ++p) {
             const double* pl = &frustum_[p * 4];
-            if (pl[0] * rel.x + pl[1] * rel.y + pl[2] * rel.z + pl[3] < -r) return;
+            if (pl[0] * rel.x + pl[1] * rel.y + pl[2] * rel.z + pl[3] < -r) {
+                ni.visible = false;
+                return ni;
+            }
         }
-        double eyeR2 = dot(eye, eye), R = kWgs84B;
-        double horizonEye = std::sqrt(std::max(0.0, eyeR2 - R * R));
+        double R = kWgs84B;
+        double horizonEye = std::sqrt(std::max(0.0, dot(eye_, eye_) - R * R));
         double outer = length(c) + r;
         double horizonTile = std::sqrt(std::max(0.0, outer * outer - R * R));
-        if (dist - r > horizonEye + horizonTile) return;
+        if (dist - r > horizonEye + horizonTile) {
+            ni.visible = false;
+            return ni;
+        }
     }
-
     double d = std::max(dist - r, 1.0);
-    double tileMeters = spanDeg(k.level) * kDegToRad * kWgs84A;
-    double texel = tileMeters / kSurfaceSize;
+    double texel = spanDeg(k.level) * kDegToRad * kWgs84A / kSurfaceSize;
     double threshold = std::max(1.0, dpiScale_ * 0.6) / std::max(imageryScale_, 0.1);
-    bool refine = k.level < kMinLevel ||
-                  (k.level < kMaxLevel && visits_ < 20000 && texel > cam.pixelSizeAt(d) * threshold);
-    if (refine) {
-        for (int dy = 0; dy < 2; ++dy)
-            for (int dx = 0; dx < 2; ++dx) traverse(cam, {k.level + 1, k.x * 2 + dx, k.y * 2 + dy}, out);
-        return;
+    ni.refine = k.level < kMinLevel || (k.level < kMaxLevel && visits_ < 20000 && texel > cam.pixelSizeAt(d) * threshold);
+    return ni;
+}
+
+bool GlobeRenderer::ready(const QuadKey& k) const {
+    auto s = surface_.find(k);
+    if (s == surface_.end() || !s->second.complete) return false;
+    auto t = terrain_.find(k);
+    return t != terrain_.end() && t->second.complete;
+}
+
+void GlobeRenderer::need(const QuadKey& k, double priority) { needs_.push_back({k, priority}); }
+
+void GlobeRenderer::traverse(const Camera& cam, const QuadKey& k, std::vector<DrawTile>& out) {
+    ++visits_;
+    NodeInfo ni = info(cam, k);
+    if (!ni.visible) return;
+    QuadKey kids[4];
+    for (int i = 0; i < 4; ++i) kids[i] = {k.level + 1, k.x * 2 + (i & 1), k.y * 2 + (i >> 1)};
+    if (ni.refine) {
+        bool allReady = true;
+        NodeInfo ci[4];
+        for (int i = 0; i < 4; ++i) {
+            ci[i] = info(cam, kids[i]);
+            if (!ci[i].visible) continue;
+            need(kids[i], ci[i].distance * 2.0);
+            if (!ready(kids[i])) allReady = false;
+        }
+        if (allReady || k.level < kMinLevel || !ready(k)) {
+            for (int i = 0; i < 4; ++i) traverse(cam, kids[i], out);
+            return;
+        }
+    } else if (!ready(k) && k.level < kMaxLevel) {
+        bool kidsReady = true;
+        bool any = false;
+        NodeInfo ci[4];
+        for (int i = 0; i < 4 && kidsReady; ++i) {
+            ci[i] = info(cam, kids[i]);
+            if (!ci[i].visible) continue;
+            any = true;
+            if (!ready(kids[i])) kidsReady = false;
+        }
+        if (any && kidsReady) {
+            need(k, ni.distance);
+            for (int i = 0; i < 4; ++i)
+                if (ci[i].visible) out.push_back({kids[i], ci[i].distance});
+            return;
+        }
     }
-    out.push_back({k, dist});
+    need(k, ni.distance);
+    out.push_back({k, ni.distance});
 }
 
 void GlobeRenderer::processLoads() {
@@ -326,7 +495,7 @@ void GlobeRenderer::evict() {
         std::vector<std::pair<std::uint64_t, TileId>> c;
         for (auto& [k, t] : imagery_)
             if (k.z > kBaseZoom && t.used + 1 < frame_) c.push_back({t.used, k});
-        std::sort(c.begin(), c.end(), [](auto& a, auto& b) { return a.first < b.first; });
+        std::sort(c.begin(), c.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
         for (size_t i = 0; i < c.size() && imagery_.size() > kImageryCapacity; ++i) {
             auto it = imagery_.find(c[i].second);
             sg_destroy_view(it->second.view);
@@ -337,8 +506,8 @@ void GlobeRenderer::evict() {
     if (surface_.size() > kSurfaceCapacity) {
         std::vector<std::pair<std::uint64_t, QuadKey>> c;
         for (auto& [k, s] : surface_)
-            if (s.used + 1 < frame_) c.push_back({s.used, k});
-        std::sort(c.begin(), c.end(), [](auto& a, auto& b) { return a.first < b.first; });
+            if (k.level > kKeepLevel && s.used + 1 < frame_) c.push_back({s.used, k});
+        std::sort(c.begin(), c.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
         for (size_t i = 0; i < c.size() && surface_.size() > kSurfaceCapacity; ++i) {
             auto it = surface_.find(c[i].second);
             if (freeSurfaces_.size() < kFreeSurfacePool) {
@@ -354,8 +523,8 @@ void GlobeRenderer::evict() {
     if (terrain_.size() > kTerrainCapacity) {
         std::vector<std::pair<std::uint64_t, QuadKey>> c;
         for (auto& [k, t] : terrain_)
-            if (t.used < frame_) c.push_back({t.used, k});
-        std::sort(c.begin(), c.end(), [](auto& a, auto& b) { return a.first < b.first; });
+            if (k.level > kKeepLevel && t.used + 1 < frame_) c.push_back({t.used, k});
+        std::sort(c.begin(), c.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
         for (size_t i = 0; i < c.size() && terrain_.size() > kTerrainCapacity; ++i) {
             auto it = terrain_.find(c[i].second);
             sg_destroy_buffer(it->second.vbuf);
@@ -364,9 +533,7 @@ void GlobeRenderer::evict() {
     }
 }
 
-void GlobeRenderer::want(const TileId& id, double priority) {
-    requests_.emplace_back(id, priority);
-}
+void GlobeRenderer::want(const TileId& id, double priority) { requests_.emplace_back(id, priority); }
 
 void GlobeRenderer::requestBase() {
     double t = now();
@@ -482,28 +649,21 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     if (!ready_) return;
     if (!trace_)
         if (const char* path = std::getenv("OTE_TRACE")) trace_ = std::fopen(path, "w");
-    auto mark = [&](const char* m) {
-        if (trace_) {
-            std::fprintf(trace_, "%s %.3f lat %g lon %g gsd %g tilt %g az %g w %d h %d\n", m, now(), cam.focus.lat, cam.focus.lon, cam.gsd, cam.tilt, cam.azimuth, cam.width, cam.height);
-            std::fflush(trace_);
-        }
-    };
-    mark("begin");
     ++frame_;
     requests_.clear();
+    needs_.clear();
+    elevation_.beginFrame();
     processLoads();
-    mark("loads");
+    bool elevationChanged = elevation_.processResults(32);
     evict();
-    mark("evict");
     requestBase();
-    mark("base");
 
     cam.width = std::max(width, 1);
     cam.height = std::max(height, 1);
     sg_backend backend = sg_query_backend();
     cam.zeroToOneDepth = backend != SG_BACKEND_GLCORE && backend != SG_BACKEND_GLES3;
     cam.update();
-    mark("camera");
+    eye_ = cam.eye();
 
     const Mat4& m = cam.viewProjRel();
     for (int p = 0; p < 4; ++p) {
@@ -522,41 +682,73 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
 
     std::vector<DrawTile> tiles;
     visits_ = 0;
-    auto tTraverse = now();
     traverse(cam, {0, 0, 0}, tiles);
     traverse(cam, {0, 1, 0}, tiles);
     std::sort(tiles.begin(), tiles.end(), [](const DrawTile& a, const DrawTile& b) { return a.distance < b.distance; });
 
+    std::sort(needs_.begin(), needs_.end(), [](const Need& a, const Need& b) {
+        if (!(a.key == b.key)) {
+            if (a.key.level != b.key.level) return a.key.level < b.key.level;
+            if (a.key.x != b.key.x) return a.key.x < b.key.x;
+            return a.key.y < b.key.y;
+        }
+        return a.priority < b.priority;
+    });
+    needs_.erase(std::unique(needs_.begin(), needs_.end(), [](const Need& a, const Need& b) { return a.key == b.key; }),
+                 needs_.end());
+    std::sort(needs_.begin(), needs_.end(), [](const Need& a, const Need& b) { return a.priority < b.priority; });
+
+    int builds = 0;
+    int currentTerrain = elevation_.version() + terrainEpoch_ * 1000000;
+    for (const Need& n : needs_) {
+        auto it = terrain_.find(n.key);
+        if (it == terrain_.end()) {
+            if (builds < kTerrainBuildsPerFrame) {
+                TerrainTile& t = terrain_[n.key];
+                buildTerrain(n.key, t, n.priority);
+                t.used = frame_;
+                ++builds;
+            }
+            continue;
+        }
+        it->second.used = frame_;
+        if (!it->second.complete && it->second.version != currentTerrain && builds < kTerrainBuildsPerFrame) {
+            buildTerrain(n.key, it->second, n.priority);
+            ++builds;
+        } else if (!it->second.complete && terrainEnabled_ && !elevation_.empty()) {
+            std::vector<float> scratch;
+            Bounds b = bounds(n.key);
+            double cell = (b.north - b.south) / kGrid;
+            elevation_.gridFor(b.west - cell, std::max(b.south - cell, -90.0), b.east + cell,
+                               std::min(b.north + cell, 90.0), 2, n.priority, scratch);
+        }
+    }
+    elevation_.submit();
+
     std::vector<std::pair<int, size_t>> work;
-    for (size_t i = 0; i < tiles.size(); ++i) {
-        auto it = surface_.find(tiles[i].key);
+    for (size_t i = 0; i < needs_.size(); ++i) {
+        auto it = surface_.find(needs_[i].key);
         if (it == surface_.end()) {
             work.push_back({0, i});
         } else {
             it->second.used = frame_;
             if (!it->second.complete && it->second.version != imageryVersion_) work.push_back({1, i});
-            else if (!it->second.complete) buildSurfaceJob(tiles[i].key, tiles[i].distance, nullptr, nullptr);
+            else if (!it->second.complete) buildSurfaceJob(needs_[i].key, needs_[i].priority, nullptr, nullptr);
         }
     }
-    std::stable_sort(work.begin(), work.end(), [](auto& a, auto& b) { return a.first < b.first; });
+    std::stable_sort(work.begin(), work.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
 
-    if (trace_) {
-        std::fprintf(trace_, "frame %llu visits %d tiles %zu work %zu traverse %.4f eye %.0f near %.1f far %.0f\n",
-                     static_cast<unsigned long long>(frame_), visits_, tiles.size(), work.size(), now() - tTraverse,
-                     cam.eyeAltitude(), cam.nearPlane(), cam.farPlane());
-        std::fflush(trace_);
-    }
     std::vector<SurfaceJob> jobs;
     std::vector<float> verts;
     int renders = 0;
     for (auto& [kind, i] : work) {
         if (renders >= kSurfaceRendersPerFrame || verts.size() * sizeof(float) > kSurfaceBufferBytes / 2) {
-            buildSurfaceJob(tiles[i].key, tiles[i].distance, nullptr, nullptr);
+            buildSurfaceJob(needs_[i].key, needs_[i].priority, nullptr, nullptr);
             continue;
         }
         SurfaceJob job;
-        job.key = tiles[i].key;
-        buildSurfaceJob(job.key, tiles[i].distance, &job, &verts);
+        job.key = needs_[i].key;
+        buildSurfaceJob(job.key, needs_[i].priority, &job, &verts);
         jobs.push_back(std::move(job));
         ++renders;
     }
@@ -641,6 +833,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     sg_apply_pipeline(globePipeline_);
     globe_fs_params_t gfs{};
     gfs.flags[0] = flipSurface_ ? 1.0f : 0.0f;
+    gfs.flags[1] = depthPerception_ && terrainEnabled_ ? 1.0f : 0.0f;
     sg_apply_uniforms(UB_globe_fs_params, SG_RANGE(gfs));
     int maxLevel = 0;
     for (auto& dt : tiles) {
@@ -674,24 +867,28 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         bind.samplers[SMP_smp] = sampler_;
         sg_apply_bindings(&bind);
         sg_apply_uniforms(UB_globe_vs_params, SG_RANGE(vsp));
-        sg_draw(0, kGrid * kGrid * 6, 1);
+        sg_draw(0, kIndexCount, 1);
     }
     sg_end_pass();
 
-    bool pendingSurface = false;
-    for (auto& dt : tiles) {
-        auto it = surface_.find(dt.key);
-        if (it == surface_.end() || !it->second.complete) {
-            pendingSurface = true;
+    bool pending = false;
+    for (const Need& n : needs_)
+        if (!ready(n.key)) {
+            pending = true;
             break;
         }
-    }
     stats_.terrainTiles = static_cast<int>(tiles.size());
     stats_.surfaceRenders = renders;
     stats_.imageryTextures = static_cast<int>(imagery_.size());
-    stats_.pendingRequests = loader_.pending();
+    stats_.pendingRequests = loader_.pending() + elevation_.pending();
     stats_.maxLevel = maxLevel;
-    busy_ = pendingSurface || stats_.pendingRequests > 0 || renders > 0;
+    busy_ = pending || stats_.pendingRequests > 0 || renders > 0 || builds > 0 || elevationChanged;
+    if (trace_) {
+        std::fprintf(trace_, "frame %llu tiles %zu needs %zu renders %d builds %d pending %d\n",
+                     static_cast<unsigned long long>(frame_), tiles.size(), needs_.size(), renders, builds,
+                     stats_.pendingRequests);
+        std::fflush(trace_);
+    }
 }
 
 }
