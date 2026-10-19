@@ -103,7 +103,9 @@ bool GlobeRenderer::init() {
         else if (ram > 0) setMemoryBudget(static_cast<int>(std::clamp(ram * 0.03, 256.0, 768.0)));
 #endif
     }
+    fitPools();
     sg_backend backend = sg_query_backend();
+    holeMarker_ = std::getenv("OTE_HOLES") != nullptr;
     if (const char* pp = std::getenv("OTE_PROFILE")) {
         profiling_ = true;
         profilePath_ = pp;
@@ -346,6 +348,49 @@ void GlobeRenderer::setMemoryBudget(int megabytes) {
     imageryCapacity_ = static_cast<size_t>(mb * 0.20 / 0.262);
     terrainCapacity_ = static_cast<size_t>(mb * 0.20 / 0.034);
     freeSurfacePool_ = std::max<size_t>(16, surfaceCapacity_ / 16);
+    fitPools();
+}
+
+void GlobeRenderer::fitPools() {
+    if (!sg_isvalid()) return;
+    sg_desc d = sg_query_desc();
+    const size_t buffers = static_cast<size_t>(std::max(d.buffer_pool_size, 128));
+    const size_t images = static_cast<size_t>(std::max(d.image_pool_size, 128));
+    const size_t views = static_cast<size_t>(std::max(d.view_pool_size, 128));
+    const size_t perSurface = 2 * kMips + 1;
+    size_t imageRoom = images > 1024 ? images - 512 : images / 2;
+    size_t viewRoom = views > 4096 ? views - 2048 : views / 2;
+    auto surfaceSlots = [&](size_t cap) { return cap + std::max<size_t>(16, cap / 16); };
+    double f = 1.0;
+    double imagesNeeded = static_cast<double>(surfaceSlots(surfaceCapacity_) + imageryCapacity_);
+    double viewsNeeded = static_cast<double>(surfaceSlots(surfaceCapacity_) * perSurface + imageryCapacity_);
+    if (imagesNeeded > imageRoom) f = std::min(f, imageRoom / imagesNeeded);
+    if (viewsNeeded > viewRoom) f = std::min(f, viewRoom / viewsNeeded);
+    if (f < 1.0) {
+        surfaceCapacity_ = std::max<size_t>(64, static_cast<size_t>(surfaceCapacity_ * f));
+        imageryCapacity_ = std::max<size_t>(48, static_cast<size_t>(imageryCapacity_ * f));
+    }
+    freeSurfacePool_ = std::max<size_t>(16, surfaceCapacity_ / 16);
+    size_t bufferRoom = buffers > 2048 + 2 * imageryCapacity_ ? buffers - 1024 - 2 * imageryCapacity_ : buffers / 2;
+    terrainCapacity_ = std::min(terrainCapacity_, std::max<size_t>(256, bufferRoom));
+}
+
+void GlobeRenderer::poolPressure(const char* what) {
+    ++invalidResources_;
+    size_t terrainBefore = terrainCapacity_, surfaceBefore = surfaceCapacity_, imageryBefore = imageryCapacity_;
+    if (std::strcmp(what, "buffer") == 0) terrainCapacity_ = std::max<size_t>(256, std::min(terrainCapacity_, terrain_.size()) * 9 / 10);
+    else {
+        surfaceCapacity_ = std::max<size_t>(64, std::min(surfaceCapacity_, surface_.size()) * 9 / 10);
+        imageryCapacity_ = std::max<size_t>(48, std::min(imageryCapacity_, imagery_.size()) * 9 / 10);
+        freeSurfacePool_ = std::max<size_t>(16, surfaceCapacity_ / 16);
+        while (freeSurfaces_.size() > freeSurfacePool_) {
+            dropSurface(freeSurfaces_.back());
+            freeSurfaces_.pop_back();
+        }
+    }
+    diag("pool pressure frame %llu: %s creation failed; terrain cap %zu -> %zu surface cap %zu -> %zu imagery cap %zu -> %zu",
+         static_cast<unsigned long long>(frame_), what, terrainBefore, terrainCapacity_, surfaceBefore, surfaceCapacity_, imageryBefore,
+         imageryCapacity_);
 }
 
 std::uint64_t GlobeRenderer::addTileset(const std::string& uri, double maxSse, Vec3* center) {
@@ -546,13 +591,23 @@ void GlobeRenderer::buildTerrain(const QuadKey& k, TerrainTile& t, double priori
     d.usage.vertex_buffer = true;
     d.data = {v.data(), v.size() * sizeof(float)};
     t.vbuf = sg_make_buffer(&d);
+    if (sg_query_buffer_state(t.vbuf) != SG_RESOURCESTATE_VALID) {
+        poolPressure("buffer");
+        if (t.vbuf.id) sg_destroy_buffer(t.vbuf);
+        t.vbuf = {};
+        t.complete = false;
+        return;
+    }
     t.complete = complete;
     t.version = elevation_.version() + terrainEpoch_ * 1000000;
 }
 
 GlobeRenderer::TerrainTile& GlobeRenderer::terrain(const QuadKey& k) {
     auto it = terrain_.find(k);
-    if (it != terrain_.end()) return it->second;
+    if (it != terrain_.end()) {
+        if (sg_query_buffer_state(it->second.vbuf) != SG_RESOURCESTATE_VALID) buildTerrain(k, it->second, 0.0);
+        return it->second;
+    }
     TerrainTile& t = terrain_[k];
     buildTerrain(k, t, 0.0);
     return t;
@@ -614,6 +669,14 @@ GlobeRenderer::NodeInfo GlobeRenderer::info(const Camera& cam, const QuadKey& k)
         maxH = tt->second.maxH;
     } else if (terrainEnabled_ && !elevation_.empty()) {
         maxH = kUnknownMaxHeight * exaggeration_;
+        for (int up = 1; up <= k.level; ++up) {
+            auto at = terrain_.find(QuadKey{k.level - up, k.x >> up, k.y >> up});
+            if (at == terrain_.end() || at->second.version < 0) continue;
+            double pad = std::max(100.0 * exaggeration_, (at->second.maxH - at->second.minH) * 0.25);
+            minH = std::min(0.0, at->second.minH - pad);
+            maxH = at->second.maxH + pad;
+            break;
+        }
     }
     auto cached = spheres_.find(k);
     if (cached == spheres_.end() || cached->second.minH != static_cast<float>(minH) || cached->second.maxH != static_cast<float>(maxH)) {
@@ -667,6 +730,26 @@ GlobeRenderer::NodeInfo GlobeRenderer::info(const Camera& cam, const QuadKey& k)
     ni.refine = k.level < kMinLevel || (k.level < top && visits_ < 20000 && (ratio > 1.0 || (sticky && ratio > 0.8)));
     ni.nearRefine = k.level < top && ratio > 0.7;
     return ni;
+}
+
+void GlobeRenderer::explain(const Camera& cam, double lat, double lon, const char* tag) const {
+    if (!diagnostics_) return;
+    std::string line;
+    char buf[160];
+    for (int level = 0; level <= 22; ++level) {
+        double s = spanDeg(level);
+        QuadKey k{level, static_cast<int>(std::floor((lon + 180.0) / s)), static_cast<int>(std::floor((90.0 - lat) / s))};
+        NodeInfo ni = info(cam, k);
+        auto dr = drawn_.find(k);
+        bool drawn = dr != drawn_.end() && dr->second + 1 >= frame_;
+        auto tt = terrain_.find(k);
+        std::snprintf(buf, sizeof(buf), "L%d/%d/%d %s%s%s%s h[%.0f,%.0f] ", level, k.x, k.y, ni.visible ? "v" : "-", ni.refine ? "r" : "-",
+                      ready(k) ? "R" : "-", drawn ? "D" : "-", tt == terrain_.end() ? -1.0 : tt->second.minH,
+                      tt == terrain_.end() ? -1.0 : tt->second.maxH);
+        line += buf;
+        if (!ni.visible || drawn || !ni.refine) break;
+    }
+    diag("explain %s frame %llu %.5f %.5f: %s", tag, static_cast<unsigned long long>(frame_), lat, lon, line.c_str());
 }
 
 int GlobeRenderer::idealImageryZ(const QuadKey& k) const {
@@ -863,6 +946,13 @@ void GlobeRenderer::processLoads() {
             v.texture.image = tex.image;
             tex.view = sg_make_view(&v);
             tex.used = frame_;
+            if (sg_query_view_state(tex.view) != SG_RESOURCESTATE_VALID) {
+                poolPressure("imagery texture");
+                sg_destroy_view(tex.view);
+                sg_destroy_image(tex.image);
+                failed_[t.id] = now() + 0.5;
+                continue;
+            }
             auto old = imagery_.find(t.id);
             if (old != imagery_.end()) dropImagery(old->second);
             imagery_[t.id] = tex;
@@ -1640,7 +1730,14 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     std::vector<sg_image> mipQueue;
     for (auto& job : jobs) {
         SurfaceTile* s = acquireSurface(job.key);
+        if (sg_query_view_state(s->texture) != SG_RESOURCESTATE_VALID || sg_query_view_state(s->levels[0]) != SG_RESOURCESTATE_VALID) {
+            poolPressure("surface");
+            dropSurface(*s);
+            surface_.erase(job.key);
+            continue;
+        }
         s->used = frame_;
+        bool jobComplete = job.complete;
         sg_pass pass{};
         pass.action.colors[0].load_action = SG_LOADACTION_CLEAR;
         if (job.background) pass.action.colors[0].clear_value = {242 / 255.0f, 239 / 255.0f, 233 / 255.0f, 1.0f};
@@ -1651,6 +1748,11 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             sg_apply_pipeline(surfacePipeline_);
             for (auto& d : job.draws) {
                 if ((d.first + d.count) * 4 * sizeof(float) > kSurfaceBufferBytes) continue;
+                if (sg_query_view_state(d.texture) != SG_RESOURCESTATE_VALID) {
+                    ++invalidResources_;
+                    jobComplete = false;
+                    continue;
+                }
                 sg_bindings bind{};
                 bind.vertex_buffers[0] = surfaceBuffer_;
                 bind.views[VIEW_tex] = d.texture;
@@ -1674,6 +1776,11 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 for (const VectorDraw& vd : job.vectors) {
                     const ImageryTexture* t = vd.tile;
                     if (pass == 0 ? !t->fill.id : !t->line.id) continue;
+                    if (sg_query_buffer_state(pass == 0 ? t->fill : t->line) != SG_RESOURCESTATE_VALID) {
+                        ++invalidResources_;
+                        jobComplete = false;
+                        continue;
+                    }
                     sg_bindings vb{};
                     vb.vertex_buffers[0] = pass == 0 ? t->fill : t->line;
                     sg_apply_bindings(&vb);
@@ -1691,7 +1798,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         sg_end_pass();
         if (glMips_) {
             mipQueue.push_back(s->image);
-            s->complete = job.complete;
+            s->complete = jobComplete;
             s->version = imageryVersion_;
             s->missing = std::move(job.missing);
             s->imageryZ = job.imageryZ;
@@ -1719,7 +1826,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             sg_draw(0, 3, 1);
             sg_end_pass();
         }
-        s->complete = job.complete;
+        s->complete = jobComplete;
         s->version = imageryVersion_;
         s->missing = std::move(job.missing);
         s->imageryZ = job.imageryZ;
@@ -1751,6 +1858,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     sky.radii[0] = 6356752.0f;
     sky.radii[1] = 6356752.0f + 100000.0f;
     sky.radii[2] = cam.eyeAltitude() < 100000.0 ? 1.0f : 0.0f;
+    sky.radii[3] = holeMarker_ ? 1.0f : 0.0f;
     sg_apply_uniforms(UB_sky_fs_params, SG_RANGE(sky));
     sg_draw(0, 3, 1);
 
@@ -1905,6 +2013,18 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 }
             }
         }
+        if (sg_query_buffer_state(tt.vbuf) != SG_RESOURCESTATE_VALID) {
+            ++invalidResources_;
+            continue;
+        }
+        if (sg_query_view_state(view) != SG_RESOURCESTATE_VALID) {
+            ++invalidResources_;
+            view = fallbackView_;
+        }
+        if (sg_query_view_state(view2) != SG_RESOURCESTATE_VALID) {
+            ++invalidResources_;
+            view2 = view;
+        }
         Mat4 mvp = cam.viewProjRel() * translation(tt.center - cam.eye());
         globe_vs_params_t vsp{};
         toFloat(mvp, vsp.mvp);
@@ -1982,6 +2102,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     stats_.maxFallbackDepth = maxDepth;
     stats_.surfaces = static_cast<int>(surface_.size());
     stats_.freeSurfaces = static_cast<int>(freeSurfaces_.size());
+    stats_.invalidResources = invalidResources_;
     stats_.terrainMeshes = static_cast<int>(terrain_.size());
     stats_.gpuMegabytes = (surface_.size() + freeSurfaces_.size()) * (kSurfaceSize * kSurfaceSize * 4.0 * 4.0 / 3.0) / 1048576.0 +
                           imagery_.size() * (256.0 * 256.0 * 4.0) / 1048576.0 + terrain_.size() * (kVertexCount * kStride * 4.0) / 1048576.0;
