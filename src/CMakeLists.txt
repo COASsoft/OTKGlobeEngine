@@ -13,6 +13,7 @@ add_library(opentakengine STATIC
     feature/text.cpp
     feature/feature_layer.cpp
     feature/grid.cpp
+    model/model_layer.cpp
     render/globe_renderer.cpp
     render/gfx_impl.cpp)
 
@@ -43,7 +44,8 @@ target_include_directories(opentakengine
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${stb_SOURCE_DIR}
         ${json_SOURCE_DIR}
-        ${earcut_SOURCE_DIR})
+        ${earcut_SOURCE_DIR}
+        ${cgltf_SOURCE_DIR})
 target_compile_definitions(opentakengine PUBLIC ${OTE_GFX_BACKEND})
 target_link_libraries(opentakengine PRIVATE ote_sqlite pugixml::pugixml ote_miniz)
 if(OTE_WITH_GDAL)
@@ -67,5 +69,6 @@ ote_add_shaders(opentakengine
     render/shaders/surface.glsl
     render/shaders/sky.glsl
     render/shaders/feature.glsl
-    render/shaders/mip.glsl)
+    render/shaders/mip.glsl
+    render/shaders/model.glsl)
 ote_embed(opentakengine font_bold ${PROJECT_SOURCE_DIR}/assets/fonts/NotoSans-Bold-subset.ttf)

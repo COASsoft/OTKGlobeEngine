@@ -154,6 +154,21 @@ std::uint64_t Engine::hitTest(double sx, double sy, double radiusPx) const {
         sx, sy, radiusPx);
 }
 
+std::uint64_t Engine::addModel(const std::string& path, const ModelPlacement& placement) {
+    impl_->dirty = true;
+    return impl_->globe.models().add(path, placement);
+}
+
+bool Engine::updateModel(std::uint64_t id, const ModelPlacement& placement) {
+    impl_->dirty = true;
+    return impl_->globe.models().update(id, placement);
+}
+
+bool Engine::removeModel(std::uint64_t id) {
+    impl_->dirty = true;
+    return impl_->globe.models().remove(id);
+}
+
 void Engine::setGridEnabled(bool enabled) {
     impl_->globe.setGrid(enabled);
     impl_->dirty = true;

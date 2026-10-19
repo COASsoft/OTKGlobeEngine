@@ -108,6 +108,7 @@ bool GlobeRenderer::init() {
     surfaceBuffer_ = sg_make_buffer(&vb);
     featureBuffer_ = sg_make_buffer(&vb);
     features_.init();
+    models_.init();
 
     const std::uint8_t ocean[4] = {10, 30, 62, 255};
     sg_image_desc fd{};
@@ -229,6 +230,7 @@ void GlobeRenderer::shutdown() {
         }
         overlays_.clear();
         features_.shutdown();
+        models_.shutdown();
     }
     terrain_.clear();
     surface_.clear();
@@ -1090,6 +1092,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         sg_apply_uniforms(UB_globe_vs_params, SG_RANGE(vsp));
         sg_draw(0, kIndexCount, 1);
     }
+    models_.draw(cam, [this](double lat, double lon) { return elevationAt(lat, lon); });
     features_.drawOverlay(cam, [this](double lat, double lon) { return elevationAt(lat, lon); }, dpiScale_, flipSurface_);
     sg_end_pass();
 

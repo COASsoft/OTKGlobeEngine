@@ -138,6 +138,10 @@ public:
     std::vector<std::uint64_t> loadFeatures(const std::string& path);
     std::uint64_t hitTest(double sx, double sy, double radiusPx = 16.0) const;
 
+    std::uint64_t addModel(const std::string& path, const ModelPlacement& placement);
+    bool updateModel(std::uint64_t id, const ModelPlacement& placement);
+    bool removeModel(std::uint64_t id);
+
     void setGridEnabled(bool enabled);
     std::uint64_t addImageOverlay(const ImageOverlay& overlay);
     bool removeImageOverlay(std::uint64_t id);

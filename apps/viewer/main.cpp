@@ -51,6 +51,7 @@ struct ViewerState {
     int downloadMin = 0, downloadMax = 0;
     int downloadId = 0;
     std::vector<std::string> featureFiles;
+    std::vector<std::pair<std::string, ote::ModelPlacement>> models;
     std::string selected;
     bool hasHit = false;
     double hitX = 0, hitY = 0;
@@ -152,6 +153,7 @@ void init() {
     state->engine.setLayers(state->customLayers.empty() ? preset(state->preset) : state->customLayers);
     for (const auto& f : state->featureFiles) state->engine.loadFeatures(f);
     state->engine.setGridEnabled(state->grid);
+    for (const auto& [path, placement] : state->models) state->engine.addModel(path, placement);
     if (state->hasDownload)
         state->downloadId = state->engine.downloadRegion(0, state->download, state->downloadMin, state->downloadMax);
     state->engine.setView(state->startView);
@@ -432,6 +434,11 @@ sapp_desc sokol_main(int argc, char* argv[]) {
                                              &state->downloadMin, &state->downloadMax) == 6;
         } else if (a == "--hit") {
             state->hasHit = std::sscanf(argv[++i], "%lf,%lf", &state->hitX, &state->hitY) == 2;
+        } else if (a == "--model") {
+            ote::ModelPlacement p;
+            char path[1024] = {0};
+            if (std::sscanf(argv[++i], "%1023[^,],%lf,%lf,%lf,%lf", path, &p.position.lat, &p.position.lon, &p.heading, &p.scale) == 5)
+                state->models.push_back({path, p});
         } else if (a == "--features") {
             state->featureFiles.push_back(argv[++i]);
         } else if (a == "--grid") {

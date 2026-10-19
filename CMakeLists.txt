@@ -38,7 +38,11 @@ FetchContent_Declare(earcut
     URL https://raw.githubusercontent.com/mapbox/earcut.hpp/v3.2.4/include/mapbox/earcut.hpp
     DOWNLOAD_NO_EXTRACT TRUE
     SOURCE_SUBDIR none)
-FetchContent_MakeAvailable(sokol stb sqlite json miniz earcut)
+FetchContent_Declare(cgltf
+    URL https://raw.githubusercontent.com/jkuhlmann/cgltf/v1.15/cgltf.h
+    DOWNLOAD_NO_EXTRACT TRUE
+    SOURCE_SUBDIR none)
+FetchContent_MakeAvailable(sokol stb sqlite json miniz earcut cgltf)
 add_library(ote_miniz STATIC ${miniz_SOURCE_DIR}/miniz.c)
 target_include_directories(ote_miniz PUBLIC ${miniz_SOURCE_DIR})
 set(PUGIXML_NO_EXCEPTIONS ON CACHE BOOL "" FORCE)

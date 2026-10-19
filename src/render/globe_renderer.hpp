@@ -3,6 +3,7 @@
 #include "core/camera.hpp"
 #include "elevation/elevation.hpp"
 #include "feature/feature_layer.hpp"
+#include "model/model_layer.hpp"
 #include "raster/tile_cache.hpp"
 #include "raster/tile_loader.hpp"
 
@@ -51,6 +52,7 @@ public:
     double elevationAt(double lat, double lon) const;
     TileLoader& loader() { return loader_; }
     FeatureLayer& features() { return features_; }
+    ModelLayer& models() { return models_; }
     const FeatureLayer& features() const { return features_; }
     const TileLoader& loader() const { return loader_; }
     void setImageryScale(double s) { imageryScale_ = s; }
@@ -141,6 +143,7 @@ private:
     TileLoader loader_{6};
     ElevationManager elevation_{4};
     FeatureLayer features_;
+    ModelLayer models_;
     std::atomic<bool> offline_{false};
     std::vector<ImageryLayer> layers_;
     std::vector<TileMatrix> matrices_;

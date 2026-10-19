@@ -33,7 +33,7 @@ out vec4 frag_color;
 
 void main() {
     vec4 c = base_color * texture(sampler2D(tex, smp), uv);
-    float d = max(dot(normalize(n), normalize(light.xyz)), 0.0);
+    float d = abs(dot(normalize(n), normalize(light.xyz)));
     frag_color = vec4(c.rgb * (0.35 + 0.65 * d), c.a);
 }
 @end

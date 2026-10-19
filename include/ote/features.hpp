@@ -47,6 +47,15 @@ struct Feature {
     bool visible = true;
 };
 
+struct ModelPlacement {
+    Coord position;
+    AltitudeMode altitudeMode = AltitudeMode::ClampToGround;
+    double heading = 0;
+    double pitch = 0;
+    double roll = 0;
+    double scale = 1;
+};
+
 struct GroundOverlay {
     std::string name;
     double north = 0;
