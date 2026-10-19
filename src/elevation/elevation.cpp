@@ -399,7 +399,15 @@ bool ElevationManager::gridFor(double west, double south, double east, double no
         const TileMatrix& m = providers_[s]->matrix();
         double maxLat = maxLatitude(m.srid);
         double so = std::max(south, -maxLat), no = std::min(north, maxLat);
-        if (so >= no) continue;
+        if (so >= no) {
+            if (north > maxLat) {
+                so = maxLat - 1e-6;
+                no = maxLat;
+            } else {
+                so = -maxLat;
+                no = -maxLat + 1e-6;
+            }
+        }
         double target = (east - west) / (posts - 1) * m.unitsPerDegree();
         int z = m.bestLevel(target);
         if (z < 0 || m.levels[z].resolutionX < target * 0.125) continue;
@@ -420,12 +428,11 @@ bool ElevationManager::gridFor(double west, double south, double east, double no
         bool lastExact = false;
         for (int j = 0; j < posts; ++j) {
             double lat = south + (north - south) * j / (posts - 1);
-            double py = projectY(m.srid, lat);
+            double py = projectY(m.srid, std::clamp(lat, -maxLat * 0.9999999, maxLat * 0.9999999));
             for (int i = 0; i < posts; ++i) {
                 float& h = heights[static_cast<size_t>(j) * posts + i];
                 if (!std::isnan(h)) continue;
                 double lon = west + (east - west) * i / (posts - 1);
-                if (std::abs(lat) > maxLat) continue;
                 double px = projectX(m.srid, lon);
                 if (!(last && lastExact && px >= last->minX && px <= last->maxX && py >= last->minY &&
                       py <= last->maxY)) {
@@ -441,8 +448,8 @@ bool ElevationManager::gridFor(double west, double south, double east, double no
 double ElevationManager::sample(double lat, double lon) const {
     for (int s = 0; s < static_cast<int>(providers_.size()); ++s) {
         const TileMatrix& m = providers_[s]->matrix();
-        if (std::abs(lat) > maxLatitude(m.srid)) continue;
-        double px = projectX(m.srid, lon), py = projectY(m.srid, lat);
+        double ml = maxLatitude(m.srid) * 0.9999999;
+        double px = projectX(m.srid, lon), py = projectY(m.srid, std::clamp(lat, -ml, ml));
         bool exact = false;
         if (const HeightGrid* g = best(s, m.maxZoom, px, py, exact)) {
             float v = g->sample(px, py);

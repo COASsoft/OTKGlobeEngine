@@ -138,6 +138,7 @@ private:
         float opacity = 1.0f;
         int first = 0;
         int count = 0;
+        float tint[3] = {1.0f, 1.0f, 1.0f};
     };
     struct VectorDraw {
         const ImageryTexture* tile = nullptr;

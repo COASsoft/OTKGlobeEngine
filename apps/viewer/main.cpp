@@ -121,13 +121,13 @@ std::vector<ote::ImageryLayer> preset(int i) {
         v.type = ote::SourceType::Mvt;
         v.url = "https://tiles.openfreemap.org/planet";
         v.maxZoom = 14;
-        layers = {v};
+        layers = {v, ote::polarFillLayer()};
     } else if (i == 2) {
         ote::ImageryLayer osm;
         osm.name = "OpenStreetMap";
         osm.url = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
         osm.maxZoom = 19;
-        layers = {osm};
+        layers = {osm, ote::polarFillLayer()};
     }
     return layers;
 }

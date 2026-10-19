@@ -82,12 +82,9 @@ struct Engine::Impl {
         }
     }
 
-    double poleLimit() const {
-        double radius = camera.gsd * 0.5 * std::hypot(static_cast<double>(camera.width), static_cast<double>(camera.height)) / 111320.0;
-        return 90.0 - std::clamp(radius, 0.5, 25.0);
-    }
+    double poleLimit() const { return 89.99; }
 
-    void rotateFocus(Vec3 axis, double angle) {
+    void rotateFocus(Vec3 axis, double angle, double maxLonDelta = 360.0) {
         Vec3 f0 = camera.focusEcef();
         Vec3 e, n, u;
         enuFrame(camera.focus.lat, camera.focus.lon, e, n, u);
@@ -110,6 +107,8 @@ struct Engine::Impl {
             }
         }
         GeoPoint g = ecefToGeodetic(rotateAxis(f0, axis, angle * s));
+        double dLon = std::fmod(g.lon - camera.focus.lon + 540.0, 360.0) - 180.0;
+        if (headingLock && std::abs(dLon) > maxLonDelta) g.lon = camera.focus.lon + std::copysign(maxLonDelta, dLon);
         camera.focus.lat = g.lat;
         camera.focus.lon = g.lon;
         if (!headingLock) {
@@ -120,11 +119,11 @@ struct Engine::Impl {
         camera.update();
     }
 
-    void moveCamera(Vec3 from, Vec3 to) {
+    void moveCamera(Vec3 from, Vec3 to, double maxLonDelta = 360.0) {
         Vec3 axis = cross(from, to);
         double len = length(axis);
         if (len < 1e-12) return;
-        rotateFocus(axis, std::atan2(len, dot(from, to)));
+        rotateFocus(axis, std::atan2(len, dot(from, to)), maxLonDelta);
     }
 };
 
@@ -516,8 +515,9 @@ void Engine::pan(double x0, double y0, double x1, double y1) {
         return;
     }
     Vec3 p0, p1;
+    double lonCap = 180.0 * std::hypot(x1 - x0, y1 - y0) / std::max(static_cast<double>(std::min(c.width, c.height)), 1.0);
     if (impl_->pickGround(x0, y0, p0) && impl_->pickGround(x1, y1, p1)) {
-        impl_->moveCamera(p1, p0);
+        impl_->moveCamera(p1, p0, lonCap);
     } else {
         Vec3 e, n, u;
         enuFrame(c.focus.lat, c.focus.lon, e, n, u);
@@ -527,7 +527,7 @@ void Engine::pan(double x0, double y0, double x1, double y1) {
         Vec3 fwd = n * std::cos(az) + e * std::sin(az);
         Vec3 move = right * dx + fwd * dy;
         double dist = length(move);
-        if (dist > 0) impl_->rotateFocus(cross(u, move * (1.0 / dist)), dist / kWgs84A);
+        if (dist > 0) impl_->rotateFocus(cross(u, move * (1.0 / dist)), dist / kWgs84A, lonCap);
     }
     impl_->dirty = true;
 }
@@ -676,7 +676,26 @@ std::vector<ImageryLayer> defaultLayers() {
     imagery.name = "World Imagery";
     imagery.url = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
     imagery.maxZoom = 19;
-    return {imagery};
+    return {imagery, polarFillLayer()};
+}
+
+ImageryLayer polarFillLayer() {
+    ImageryLayer polar;
+    polar.name = "NASA Blue Marble Shaded Relief and Bathymetry (polar fill)";
+    polar.type = SourceType::Wms;
+    polar.url = "https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi";
+    polar.wmsLayers = "BlueMarble_ShadedRelief_Bathymetry";
+    polar.wmsFormat = "image/jpeg";
+    polar.wmsVersion = "1.3.0";
+    polar.srid = 4326;
+    polar.maxZoom = 7;
+    polar.polarFill = true;
+    const float north[3] = {1.79f, 2.27f, 1.26f}, south[3] = {1.02f, 1.03f, 1.075f};
+    for (int i = 0; i < 3; ++i) {
+        polar.polarTintNorth[i] = north[i];
+        polar.polarTintSouth[i] = south[i];
+    }
+    return polar;
 }
 
 }

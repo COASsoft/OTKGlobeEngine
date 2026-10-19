@@ -31,6 +31,9 @@ struct ImageryLayer {
     bool tms = false;
     bool cache = true;
     float opacity = 1.0f;
+    bool polarFill = false;
+    float polarTintNorth[3] = {1.0f, 1.0f, 1.0f};
+    float polarTintSouth[3] = {1.0f, 1.0f, 1.0f};
     std::string wmsLayers;
     std::string wmsStyles;
     std::string wmsFormat = "image/png";
@@ -210,6 +213,7 @@ private:
 };
 
 std::vector<ImageryLayer> defaultLayers();
+ImageryLayer polarFillLayer();
 std::vector<ElevationLayer> defaultElevation();
 std::vector<ImageryLayer> loadMobac(const std::string& xmlOrPath);
 void configureGfx(sg_desc& desc);

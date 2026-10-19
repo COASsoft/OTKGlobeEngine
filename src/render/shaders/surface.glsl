@@ -23,7 +23,7 @@ out vec4 frag_color;
 
 void main() {
     vec4 c = texture(sampler2D(tex, smp), uv);
-    frag_color = vec4(c.rgb, c.a * tint.a);
+    frag_color = vec4(c.rgb * tint.rgb, c.a * tint.a);
 }
 @end
 

@@ -509,7 +509,7 @@ void GlobeRenderer::buildTerrain(const QuadKey& k, TerrainTile& t, double priori
                                static_cast<float>(nz), hc});
         }
     }
-    double skirt = kSkirt * std::max(1.0, exaggeration_);
+    double skirt = std::max({kSkirt, span * 111320.0 * 0.006, static_cast<double>(maxH - minH) * 0.25}) * std::max(1.0, exaggeration_);
     for (int e = 0; e < 4; ++e)
         for (int i = 0; i < kPosts; ++i) {
             int gi = e == 0 ? i : e == 1 ? i : e == 2 ? 0 : kGrid;
@@ -883,7 +883,9 @@ void GlobeRenderer::requestBase() {
             if (!m.hasLevel(z)) continue;
             const int w = m.levels[z].matrixWidth, h = m.levels[z].matrixHeight;
             if (w * h > 64) break;
+            bool fill = l < static_cast<int>(layers_.size()) && layers_[l].polarFill;
             for (int i = 0; i < w * h; ++i) {
+                if (fill && i / w != 0 && i / w != h - 1) continue;
                 TileId id{l, z, i % w, i / w};
                 if (imagery_.find(id) != imagery_.end()) continue;
                 auto f = failed_.find(id);
@@ -938,10 +940,34 @@ bool GlobeRenderer::buildSurfaceJob(const QuadKey& k, double priority, SurfaceJo
     Bounds b = bounds(k);
     double span = b.north - b.south;
     bool complete = true;
+    double coverLat = 0;
+    bool anyCover = false;
+    for (int l = 0; l < static_cast<int>(matrices_.size()) && l < static_cast<int>(layers_.size()); ++l)
+        if (!layers_[l].polarFill) {
+            coverLat = std::max(coverLat, maxLatitude(matrices_[l].srid));
+            anyCover = true;
+        }
     for (int l = 0; l < static_cast<int>(matrices_.size()) && l < static_cast<int>(layers_.size()); ++l) {
-        const TileMatrix& m = matrices_[l];
-        double maxLat = maxLatitude(m.srid);
-        double south = std::max(b.south, -maxLat), north = std::min(b.north, maxLat);
+      const TileMatrix& m = matrices_[l];
+      double maxLat = maxLatitude(m.srid);
+      double bandS[2], bandN[2];
+      int bands = 0;
+      if (layers_[l].polarFill && anyCover) {
+          if (coverLat >= maxLat) continue;
+          if (b.north > coverLat) {
+              bandS[bands] = std::max(b.south, coverLat);
+              bandN[bands++] = std::min(b.north, maxLat);
+          }
+          if (b.south < -coverLat) {
+              bandS[bands] = std::max(b.south, -maxLat);
+              bandN[bands++] = std::min(b.north, -coverLat);
+          }
+      } else {
+          bandS[bands] = std::max(b.south, -maxLat);
+          bandN[bands++] = std::min(b.north, maxLat);
+      }
+      for (int band = 0; band < bands; ++band) {
+        double south = bandS[band], north = bandN[band];
         if (south >= north) continue;
         double target = span / kSurfaceSize * m.unitsPerDegree();
         int z = m.bestLevel(target);
@@ -1003,8 +1029,14 @@ bool GlobeRenderer::buildSurfaceJob(const QuadKey& k, double priority, SurfaceJo
                     emit(e, la1);
                     emit(w, la1);
                 }
-                job->draws.push_back({tex->view, layers_[l].opacity, first, rows * 6});
+                SurfaceDraw sd{tex->view, layers_[l].opacity, first, rows * 6};
+                if (layers_[l].polarFill) {
+                    const float* t = north > 0 ? layers_[l].polarTintNorth : layers_[l].polarTintSouth;
+                    for (int c = 0; c < 3; ++c) sd.tint[c] = t[c];
+                }
+                job->draws.push_back(sd);
             }
+      }
     }
     if (job) {
         for (const auto& [id, o] : overlays_) {
@@ -1394,6 +1426,9 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 bind.samplers[SMP_smp] = imagerySampler_;
                 sg_apply_bindings(&bind);
                 surface_fs_params_t fsp{};
+                fsp.tint[0] = d.tint[0];
+                fsp.tint[1] = d.tint[1];
+                fsp.tint[2] = d.tint[2];
                 fsp.tint[3] = d.opacity;
                 sg_apply_uniforms(UB_surface_fs_params, SG_RANGE(fsp));
                 sg_draw(d.first, d.count, 1);
