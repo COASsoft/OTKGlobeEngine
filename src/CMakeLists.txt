@@ -1,5 +1,6 @@
 add_library(opentakengine STATIC
     engine.cpp
+    capi.cpp
     core/geo.cpp
     core/camera.cpp
     core/mgrs.cpp
@@ -72,3 +73,15 @@ ote_add_shaders(opentakengine
     render/shaders/mip.glsl
     render/shaders/model.glsl)
 ote_embed(opentakengine font_bold ${PROJECT_SOURCE_DIR}/assets/fonts/NotoSans-Bold-subset.ttf)
+
+add_library(opentakengine_c SHARED capi_shared.cpp)
+target_link_libraries(opentakengine_c PRIVATE opentakengine)
+target_compile_definitions(opentakengine_c PRIVATE OTE_SHARED OTE_BUILDING)
+if(MSVC)
+    target_link_options(opentakengine_c PRIVATE /WHOLEARCHIVE:opentakengine)
+elseif(APPLE)
+    target_link_options(opentakengine_c PRIVATE -Wl,-force_load,$<TARGET_FILE:opentakengine>)
+else()
+    target_link_options(opentakengine_c PRIVATE -Wl,--whole-archive $<TARGET_FILE:opentakengine> -Wl,--no-whole-archive)
+endif()
+set_source_files_properties(capi.cpp PROPERTIES COMPILE_DEFINITIONS "OTE_SHARED;OTE_BUILDING")
