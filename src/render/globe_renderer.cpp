@@ -528,15 +528,24 @@ GlobeRenderer::NodeInfo GlobeRenderer::info(const Camera& cam, const QuadKey& k)
     } else if (terrainEnabled_ && !elevation_.empty()) {
         maxH = kUnknownMaxHeight * exaggeration_;
     }
-    double clat = 0.5 * (b.south + b.north), clon = 0.5 * (b.west + b.east);
-    Vec3 c = geodeticToEcef(clat, clon, 0.5 * (minH + maxH));
-    double r = 0;
-    for (double la : {b.south, clat, b.north})
-        for (double lo : {b.west, clon, b.east}) {
-            r = std::max(r, length(geodeticToEcef(la, lo, minH) - c));
-            r = std::max(r, length(geodeticToEcef(la, lo, maxH) - c));
-        }
-    r *= 1.02;
+    auto cached = spheres_.find(k);
+    if (cached == spheres_.end() || cached->second.minH != static_cast<float>(minH) || cached->second.maxH != static_cast<float>(maxH)) {
+        double clat = 0.5 * (b.south + b.north), clon = 0.5 * (b.west + b.east);
+        Sphere sp;
+        sp.center = geodeticToEcef(clat, clon, 0.5 * (minH + maxH));
+        for (double la : {b.south, clat, b.north})
+            for (double lo : {b.west, clon, b.east}) {
+                sp.radius = std::max(sp.radius, length(geodeticToEcef(la, lo, minH) - sp.center));
+                sp.radius = std::max(sp.radius, length(geodeticToEcef(la, lo, maxH) - sp.center));
+            }
+        sp.radius *= 1.02;
+        sp.minH = static_cast<float>(minH);
+        sp.maxH = static_cast<float>(maxH);
+        if (spheres_.size() > 50000) spheres_.clear();
+        cached = spheres_.insert_or_assign(k, sp).first;
+    }
+    Vec3 c = cached->second.center;
+    double r = cached->second.radius;
     Vec3 rel = c - eye_;
     double dist = length(rel);
     ni.distance = dist;

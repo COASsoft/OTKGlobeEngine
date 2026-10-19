@@ -20,6 +20,7 @@
 #include <cmath>
 #include <cstdio>
 #include <algorithm>
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <string>
@@ -65,6 +66,9 @@ struct ViewerState {
     std::uint64_t viewshed = 0;
     bool shotViewshed = false;
     bool zoomTest = false;
+    int bench = 0;
+    int benchDone = 0;
+    double benchTotal = 0, benchMax = 0;
     int memory = 0;
     bool shotFirstPerson = false;
     double fpHeading = 0, fpPitch = 0, fpHeight = 2.0;
@@ -232,8 +236,10 @@ void frame() {
         sg_attachments att{};
         att.colors[0] = state->shotColorView;
         att.depth_stencil = state->shotDepthView;
+        auto benchStart = std::chrono::steady_clock::now();
         state->engine.frameOffscreen(att, state->width, state->height);
         sg_commit();
+        double benchMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - benchStart).count();
         ++state->frames;
         state->shotElapsed += sapp_frame_duration();
         if (state->shotViewshed && !state->viewshed && state->shotElapsed > 3.0 && !state->engine.needsRedraw()) {
@@ -254,6 +260,13 @@ void frame() {
             }
         }
         bool zooming = state->zoomTest && (!state->zoomStarted || state->engine.animating());
+        if (state->bench > 0 && state->shotElapsed > 1.0 && state->settledFrames > 10 && !zooming) {
+            state->engine.rotate(0.05);
+            ++state->benchDone;
+            state->benchTotal += benchMs;
+            state->benchMax = std::max(state->benchMax, benchMs);
+        }
+        zooming = zooming || (state->bench > 0 && state->benchDone < state->bench);
         bool downloading = (state->downloadId && !state->engine.downloadStatus(state->downloadId).finished) || zooming;
         bool settled = state->shotElapsed > 1.0 && state->settledFrames > 10 && !downloading;
         if (settled || state->shotElapsed >= state->shotTimeout) {
@@ -273,6 +286,9 @@ void frame() {
                 ote::View fv = state->engine.view();
                 std::fprintf(f, "focus %.5f %.5f elevation %.1f", fv.lat, fv.lon, state->engine.elevationAt(fv.lat, fv.lon));
                 std::fputc(10, f);
+                if (state->bench > 0)
+                    std::fprintf(f, "bench frames=%d avg_ms=%.2f max_ms=%.2f\n", state->benchDone,
+                                 state->benchDone ? state->benchTotal / state->benchDone : 0.0, state->benchMax);
                 if (state->zoomTest)
                     std::fprintf(f, "zoom frames=%lld frames_with_incomplete=%lld avg_incomplete=%.2f max_incomplete=%lld\n",
                                  state->zoomFrames, state->zoomBadFrames,
@@ -534,6 +550,8 @@ sapp_desc sokol_main(int argc, char* argv[]) {
             state->shotFirstPerson = std::sscanf(argv[++i], "%lf,%lf,%lf", &state->fpHeading, &state->fpPitch, &state->fpHeight) >= 2;
         } else if (a == "--memory") {
             state->memory = std::atoi(argv[++i]);
+        } else if (a == "--bench") {
+            state->bench = std::atoi(argv[++i]);
         } else if (a == "--grid") {
             state->grid = std::atoi(argv[++i]) != 0;
         } else if (a == "--viewshed") {

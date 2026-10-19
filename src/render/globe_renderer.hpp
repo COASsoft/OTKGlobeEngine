@@ -198,6 +198,12 @@ private:
     size_t surfaceCapacity_ = 800, imageryCapacity_ = 488, terrainCapacity_ = 3000, freeSurfacePool_ = 50;
 #endif
     std::unordered_map<QuadKey, Fade, QuadKeyHash> fades_;
+    struct Sphere {
+        Vec3 center;
+        double radius = 0;
+        float minH = 0, maxH = 0;
+    };
+    mutable std::unordered_map<QuadKey, Sphere, QuadKeyHash> spheres_;
     double needScale_ = 1.0;
     bool prefetching_ = false;
     std::vector<Need> prefetch_;
