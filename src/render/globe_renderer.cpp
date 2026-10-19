@@ -35,7 +35,7 @@ constexpr int kTerrainBuildsPerFrame = 32;
 constexpr size_t kUploadsPerFrame = 48;
 constexpr size_t kSurfaceBufferBytes = 4 * 1024 * 1024;
 constexpr double kRetrySeconds = 30.0;
-constexpr int kBaseZoom = 2;
+constexpr int kBaseZoom = 3;
 constexpr double kSkirt = 500.0;
 constexpr double kUnknownMaxHeight = 4500.0;
 
@@ -571,7 +571,10 @@ bool GlobeRenderer::progressed(const SurfaceTile& s) const {
     return false;
 }
 
-void GlobeRenderer::need(const QuadKey& k, double priority) { needs_.push_back({k, priority * needScale_}); }
+void GlobeRenderer::need(const QuadKey& k, double priority) {
+    if (prefetching_) prefetch_.push_back({k, priority * needScale_});
+    else needs_.push_back({k, priority});
+}
 
 void GlobeRenderer::traverse(const Camera& cam, const QuadKey& k, std::vector<DrawTile>& out) {
     ++visits_;
@@ -621,11 +624,11 @@ void GlobeRenderer::traverse(const Camera& cam, const QuadKey& k, std::vector<Dr
     need(k, ni.distance);
     if (k.level > kMinLevel) {
         QuadKey parent{k.level - 1, k.x / 2, k.y / 2};
-        need(parent, ni.distance * 3.0);
-        if (k.level > kMinLevel + 1) need({k.level - 2, k.x / 4, k.y / 4}, ni.distance * 6.0);
+        prefetch(parent, ni.distance * 3.0);
+        if (k.level > kMinLevel + 1) prefetch({k.level - 2, k.x / 4, k.y / 4}, ni.distance * 6.0);
     }
     if (ni.nearRefine && ready(k))
-        for (int i = 0; i < 4; ++i) need(kids[i], ni.distance * 4.0);
+        for (int i = 0; i < 4; ++i) prefetch(kids[i], ni.distance * 4.0);
     out.push_back({k, ni.distance});
 }
 
@@ -886,6 +889,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     ++frame_;
     requests_.clear();
     needs_.clear();
+    prefetch_.clear();
     elevation_.beginFrame();
     processLoads();
     bool elevationChanged = elevation_.processResults(32);
@@ -943,7 +947,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     terrain({0, 1, 0});
     traverse(cam, {0, 0, 0}, tiles);
     traverse(cam, {0, 1, 0}, tiles);
-    if (viewComplete_) {
+    if (viewComplete_ && loader_.pending() < 24) {
         Camera wide = cam;
         wide.gsd = cam.gsd * 2.5;
         wide.update();
@@ -964,17 +968,32 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         }
         std::vector<DrawTile> ignored;
         needScale_ = 20.0;
+        prefetching_ = true;
         int savedVisits = visits_;
         visits_ = 0;
         traverse(wide, {0, 0, 0}, ignored);
         traverse(wide, {0, 1, 0}, ignored);
         visits_ = savedVisits;
         needScale_ = 1.0;
+        prefetching_ = false;
         frustum_ = saved;
         eye_ = savedEye;
     }
     std::sort(tiles.begin(), tiles.end(), [](const DrawTile& a, const DrawTile& b) { return a.distance < b.distance; });
 
+    {
+        size_t activeImagery = 0;
+        for (const auto& [id, t] : imagery_)
+            if (t.used + 1 >= frame_) ++activeImagery;
+        size_t visible = needs_.size();
+        double room = std::min(1.0 - static_cast<double>(activeImagery) / kImageryCapacity,
+                               1.0 - static_cast<double>(visible) / kSurfaceCapacity);
+        if (room > 0.35) {
+            size_t budget = static_cast<size_t>(std::min(256.0, (room - 0.35) * kSurfaceCapacity));
+            std::sort(prefetch_.begin(), prefetch_.end(), [](const Need& a, const Need& b) { return a.priority < b.priority; });
+            for (size_t i = 0; i < prefetch_.size() && i < budget; ++i) needs_.push_back(prefetch_[i]);
+        }
+    }
     std::sort(needs_.begin(), needs_.end(), [](const Need& a, const Need& b) {
         if (!(a.key == b.key)) {
             if (a.key.level != b.key.level) return a.key.level < b.key.level;
@@ -1315,6 +1334,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                      static_cast<unsigned long long>(frame_), tiles.size(), needs_.size(), work.size(), renders, builds,
                      loader_.pending(), elevation_.pending(), incomplete, waitImagery, unrendered, waitTerrain, maxLevel,
                      cam.gsd);
+        std::fprintf(trace_, "  loader %s\n", loader_.debug().c_str());
         int shown = 0;
         for (auto& dt : tiles) {
             auto sf = surface_.find(dt.key);
