@@ -44,7 +44,7 @@ int main() {
     check(toMgrs(46.8529, -121.7604, 5) == "10T ES 94499 89563", "mgrs rainier");
     for (auto [lat, lon] : {std::pair{46.8529, -121.7604}, {-33.8688, 151.2093}, {60.0, 5.5}, {0.5, 0.5}, {-77.8, 166.7}}) {
         double rl, ro;
-        bool ok = fromMgrs(toMgrs(lat, lon, 5), rl, ro) && std::abs(rl - lat) < 2e-5 && std::abs(ro - lon) < 2e-5;
+        bool ok = fromMgrs(toMgrs(lat, lon, 5), rl, ro) && length(geodeticToEcef(rl, ro, 0) - geodeticToEcef(lat, lon, 0)) < 1.5;
         check(ok, ("mgrs roundtrip " + std::to_string(lat)).c_str());
     }
     check(utmZone(60.0, 5.5) == 32, "utm norway exception");
