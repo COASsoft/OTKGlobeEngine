@@ -94,6 +94,51 @@ void Engine::setOffline(bool offline) {
     impl_->dirty = true;
 }
 
+std::uint64_t Engine::addFeature(const Feature& f) {
+    impl_->dirty = true;
+    return impl_->globe.features().add(f);
+}
+
+bool Engine::updateFeature(std::uint64_t id, const Feature& f) {
+    impl_->dirty = true;
+    return impl_->globe.features().update(id, f);
+}
+
+bool Engine::removeFeature(std::uint64_t id) {
+    impl_->dirty = true;
+    return impl_->globe.features().remove(id);
+}
+
+void Engine::clearFeatures() {
+    impl_->dirty = true;
+    impl_->globe.features().clear();
+}
+
+bool Engine::feature(std::uint64_t id, Feature& out) const { return impl_->globe.features().get(id, out); }
+
+std::vector<std::uint64_t> Engine::featureIds() const { return impl_->globe.features().ids(); }
+
+std::vector<std::uint64_t> Engine::loadFeatures(const std::string& path) {
+    std::vector<std::uint64_t> ids;
+    for (const Feature& f : parseFeatures(path)) ids.push_back(addFeature(f));
+    return ids;
+}
+
+std::uint64_t Engine::hitTest(double sx, double sy, double radiusPx) const {
+    const Impl& m = *impl_;
+    return m.globe.features().hitTest(
+        m.camera, [&m](double lat, double lon) { return m.globe.elevationAt(lat, lon); },
+        [&m](double x, double y, double& lat, double& lon) {
+            Vec3 p;
+            if (!m.pickGround(x, y, p)) return false;
+            GeoPoint g = ecefToGeodetic(p);
+            lat = g.lat;
+            lon = g.lon;
+            return true;
+        },
+        sx, sy, radiusPx);
+}
+
 int Engine::downloadRegion(int layer, const Region& region, int minZoom, int maxZoom) {
     return impl_->globe.loader().startDownload(layer, region, minZoom, maxZoom);
 }

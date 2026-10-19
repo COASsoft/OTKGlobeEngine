@@ -374,7 +374,7 @@ void FeatureLayer::drawOverlay(const Camera& cam, const GroundFn& ground, double
         z = c.z / c.w;
         return true;
     };
-    auto visible = [&](Vec3 p) { return dot(normalize(p), eye - p) > -1.0; };
+    auto visible = [&](Vec3 p) { return dot(normalize(p), normalize(eye - p)) > -0.05; };
     auto nx = [&](double x) { return static_cast<float>(x / W * 2.0 - 1.0); };
     auto ny = [&](double y) { return static_cast<float>(1.0 - y / H * 2.0); };
 
@@ -460,7 +460,12 @@ void FeatureLayer::drawOverlay(const Camera& cam, const GroundFn& ground, double
                 lon = m[0];
                 lat = m[1];
             }
-            Vec3 e = geodeticToEcef(lat, lon, ground(lat, lon));
+            double alt = 0;
+            if (f.altitudeMode != AltitudeMode::ClampToGround && !f.geometries.empty() && !f.geometries[0].points.empty()) {
+                const auto& pts = f.geometries[0].points;
+                alt = pts[pts.size() / 2].alt;
+            }
+            Vec3 e = geodeticToEcef(lat, lon, altitude(it, lat, lon, alt, ground));
             double sx, sy, sz;
             if (visible(e) && project(e, sx, sy, sz) && sx > 0 && sy > 0 && sx < W && sy < H)
                 labels.push_back({f.name, sx, sy, -size * 0.5, length(e - eye) * 4.0, {lc[0], lc[1], lc[2], lc[3]}, size});

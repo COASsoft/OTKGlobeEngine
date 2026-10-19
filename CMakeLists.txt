@@ -26,7 +26,20 @@ FetchContent_Declare(sqlite
 FetchContent_Declare(pugixml
     GIT_REPOSITORY https://github.com/zeux/pugixml.git
     GIT_TAG v1.16)
-FetchContent_MakeAvailable(sokol stb sqlite)
+FetchContent_Declare(json
+    URL https://github.com/nlohmann/json/releases/download/v3.12.0/json.hpp
+    DOWNLOAD_NO_EXTRACT TRUE
+    SOURCE_SUBDIR none)
+FetchContent_Declare(miniz
+    URL https://github.com/richgel999/miniz/releases/download/3.1.2/miniz-3.1.2.zip
+    SOURCE_SUBDIR none)
+FetchContent_Declare(earcut
+    URL https://raw.githubusercontent.com/mapbox/earcut.hpp/v3.2.4/include/mapbox/earcut.hpp
+    DOWNLOAD_NO_EXTRACT TRUE
+    SOURCE_SUBDIR none)
+FetchContent_MakeAvailable(sokol stb sqlite json miniz earcut)
+add_library(ote_miniz STATIC ${miniz_SOURCE_DIR}/miniz.c)
+target_include_directories(ote_miniz PUBLIC ${miniz_SOURCE_DIR})
 set(PUGIXML_NO_EXCEPTIONS ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(pugixml)
 
@@ -39,6 +52,7 @@ if(UNIX AND NOT APPLE AND NOT ANDROID)
 endif()
 
 include(cmake/shaders.cmake)
+include(cmake/embed.cmake)
 
 if(WIN32)
     set(OTE_GFX_BACKEND SOKOL_D3D11)

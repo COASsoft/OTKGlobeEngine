@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2">
+<Document>
+  <Style id="red"><LineStyle><color>ff0000ff</color><width>4</width></LineStyle><PolyStyle><color>400000ff</color></PolyStyle><IconStyle><color>ff0000ff</color><scale>1.2</scale></IconStyle></Style>
+  <StyleMap id="redmap"><Pair><key>normal</key><styleUrl>#red</styleUrl></Pair></StyleMap>
+  <Placemark><name>Rainier Summit</name><styleUrl>#redmap</styleUrl><Point><coordinates>-121.7603,46.8529,4392</coordinates></Point></Placemark>
+  <Placemark><name>Summit Area</name><styleUrl>#red</styleUrl><Polygon><outerBoundaryIs><LinearRing><coordinates>-121.79,46.84 -121.73,46.84 -121.73,46.87 -121.79,46.87 -121.79,46.84</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>
+  <Placemark><name>Flight Path</name><Style><LineStyle><color>ff00ff00</color><width>3</width></LineStyle></Style><LineString><altitudeMode>absolute</altitudeMode><coordinates>-122.2,46.6,6000 -121.76,46.85,6000 -121.3,47.1,6000</coordinates></LineString></Placemark>
+</Document>
+</kml>

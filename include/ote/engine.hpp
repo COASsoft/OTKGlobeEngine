@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 
+#include "ote/features.hpp"
+
 struct sg_swapchain;
 struct sg_attachments;
 struct sg_desc;
@@ -108,6 +110,15 @@ public:
     void zoomAt(double sx, double sy, double factor);
     void rotate(double degrees);
     void tiltBy(double degrees);
+
+    std::uint64_t addFeature(const Feature& feature);
+    bool updateFeature(std::uint64_t id, const Feature& feature);
+    bool removeFeature(std::uint64_t id);
+    void clearFeatures();
+    bool feature(std::uint64_t id, Feature& out) const;
+    std::vector<std::uint64_t> featureIds() const;
+    std::vector<std::uint64_t> loadFeatures(const std::string& path);
+    std::uint64_t hitTest(double sx, double sy, double radiusPx = 16.0) const;
 
     int downloadRegion(int layer, const Region& region, int minZoom, int maxZoom);
     std::int64_t countRegionTiles(int layer, const Region& region, int minZoom, int maxZoom) const;

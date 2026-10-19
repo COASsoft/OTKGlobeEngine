@@ -2,6 +2,7 @@
 
 #include "core/camera.hpp"
 #include "elevation/elevation.hpp"
+#include "feature/feature_layer.hpp"
 #include "raster/tile_cache.hpp"
 #include "raster/tile_loader.hpp"
 
@@ -46,6 +47,8 @@ public:
     void setDepthPerception(bool enabled) { depthPerception_ = enabled; }
     double elevationAt(double lat, double lon) const;
     TileLoader& loader() { return loader_; }
+    FeatureLayer& features() { return features_; }
+    const FeatureLayer& features() const { return features_; }
     const TileLoader& loader() const { return loader_; }
     void setImageryScale(double s) { imageryScale_ = s; }
     void setDpiScale(double s) { dpiScale_ = s; }
@@ -103,6 +106,8 @@ private:
         QuadKey key;
         std::vector<SurfaceDraw> draws;
         std::vector<TileId> missing;
+        int featureFirst = 0;
+        int featureCount = 0;
         bool complete = false;
     };
 
@@ -127,6 +132,7 @@ private:
     TileCache cache_;
     TileLoader loader_{6};
     ElevationManager elevation_{4};
+    FeatureLayer features_;
     std::atomic<bool> offline_{false};
     std::vector<ImageryLayer> layers_;
     std::vector<TileMatrix> matrices_;
@@ -141,6 +147,7 @@ private:
     sg_buffer indexBuffer_{};
     sg_buffer skyBuffer_{};
     sg_buffer surfaceBuffer_{};
+    sg_buffer featureBuffer_{};
     sg_image fallbackImage_{};
     sg_view fallbackView_{};
     sg_sampler sampler_{};

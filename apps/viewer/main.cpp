@@ -47,6 +47,11 @@ struct ViewerState {
     ote::Region download;
     int downloadMin = 0, downloadMax = 0;
     int downloadId = 0;
+    std::vector<std::string> featureFiles;
+    std::string selected;
+    bool hasHit = false;
+    double hitX = 0, hitY = 0;
+    float downX = 0, downY = 0;
     bool terrain = true;
     bool depth = true;
     double exaggeration = 1.0;
@@ -125,6 +130,7 @@ void init() {
         state->engine.setTerrainExaggeration(state->exaggeration);
     }
     state->engine.setLayers(state->customLayers.empty() ? preset(state->preset) : state->customLayers);
+    for (const auto& f : state->featureFiles) state->engine.loadFeatures(f);
     if (state->hasDownload)
         state->downloadId = state->engine.downloadRegion(0, state->download, state->downloadMin, state->downloadMax);
     state->engine.setView(state->startView);
@@ -188,6 +194,18 @@ void frame() {
                 std::fprintf(f, "%s frames=%d seconds=%.1f settled=%d tiles=%d L%d imagery=%d pending=%d\n",
                              ok ? "saved" : "failed", state->frames, state->shotElapsed, settled ? 1 : 0,
                              s.terrainTiles, s.maxLevel, s.imageryTextures, s.pendingRequests);
+                ote::View fv = state->engine.view();
+                std::fprintf(f, "focus %.5f %.5f elevation %.1f", fv.lat, fv.lon, state->engine.elevationAt(fv.lat, fv.lon));
+                std::fputc(10, f);
+                std::fprintf(f, "features %zu", state->engine.featureIds().size());
+                std::fputc(10, f);
+                if (state->hasHit) {
+                    ote::Feature hf;
+                    std::uint64_t hid = state->engine.hitTest(state->hitX, state->hitY, 16.0);
+                    std::fprintf(f, "hit %llu %s", static_cast<unsigned long long>(hid),
+                                 hid && state->engine.feature(hid, hf) ? hf.name.c_str() : "-");
+                    std::fputc(10, f);
+                }
                 if (state->downloadId) {
                     ote::DownloadStatus d = state->engine.downloadStatus(state->downloadId);
                     std::fprintf(f, "download total=%lld done=%lld failed=%lld finished=%d\n",
@@ -210,9 +228,9 @@ void frame() {
         ote::View v = state->engine.view();
         char title[256];
         std::snprintf(title, sizeof(title),
-                      "OpenTAKEngine  %.5f, %.5f  gsd %.2f m/px  tilt %.0f  az %.0f  |  tiles %d  L%d  imagery %d  pending %d",
+                      "OpenTAKEngine  %.5f, %.5f  gsd %.2f m/px  tilt %.0f  az %.0f  |  tiles %d  L%d  imagery %d  pending %d  %s",
                       v.lat, v.lon, v.gsd, v.tilt, v.azimuth, s.terrainTiles, s.maxLevel, s.imageryTextures,
-                      s.pendingRequests);
+                      s.pendingRequests, state->selected.c_str());
         sapp_set_window_title(title);
     }
 }
@@ -228,13 +246,24 @@ void event(const sapp_event* e) {
     ote::Engine& eng = state->engine;
     switch (e->type) {
     case SAPP_EVENTTYPE_MOUSE_DOWN:
-        if (e->mouse_button == SAPP_MOUSEBUTTON_LEFT) state->leftDown = true;
+        if (e->mouse_button == SAPP_MOUSEBUTTON_LEFT) {
+            state->leftDown = true;
+            state->downX = e->mouse_x;
+            state->downY = e->mouse_y;
+        }
         if (e->mouse_button == SAPP_MOUSEBUTTON_RIGHT) state->rightDown = true;
         state->mouseX = e->mouse_x;
         state->mouseY = e->mouse_y;
         break;
     case SAPP_EVENTTYPE_MOUSE_UP:
-        if (e->mouse_button == SAPP_MOUSEBUTTON_LEFT) state->leftDown = false;
+        if (e->mouse_button == SAPP_MOUSEBUTTON_LEFT) {
+            state->leftDown = false;
+            if (std::abs(e->mouse_x - state->downX) < 4 && std::abs(e->mouse_y - state->downY) < 4) {
+                ote::Feature f;
+                std::uint64_t id = eng.hitTest(e->mouse_x, e->mouse_y, 16.0 * sapp_dpi_scale());
+                state->selected = id && eng.feature(id, f) ? (f.name.empty() ? "feature " + std::to_string(id) : f.name) : "";
+            }
+        }
         if (e->mouse_button == SAPP_MOUSEBUTTON_RIGHT) state->rightDown = false;
         break;
     case SAPP_EVENTTYPE_MOUSE_MOVE:
@@ -358,6 +387,10 @@ sapp_desc sokol_main(int argc, char* argv[]) {
             ote::Region& r = state->download;
             state->hasDownload = std::sscanf(argv[++i], "%lf,%lf,%lf,%lf,%d,%d", &r.west, &r.south, &r.east, &r.north,
                                              &state->downloadMin, &state->downloadMax) == 6;
+        } else if (a == "--hit") {
+            state->hasHit = std::sscanf(argv[++i], "%lf,%lf", &state->hitX, &state->hitY) == 2;
+        } else if (a == "--features") {
+            state->featureFiles.push_back(argv[++i]);
         } else if (a == "--terrain") {
             state->terrain = std::atoi(argv[++i]) != 0;
         } else if (a == "--exaggeration") {

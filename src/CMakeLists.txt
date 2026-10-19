@@ -8,6 +8,9 @@ add_library(opentakengine STATIC
     raster/tile_provider.cpp
     raster/mobac.cpp
     elevation/elevation.cpp
+    feature/parsers.cpp
+    feature/text.cpp
+    feature/feature_layer.cpp
     render/globe_renderer.cpp
     render/gfx_impl.cpp)
 
@@ -36,9 +39,11 @@ target_include_directories(opentakengine
         ${sokol_SOURCE_DIR}
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
-        ${stb_SOURCE_DIR})
+        ${stb_SOURCE_DIR}
+        ${json_SOURCE_DIR}
+        ${earcut_SOURCE_DIR})
 target_compile_definitions(opentakengine PUBLIC ${OTE_GFX_BACKEND})
-target_link_libraries(opentakengine PRIVATE ote_sqlite pugixml::pugixml)
+target_link_libraries(opentakengine PRIVATE ote_sqlite pugixml::pugixml ote_miniz)
 if(MSVC)
     target_compile_options(opentakengine PRIVATE /W3 /utf-8)
     target_compile_definitions(opentakengine PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
@@ -47,4 +52,6 @@ endif()
 ote_add_shaders(opentakengine
     render/shaders/globe.glsl
     render/shaders/surface.glsl
-    render/shaders/sky.glsl)
+    render/shaders/sky.glsl
+    render/shaders/feature.glsl)
+ote_embed(opentakengine font_bold ${PROJECT_SOURCE_DIR}/assets/fonts/NotoSans-Bold-subset.ttf)

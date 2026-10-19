@@ -1,0 +1,6 @@
+{"type":"FeatureCollection","features":[
+{"type":"Feature","properties":{"name":"State Capitol","marker-color":"#ff3030"},"geometry":{"type":"Point","coordinates":[-122.9049,47.0359]}},
+{"type":"Feature","properties":{"name":"Olympia Airport","marker-color":"#30a0ff"},"geometry":{"type":"Point","coordinates":[-122.9027,46.9694]}},
+{"type":"Feature","properties":{"name":"Capitol Lake","stroke":"#00ffff","stroke-width":3,"fill":"#00ffff","fill-opacity":0.25},"geometry":{"type":"Polygon","coordinates":[[[-122.912,47.043],[-122.905,47.043],[-122.903,47.034],[-122.909,47.027],[-122.915,47.031],[-122.912,47.043]]]}},
+{"type":"Feature","properties":{"name":"Route 101","stroke":"#ffd000","stroke-width":4},"geometry":{"type":"LineString","coordinates":[[-123.10,47.10],[-122.98,47.05],[-122.93,47.03],[-122.88,47.02],[-122.80,47.04],[-122.70,47.07]]}}
+]}

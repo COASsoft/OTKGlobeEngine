@@ -103,6 +103,8 @@ bool GlobeRenderer::init() {
     vb.usage.write_transient = true;
     vb.size = kSurfaceBufferBytes;
     surfaceBuffer_ = sg_make_buffer(&vb);
+    featureBuffer_ = sg_make_buffer(&vb);
+    features_.init();
 
     const std::uint8_t ocean[4] = {10, 30, 62, 255};
     sg_image_desc fd{};
@@ -191,6 +193,8 @@ void GlobeRenderer::shutdown() {
         sg_destroy_buffer(indexBuffer_);
         sg_destroy_buffer(skyBuffer_);
         sg_destroy_buffer(surfaceBuffer_);
+        sg_destroy_buffer(featureBuffer_);
+        features_.shutdown();
     }
     terrain_.clear();
     surface_.clear();
@@ -682,6 +686,21 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     elevation_.beginFrame();
     processLoads();
     bool elevationChanged = elevation_.processResults(32);
+    {
+        std::vector<GeoRect> regions;
+        if (features_.takeDirty(regions)) {
+            for (auto& [k, s] : surface_) {
+                Bounds b = bounds(k);
+                GeoRect r{b.west, b.south, b.east, b.north};
+                for (const GeoRect& g : regions)
+                    if (g.intersects(r)) {
+                        s.complete = false;
+                        s.missing.clear();
+                        break;
+                    }
+            }
+        }
+    }
     evict();
     requestBase();
 
@@ -769,6 +788,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
 
     std::vector<SurfaceJob> jobs;
     std::vector<float> verts;
+    std::vector<float> fverts;
     int renders = 0;
     for (auto& [kind, i] : work) {
         if (renders >= kSurfaceRendersPerFrame || verts.size() * sizeof(float) > kSurfaceBufferBytes / 2) {
@@ -778,6 +798,17 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         SurfaceJob job;
         job.key = needs_[i].key;
         buildSurfaceJob(job.key, needs_[i].priority, &job, &verts);
+        if (!features_.empty() && fverts.size() * sizeof(float) < kSurfaceBufferBytes / 2) {
+            Bounds b = bounds(job.key);
+            size_t before = fverts.size();
+            Vec3 c = geodeticToEcef(0.5 * (b.south + b.north), 0.5 * (b.west + b.east), 0.0);
+            double radius = (b.north - b.south) * kDegToRad * kWgs84A * 0.75;
+            double dist = std::max(length(c - cam.eye()) - radius, cam.eyeAboveGround());
+            double texelDeg = std::min((b.north - b.south) / kSurfaceSize, cam.pixelSizeAt(dist) / 111320.0);
+            features_.buildSurface({b.west, b.south, b.east, b.north}, texelDeg, dpiScale_, fverts);
+            job.featureFirst = static_cast<int>(before / 6);
+            job.featureCount = static_cast<int>((fverts.size() - before) / 6);
+        }
         jobs.push_back(std::move(job));
         ++renders;
     }
@@ -806,6 +837,15 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         sg_write_buffer_transient(&wd);
     }
 
+    if (fverts.size() * sizeof(float) > kSurfaceBufferBytes) fverts.resize(kSurfaceBufferBytes / sizeof(float) / 6 * 6);
+    if (!fverts.empty()) {
+        sg_write_buffer_desc wd{};
+        wd.src.data = {fverts.data(), fverts.size() * sizeof(float)};
+        wd.dst.buffer = featureBuffer_;
+        wd.size = fverts.size() * sizeof(float);
+        sg_write_buffer_transient(&wd);
+    }
+
     for (auto& job : jobs) {
         SurfaceTile* s = acquireSurface(job.key);
         s->used = frame_;
@@ -829,6 +869,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 sg_draw(d.first, d.count, 1);
             }
         }
+        if (job.featureCount > 0 && (job.featureFirst + job.featureCount) * 6 * sizeof(float) <= kSurfaceBufferBytes)
+            features_.drawSurface(featureBuffer_, job.featureFirst, job.featureCount);
         sg_end_pass();
         s->complete = job.complete;
         s->version = imageryVersion_;
@@ -899,6 +941,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         sg_apply_uniforms(UB_globe_vs_params, SG_RANGE(vsp));
         sg_draw(0, kIndexCount, 1);
     }
+    features_.drawOverlay(cam, [this](double lat, double lon) { return elevationAt(lat, lon); }, dpiScale_, flipSurface_);
     sg_end_pass();
 
     bool pending = false;

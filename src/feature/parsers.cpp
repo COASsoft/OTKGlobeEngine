@@ -378,7 +378,6 @@ std::vector<std::string> dbfNames(const std::filesystem::path& path) {
         int len = b[p + 16];
         std::string l = lower(name);
         if (field < 0 && b[p + 11] == 'C' && (l == "name" || l == "label" || l == "title" || l == "id")) {
-            field = 1;
             offset = cursor;
             field = len;
         }
