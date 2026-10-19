@@ -47,6 +47,14 @@ ATAK reference captures are in `screenshots/atak`.
 - Parent, child and zoom-out prefetch inside a GPU memory budget (512 MB desktop, 256 MB mobile by default), cross-fade between levels
 - Separate local (cache, files) and network loader pools
 
+**Size and speed**
+- The whole engine is about 4 MB (Windows DLL; Android arm64 library 4 MB, 1.8 MB compressed; the Android viewer APK is 1.8 MB) including SQLite, image decoders, the label font and the geoid
+- CPU time per frame on a 2015 desktop i5: 0.2 ms (globe), 0.5 ms (street), 0.9 ms (tilted terrain), 1.1 ms (first person)
+
+**Bindings**
+- C ABI `include/ote/ote.h` and `opentakengine_c` shared library
+- Android AAR with `OpenTakView` (`scripts/android_aar.py`), Swift `OpenTAKView` and xcframework (`scripts/apple_xcframework.sh`), C# wrapper (`bindings/dotnet`)
+
 ## Build
 
 Windows (Visual Studio 2022 or newer, CMake 3.24+, Ninja):
@@ -61,6 +69,8 @@ Linux: `cmake -S . -B build -G Ninja && cmake --build build` (libcurl, X11, Xi, 
 macOS: `cmake -S . -B build -G Ninja && cmake --build build`. iOS: `cmake -S . -B build -G Xcode -DCMAKE_SYSTEM_NAME=iOS`.
 
 Android: `python scripts/android_apk.py --install --run` builds, signs and installs a standalone viewer APK (needs the Android SDK and NDK).
+
+Tests: `ctest --test-dir build/windows` runs the unit tests (geodesy, MGRS, tile matrices, camera, geoid, file parsers, quantized mesh); CI runs them on Windows, Linux and macOS.
 
 ## Viewer
 
