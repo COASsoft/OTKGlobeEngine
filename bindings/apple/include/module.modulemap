@@ -1,0 +1,4 @@
+module OpenTAKEngineC {
+    header "ote.h"
+    export *
+}
