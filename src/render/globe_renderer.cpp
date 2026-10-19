@@ -785,6 +785,28 @@ void GlobeRenderer::explain(const Camera& cam, double lat, double lon, const cha
                       ready(k) ? "R" : "-", drawn ? "D" : "-", tt == terrain_.end() ? -1.0 : tt->second.minH,
                       tt == terrain_.end() ? -1.0 : tt->second.maxH);
         line += buf;
+        if (drawn && ni.refine) {
+            for (int i = 0; i < 4; ++i) {
+                QuadKey kid{k.level + 1, k.x * 2 + (i & 1), k.y * 2 + (i >> 1)};
+                auto ks = surface_.find(kid);
+                auto kt = terrain_.find(kid);
+                double t = now();
+                int failedSoon = 0, failedPermanent = 0, loaded = 0;
+                if (ks != surface_.end())
+                    for (const TileId& id : ks->second.missing) {
+                        if (imagery_.count(id)) ++loaded;
+                        auto f = failed_.find(id);
+                        if (f == failed_.end()) continue;
+                        if (f->second == std::numeric_limits<double>::infinity()) ++failedPermanent;
+                        else if (f->second > t) ++failedSoon;
+                    }
+                std::snprintf(buf, sizeof(buf), "| kid%d surf %s v%d missing %zu (loaded %d retry %d perm %d) terr %s ", i,
+                              ks == surface_.end() ? "-" : ks->second.complete ? "C" : "p", ks == surface_.end() ? -9 : ks->second.version,
+                              ks == surface_.end() ? size_t(0) : ks->second.missing.size(), loaded, failedSoon, failedPermanent,
+                              kt == terrain_.end() ? "-" : kt->second.complete ? "C" : "p");
+                line += buf;
+            }
+        }
         if (!ni.visible || drawn || !ni.refine) break;
     }
     diag("explain %s frame %llu %.5f %.5f: %s", tag, static_cast<unsigned long long>(frame_), lat, lon, line.c_str());
