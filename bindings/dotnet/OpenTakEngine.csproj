@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <AssemblyName>OpenTakEngine</AssemblyName>
+    <RootNamespace>OpenTakEngine</RootNamespace>
+    <PackageId>OpenTakEngine</PackageId>
+    <Version>0.1.0</Version>
+    <Description>.NET bindings for OpenTAKEngine, a cross-platform globe map engine</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+</Project>
