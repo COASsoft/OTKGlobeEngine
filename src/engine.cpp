@@ -216,6 +216,20 @@ std::uint64_t Engine::addTileset(const std::string& path, double maxSse) {
     return id;
 }
 
+std::uint64_t Engine::addPointCloud(const std::string& path, std::size_t maxPoints, float size) {
+    PointCloudInfo info;
+    std::uint64_t id = impl_->globe.points().add(path, maxPoints, size, &info);
+    if (id) impl_->tilesetCenters[id | (1ull << 63)] =
+        geodeticToEcef((info.south + info.north) * 0.5, (info.west + info.east) * 0.5, (info.minHeight + info.maxHeight) * 0.5);
+    impl_->dirty = true;
+    return id;
+}
+
+bool Engine::removePointCloud(std::uint64_t id) {
+    impl_->dirty = true;
+    return impl_->globe.points().remove(id);
+}
+
 bool Engine::removeTileset(std::uint64_t id) {
     impl_->tilesetCenters.erase(id);
     impl_->dirty = true;

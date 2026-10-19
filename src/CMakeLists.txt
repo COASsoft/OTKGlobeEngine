@@ -18,6 +18,7 @@ add_library(opentakengine STATIC
     feature/feature_layer.cpp
     feature/grid.cpp
     model/model_layer.cpp
+    model/pointcloud.cpp
     tiles3d/tileset.cpp
     render/globe_renderer.cpp
     render/gfx_impl.cpp)
@@ -76,7 +77,8 @@ ote_add_shaders(opentakengine
     render/shaders/feature.glsl
     render/shaders/mip.glsl
     render/shaders/model.glsl
-    render/shaders/vector.glsl)
+    render/shaders/vector.glsl
+    render/shaders/points.glsl)
 ote_embed(opentakengine font_bold ${PROJECT_SOURCE_DIR}/assets/fonts/NotoSans-Bold-subset.ttf)
 ote_embed(opentakengine geoid_egm96 ${PROJECT_SOURCE_DIR}/assets/geoid/egm96-1deg.bin)
 

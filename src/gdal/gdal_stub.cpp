@@ -10,4 +10,6 @@ std::shared_ptr<ElevationProvider> makeGdalElevation(const ElevationLayer&) { re
 
 std::vector<Feature> parseWithOgr(const std::string&) { return {}; }
 
+bool transformToGeographic(int, const std::string&, double*, double*, double*, std::size_t) { return false; }
+
 }

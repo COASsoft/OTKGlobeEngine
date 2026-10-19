@@ -95,6 +95,7 @@ OTE_API uint64_t ote_add_model(ote_engine* e, const char* path, double lat, doub
 OTE_API void ote_set_grid(ote_engine* e, int enabled);
 OTE_API uint64_t ote_add_tileset(ote_engine* e, const char* path_or_url, double max_sse);
 OTE_API int ote_remove_tileset(ote_engine* e, uint64_t id);
+OTE_API uint64_t ote_add_point_cloud(ote_engine* e, const char* las_path, uint64_t max_points, float point_size_px);
 OTE_API uint64_t ote_viewshed(ote_engine* e, double lat, double lon, double height, double radius);
 
 OTE_API int ote_to_mgrs(double lat, double lon, int digits, char* out, int capacity);

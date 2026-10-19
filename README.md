@@ -27,19 +27,20 @@ ATAK reference captures are in `screenshots/atak`.
 - Online XYZ, TMS, quadkey, WMS 1.1.1/1.3.0 (EPSG:3857 and 4326), WMTS templates, MOBAC XML (including multi-layer sources)
 - Offline MBTiles, GeoPackage tiles (any tile matrix), osmdroid SQLite, and GeoTIFF/NITF/MrSID/JPEG2000/GeoPDF/CADRG via the optional GDAL module
 - SQLite tile cache with offline mode and fallback, region download
-- Mapbox Vector Tiles (TileJSON or MBTiles) rendered on the GPU
+- Mapbox Vector Tiles (TileJSON or MBTiles) rendered on the GPU with place, peak and water labels
+- `file://` URL templates for offline `{z}/{x}/{y}` tile folders
 - Layer stacking with opacity, KML/KMZ ground overlays, arbitrary image overlays
 
 **Terrain**
 - WGS84 quadtree, 33x33 post meshes with skirts, screen-space-error LOD, slope shading ("enhanced depth perception"), exaggeration
-- Terrarium elevation tiles, DTED 0-3 and SRTM HGT folders, GDAL DEMs, EGM96 geoid (heights are HAE)
+- Terrarium and quantized-mesh elevation tiles, DTED 0-3 and SRTM HGT folders, GDAL DEMs, EGM96 geoid (heights are HAE)
 - Line of sight, viewshed, elevation profile, elevation heat map
 
 **Vectors, labels and models**
 - KML/KMZ (styles, style maps, icons, MultiGeometry, gx:Track), GeoJSON (simplestyle), GPX, Shapefile, plus any OGR format via GDAL
 - Ground-clamped lines and polygons draped into the terrain texture, 3D lines, icons, SDF labels with decluttering, hit testing
 - MGRS/UTM conversions and a draped MGRS grid
-- glTF/GLB models, Cesium 3D Tiles (tileset.json, .3tz, URLs, b3dm/glb, external tilesets)
+- glTF/GLB models, Cesium 3D Tiles (tileset.json, .3tz, URLs, b3dm/glb, external tilesets), LAS point clouds (WGS84 and UTM natively, any CRS through the GDAL module)
 
 **Loading behaviour**
 - Readiness-gated refinement: a parent tile stays on screen until its children are fully loaded, so zooming never shows tiles popping in
@@ -66,8 +67,8 @@ Android: `python scripts/android_apk.py --install --run` builds, signs and insta
 ```
 ote_viewer [--view lat,lon,gsd,tilt,azimuth] [--preset 0..3] [--size WxH]
            [--mbtiles f] [--gpkg f] [--osmdroid f] [--gdal f] [--mobac xml]
-           [--features file] [--model path,lat,lon,heading,scale] [--tileset dir|.3tz|url]
-           [--elevation-dir dir] [--gdal-dem f] [--terrain 0|1] [--exaggeration x]
+           [--features file] [--model path,lat,lon,heading,scale] [--tileset dir|.3tz|url] [--las file]
+           [--elevation-dir dir] [--gdal-dem f] [--quantized-mesh url] [--terrain 0|1] [--exaggeration x]
            [--cache dir] [--offline 1] [--memory MB] [--grid 1] [--heatmap 1]
            [--first-person heading,pitch[,height]] [--download w,s,e,n,minz,maxz]
            [--shot out.png] [--shot-timeout s] [--zoom-test lat,lon,gsd,tilt,az,seconds]

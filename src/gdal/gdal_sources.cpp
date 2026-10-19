@@ -247,6 +247,25 @@ void ogrGeometry(OGRGeometryH g, Feature& f) {
 
 bool gdalAvailable() { return true; }
 
+bool transformToGeographic(int epsg, const std::string& wkt, double* x, double* y, double* z, std::size_t n) {
+    registerOnce();
+    OGRSpatialReferenceH src = OSRNewSpatialReference(nullptr);
+    bool ok = !wkt.empty() ? OSRSetFromUserInput(src, wkt.c_str()) == OGRERR_NONE
+                           : epsg > 0 && OSRImportFromEPSG(src, epsg) == OGRERR_NONE;
+    OGRSpatialReferenceH dst = OSRNewSpatialReference(nullptr);
+    OSRImportFromEPSG(dst, 4979);
+    OSRSetAxisMappingStrategy(src, OAMS_TRADITIONAL_GIS_ORDER);
+    OSRSetAxisMappingStrategy(dst, OAMS_TRADITIONAL_GIS_ORDER);
+    if (ok) {
+        OGRCoordinateTransformationH ct = OCTNewCoordinateTransformation(src, dst);
+        ok = ct && OCTTransform(ct, static_cast<int>(n), x, y, z);
+        if (ct) OCTDestroyCoordinateTransformation(ct);
+    }
+    OSRDestroySpatialReference(src);
+    OSRDestroySpatialReference(dst);
+    return ok;
+}
+
 std::shared_ptr<TileProvider> makeGdalRaster(const ImageryLayer& layer) { return std::make_shared<GdalRasterProvider>(layer); }
 
 std::shared_ptr<ElevationProvider> makeGdalElevation(const ElevationLayer& layer) {

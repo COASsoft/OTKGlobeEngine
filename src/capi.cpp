@@ -302,6 +302,10 @@ uint64_t ote_add_tileset(ote_engine* e, const char* path, double max_sse) {
 
 int ote_remove_tileset(ote_engine* e, uint64_t id) { return e->engine.removeTileset(id) ? 1 : 0; }
 
+uint64_t ote_add_point_cloud(ote_engine* e, const char* path, uint64_t max_points, float size) {
+    return e->engine.addPointCloud(path ? path : "", max_points ? static_cast<std::size_t>(max_points) : 4000000, size > 0 ? size : 2.0f);
+}
+
 uint64_t ote_viewshed(ote_engine* e, double lat, double lon, double height, double radius) {
     return e->engine.computeViewshed({lat, lon, 0}, height, radius);
 }

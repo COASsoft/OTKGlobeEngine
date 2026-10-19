@@ -162,6 +162,8 @@ public:
     bool updateModel(std::uint64_t id, const ModelPlacement& placement);
     bool removeModel(std::uint64_t id);
     std::uint64_t addTileset(const std::string& pathOrUrl, double maxScreenSpaceError = 16.0);
+    std::uint64_t addPointCloud(const std::string& lasPath, std::size_t maxPoints = 4000000, float pointSizePx = 2.0f);
+    bool removePointCloud(std::uint64_t id);
     bool removeTileset(std::uint64_t id);
     bool tilesetCenter(std::uint64_t id, double& lat, double& lon, double& alt) const;
 
