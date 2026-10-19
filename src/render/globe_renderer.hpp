@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/camera.hpp"
+#include "elevation/elevation.hpp"
 #include "raster/tile_cache.hpp"
 #include "raster/tile_loader.hpp"
 
@@ -38,7 +39,12 @@ public:
     const std::vector<ImageryLayer>& layers() const { return layers_; }
     const std::vector<TileMatrix>& matrices() const { return matrices_; }
     void setCacheDirectory(const std::string& dir);
-    void setOffline(bool offline) { loader_.setOffline(offline); }
+    void setOffline(bool offline);
+    void setElevation(const std::vector<ElevationLayer>& layers);
+    void setTerrainEnabled(bool enabled);
+    void setTerrainExaggeration(double factor);
+    void setDepthPerception(bool enabled) { depthPerception_ = enabled; }
+    double elevationAt(double lat, double lon) const;
     TileLoader& loader() { return loader_; }
     const TileLoader& loader() const { return loader_; }
     void setImageryScale(double s) { imageryScale_ = s; }
@@ -54,6 +60,10 @@ private:
     struct TerrainTile {
         sg_buffer vbuf{};
         Vec3 center;
+        float minH = 0;
+        float maxH = 0;
+        int version = -1;
+        bool complete = false;
         std::uint64_t used = 0;
     };
     struct SurfaceTile {
@@ -73,6 +83,15 @@ private:
         QuadKey key;
         double distance = 0;
     };
+    struct Need {
+        QuadKey key;
+        double priority = 0;
+    };
+    struct NodeInfo {
+        bool visible = false;
+        bool refine = false;
+        double distance = 0;
+    };
     struct SurfaceDraw {
         sg_view texture{};
         float opacity = 1.0f;
@@ -86,19 +105,26 @@ private:
     };
 
     static Bounds bounds(const QuadKey& k);
+    NodeInfo info(const Camera& cam, const QuadKey& k) const;
+    bool ready(const QuadKey& k) const;
+    void need(const QuadKey& k, double priority);
     void traverse(const Camera& cam, const QuadKey& k, std::vector<DrawTile>& out);
     TerrainTile& terrain(const QuadKey& k);
+    void buildTerrain(const QuadKey& k, TerrainTile& t, double priority);
     SurfaceTile* acquireSurface(const QuadKey& k);
     void processLoads();
     void evict();
     bool buildSurfaceJob(const QuadKey& k, double priority, SurfaceJob* job, std::vector<float>* verts);
     void requestBase();
-    ImageryTexture* findTexture(const TileId& id, const TileMatrix& m, double priority, bool& missing, TileId& src);
-    double now() const;
     void want(const TileId& id, double priority);
+    ImageryTexture* findTexture(const TileId& id, const TileMatrix& m, double priority, bool& missing, TileId& src);
+    void invalidateTerrain();
+    double now() const;
 
     TileCache cache_;
     TileLoader loader_{6};
+    ElevationManager elevation_{4};
+    std::atomic<bool> offline_{false};
     std::vector<ImageryLayer> layers_;
     std::vector<TileMatrix> matrices_;
     std::unordered_map<QuadKey, TerrainTile, QuadKeyHash> terrain_;
@@ -107,6 +133,7 @@ private:
     std::unordered_map<TileId, double, TileIdHash> failed_;
     std::vector<SurfaceTile> freeSurfaces_;
     std::vector<std::pair<TileId, double>> requests_;
+    std::vector<Need> needs_;
 
     sg_buffer indexBuffer_{};
     sg_buffer skyBuffer_{};
@@ -123,12 +150,18 @@ private:
     sg_pipeline skyPipeline_{};
 
     std::array<double, 16> frustum_{};
+    Vec3 eye_;
+    double pixelScale_ = 1.0;
     std::uint64_t frame_ = 0;
     int visits_ = 0;
     FILE* trace_ = nullptr;
     int imageryVersion_ = 0;
+    int terrainEpoch_ = 0;
     double imageryScale_ = 1.0;
     double dpiScale_ = 1.0;
+    double exaggeration_ = 1.0;
+    bool terrainEnabled_ = true;
+    bool depthPerception_ = true;
     bool flipSurface_ = false;
     bool busy_ = true;
     bool ready_ = false;
