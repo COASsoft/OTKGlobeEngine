@@ -708,20 +708,25 @@ void Engine::zoomAt(double sx, double sy, double factor) {
     }
     Vec3 before;
     bool anchored = impl_->groundAnchor(sx, sy, c.range() * 2.0, before);
-    double ax = sx - c.width * 0.5, ay = sy - c.height * 0.5;
+    double reach = anchored ? length(before - c.focusEcef()) * std::abs(1.0 - factor) * 1.5 + 1.0 : 0.0;
+    double shiftPx = std::hypot(sx - c.width * 0.5, sy - c.height * 0.5) * std::abs(1.0 - 1.0 / factor);
+    double lonCap = 180.0 * shiftPx / std::max(static_cast<double>(std::min(c.width, c.height)), 1.0);
     c.gsd *= factor;
     c.update();
     if (anchored) {
         Vec3 after = impl_->onPlane(sx, sy, before, impl_->upAt(before), impl_->grabLimit() * 2.0);
+        Vec3 move = before - after;
+        double len = length(move);
+        if (len > reach) {
+            move = move * (reach / len);
+            after = before - move;
+        }
         if (impl_->headingLock) {
             Vec3 e, n, u;
             enuFrame(c.focus.lat, c.focus.lon, e, n, u);
-            Vec3 move = before - after;
-            double shiftPx = std::hypot(ax, ay) * std::abs(1.0 - 1.0 / factor);
-            double cap = 180.0 * shiftPx / std::max(static_cast<double>(std::min(c.width, c.height)), 1.0);
-            impl_->shiftFocus(dot(move, e), dot(move, n), cap);
+            impl_->shiftFocus(dot(move, e), dot(move, n), lonCap);
         } else {
-            impl_->moveCamera(after, before);
+            impl_->moveCamera(after, before, lonCap);
         }
     }
     impl_->dirty = true;
@@ -735,6 +740,7 @@ void Engine::rotateAt(double sx, double sy, double degrees) {
     }
     Vec3 before;
     bool anchored = impl_->groundAnchor(sx, sy, c.range() * 2.0, before);
+    double reach = anchored ? length(before - c.focusEcef()) * 2.0 * std::abs(std::sin(degrees * kDegToRad * 0.5)) * 1.5 + 1.0 : 0.0;
     c.azimuth += degrees;
     c.update();
     if (anchored) {
@@ -742,6 +748,8 @@ void Engine::rotateAt(double sx, double sy, double degrees) {
         Vec3 e, n, u;
         enuFrame(c.focus.lat, c.focus.lon, e, n, u);
         Vec3 move = before - after;
+        double len = length(move);
+        if (len > reach) move = move * (reach / len);
         impl_->shiftFocus(dot(move, e), dot(move, n), 30.0);
     }
     impl_->dirty = true;
@@ -851,6 +859,9 @@ void configureGfx(sg_desc& desc) {
     desc.image_pool_size = 6144;
     desc.view_pool_size = 65536;
 #endif
+    if (const char* v = std::getenv("OTE_GFX_BUFFERS")) desc.buffer_pool_size = std::max(64, std::atoi(v));
+    if (const char* v = std::getenv("OTE_GFX_IMAGES")) desc.image_pool_size = std::max(64, std::atoi(v));
+    if (const char* v = std::getenv("OTE_GFX_VIEWS")) desc.view_pool_size = std::max(256, std::atoi(v));
     desc.sampler_pool_size = 64;
     desc.shader_pool_size = 64;
     desc.pipeline_pool_size = 128;

@@ -288,7 +288,7 @@ void checkHoles() {
 #endif
                        px))
         return;
-    int blocks = 0;
+    int blocks = 0, hx = -1, hy = -1;
     for (int by = 0; by + 8 <= state->height; by += 8)
         for (int bx = 0; bx + 8 <= state->width; bx += 8) {
             int n = 0;
@@ -297,7 +297,11 @@ void checkHoles() {
                     const unsigned char* p = &px[(static_cast<size_t>(y) * state->width + x) * 4];
                     if (p[0] > 240 && p[1] < 16 && p[2] > 240) ++n;
                 }
-            if (n > 32) ++blocks;
+            if (n > 32) {
+                ++blocks;
+                hx = bx + 4;
+                hy = by + 4;
+            }
         }
     ++state->holeChecks;
     if (blocks == 0) return;
@@ -306,7 +310,7 @@ void checkHoles() {
     if (const char* dp = std::getenv("OTE_DIAG"))
         if (FILE* df = std::fopen(dp, "a")) {
             ote::Stats hs = state->engine.stats();
-            std::fprintf(df, "holes frame %d t=%.2f blocks %d tiles %d L%d cov %d ret %d inc %d hollow %d ph %d surf %d free %d alt %.1f | view %.5f %.5f gsd %.2f tilt %.1f az %.1f\n", state->frames, state->shotElapsed, blocks, hs.terrainTiles,
+            std::fprintf(df, "holes frame %d t=%.2f blocks %d at %d,%d tiles %d L%d cov %d ret %d inc %d hollow %d ph %d surf %d free %d alt %.1f | view %.5f %.5f gsd %.2f tilt %.1f az %.1f\n", state->frames, state->shotElapsed, blocks, hx, hy, hs.terrainTiles,
                          hs.maxLevel, hs.coverageOnlyTiles, hs.retainedTiles, hs.incompleteTiles, hs.hollowSkipped, hs.placeholders, hs.surfaces, hs.freeSurfaces, v.alt, v.lat, v.lon, v.gsd, v.tilt, v.azimuth);
             std::fclose(df);
         }

@@ -13,10 +13,20 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <thread>
 #include <vector>
 
 int main(int argc, char** argv) {
+    const bool poolStress = argc > 1 && std::strcmp(argv[1], "--pool-stress") == 0;
+    if (poolStress) {
+        _putenv_s("OTE_GFX_BUFFERS", "1024");
+        _putenv_s("OTE_GFX_IMAGES", "768");
+        _putenv_s("OTE_GFX_VIEWS", "8192");
+        _putenv_s("OTE_HOLES", "1");
+        ++argv;
+        --argc;
+    }
     const char* out = argc > 1 ? argv[1] : "capi.png";
     const int w = 960, h = 540;
     ID3D11Device* dev = nullptr;
@@ -55,6 +65,80 @@ int main(int argc, char** argv) {
         return 3;
     }
     if (argc > 2) ote_set_cache_directory(e, argv[2]);
+    if (poolStress) {
+        int worst = 0, worstStop = -1;
+        auto holes = [&]() {
+            ote_frame_d3d11(e, w, h, rtv, nullptr, dsv, 1.0f);
+            D3D11_TEXTURE2D_DESC sd = cd;
+            sd.Usage = D3D11_USAGE_STAGING;
+            sd.BindFlags = 0;
+            sd.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+            ID3D11Texture2D* st = nullptr;
+            dev->CreateTexture2D(&sd, nullptr, &st);
+            ctx->CopyResource(st, color);
+            D3D11_MAPPED_SUBRESOURCE m{};
+            ctx->Map(st, 0, D3D11_MAP_READ, 0, &m);
+            int blocks = 0;
+            std::vector<unsigned char> img(static_cast<size_t>(w) * h * 4);
+            for (int y = 0; y < h; ++y)
+                for (int x = 0; x < w; ++x) {
+                    const unsigned char* s = static_cast<const unsigned char*>(m.pData) + static_cast<size_t>(y) * m.RowPitch + x * 4;
+                    unsigned char* d = &img[(static_cast<size_t>(y) * w + x) * 4];
+                    d[0] = s[2];
+                    d[1] = s[1];
+                    d[2] = s[0];
+                    d[3] = 255;
+                }
+            for (int by = 0; by + 8 <= h; by += 8)
+                for (int bx = 0; bx + 8 <= w; bx += 8) {
+                    int n = 0;
+                    for (int y = by; y < by + 8; ++y)
+                        for (int x = bx; x < bx + 8; ++x) {
+                            const unsigned char* s = static_cast<const unsigned char*>(m.pData) + static_cast<size_t>(y) * m.RowPitch + x * 4;
+                            if (s[2] > 240 && s[1] < 16 && s[0] > 240) ++n;
+                        }
+                    if (n > 32) ++blocks;
+                }
+            ctx->Unmap(st, 0);
+            st->Release();
+            if (blocks > worst) stbi_write_png(out, w, h, 4, img.data(), w * 4);
+            return blocks;
+        };
+        ote_set_memory_budget(e, 4096);
+        for (int stop = 0; stop < 36; ++stop) {
+            ote_view at{44.0 + (stop % 6) * 0.9, -122.4 + (stop / 6) * 1.1, 12.0, stop * 37.0, 72.0};
+            ote_set_view(e, &at);
+            for (int i = 0; i < 12; ++i) {
+                ote_pan(e, w * 0.5, h * 0.75, w * 0.5 + 6.0 * (i % 3 - 1), h * 0.75 - 18.0);
+                ote_frame_d3d11(e, w, h, rtv, nullptr, dsv, 1.0f);
+            }
+            int b = holes();
+            if (b > worst) {
+                worst = b;
+                worstStop = stop;
+            }
+        }
+        auto settle = std::chrono::steady_clock::now();
+        int calm = 0;
+        while (std::chrono::steady_clock::now() - settle < std::chrono::seconds(30) && calm < 10) {
+            ote_frame_d3d11(e, w, h, rtv, nullptr, dsv, 1.0f);
+            calm = ote_needs_redraw(e) ? 0 : calm + 1;
+            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        }
+        int final = holes();
+        const int total = (w / 8) * (h / 8);
+        std::printf("%s globe stays drawn while churning past small gpu pools (worst %d of %d blocks at stop %d)\n",
+                    worst * 100 < total ? "PASS" : "FAIL", worst, total, worstStop);
+        std::printf("%s settled view has no holes (%d blocks)\n", final == 0 ? "PASS" : "FAIL", final);
+        ote_destroy(e);
+        dsv->Release();
+        depth->Release();
+        rtv->Release();
+        color->Release();
+        ctx->Release();
+        dev->Release();
+        return worst * 100 < total && final == 0 ? 0 : 1;
+    }
     ote_view v{46.8529, -121.7604, 20.0, 30.0, 55.0};
     ote_set_view(e, &v);
     ote_add_point(e, 46.8529, -121.7604, 0, "Summit", 0xFFFF3030);

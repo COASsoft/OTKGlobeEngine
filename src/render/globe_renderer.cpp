@@ -106,6 +106,7 @@ bool GlobeRenderer::init() {
     fitPools();
     sg_backend backend = sg_query_backend();
     holeMarker_ = std::getenv("OTE_HOLES") != nullptr;
+    if (std::getenv("OTE_DIAG")) diagnostics_ = true;
     if (const char* pp = std::getenv("OTE_PROFILE")) {
         profiling_ = true;
         profilePath_ = pp;
@@ -619,10 +620,18 @@ void GlobeRenderer::buildTerrain(const QuadKey& k, TerrainTile& t, double priori
             int gj = e == 0 ? 0 : e == 1 ? kGrid : i;
             double lat = b.south + span * gj / kGrid, lon = b.west + span * gi / kGrid;
             float hc = h[static_cast<size_t>(gj + 1) * n + (gi + 1)];
-            Vec3 p = geodeticToEcef(lat, lon, hc - skirt) - t.center;
+            Vec3 p = geodeticToEcef(lat, lon, hc) - t.center;
             v.insert(v.end(), {static_cast<float>(p.x), static_cast<float>(p.y), static_cast<float>(p.z),
                                static_cast<float>(gi) / kGrid, static_cast<float>(gj) / kGrid,
                                shade[static_cast<size_t>(gj) * kPosts + gi], hc});
+        }
+    t.skirt = static_cast<float>(skirt);
+    t.edges.resize(static_cast<size_t>(4) * kPosts);
+    for (int e = 0; e < 4; ++e)
+        for (int i = 0; i < kPosts; ++i) {
+            int gi = e < 2 ? i : (e == 2 ? 0 : kGrid);
+            int gj = e < 2 ? (e == 0 ? 0 : kGrid) : i;
+            t.edges[static_cast<size_t>(e) * kPosts + i] = h[static_cast<size_t>(gj + 1) * n + (gi + 1)];
         }
     if (t.vbuf.id) sg_destroy_buffer(t.vbuf);
     sg_buffer_desc d{};
@@ -702,19 +711,24 @@ GlobeRenderer::NodeInfo GlobeRenderer::info(const Camera& cam, const QuadKey& k)
     Bounds b = bounds(k);
     double minH = 0, maxH = 0;
     auto tt = terrain_.find(k);
-    if (tt != terrain_.end() && tt->second.version >= 0) {
+    const bool own = tt != terrain_.end() && tt->second.version >= 0;
+    if (own) {
         minH = tt->second.minH;
         maxH = tt->second.maxH;
-    } else if (terrainEnabled_ && !elevation_.empty()) {
-        maxH = kUnknownMaxHeight * exaggeration_;
-        for (int up = 1; up <= k.level; ++up) {
+    }
+    if ((!own || !tt->second.complete) && terrainEnabled_ && !elevation_.empty()) {
+        double lo = 0.0, hi = kUnknownMaxHeight * exaggeration_;
+        bool settled = false;
+        for (int up = 1; up <= k.level && !settled; ++up) {
             auto at = terrain_.find(QuadKey{k.level - up, k.x >> up, k.y >> up});
             if (at == terrain_.end() || at->second.version < 0) continue;
             double pad = std::max(100.0 * exaggeration_, (at->second.maxH - at->second.minH) * 0.25);
-            minH = std::min(0.0, at->second.minH - pad);
-            maxH = at->second.maxH + pad;
-            break;
+            lo = std::min(0.0, at->second.minH - pad);
+            hi = at->second.complete ? at->second.maxH + pad : std::max(at->second.maxH + pad, kUnknownMaxHeight * exaggeration_);
+            settled = at->second.complete;
         }
+        minH = own ? std::min(minH, lo) : lo;
+        maxH = own ? std::max(maxH, hi) : hi;
     }
     auto cached = spheres_.find(k);
     if (cached == spheres_.end() || cached->second.minH != static_cast<float>(minH) || cached->second.maxH != static_cast<float>(maxH)) {
@@ -810,6 +824,76 @@ void GlobeRenderer::explain(const Camera& cam, double lat, double lon, const cha
         if (!ni.visible || drawn || !ni.refine) break;
     }
     diag("explain %s frame %llu %.5f %.5f: %s", tag, static_cast<unsigned long long>(frame_), lat, lon, line.c_str());
+}
+
+double GlobeRenderer::seamSkirt(const QuadKey& k, const TerrainTile& t,
+                                const std::unordered_map<QuadKey, const TerrainTile*, QuadKeyHash>& drawn) const {
+    if (t.edges.size() != static_cast<size_t>(4) * kPosts) return t.skirt;
+    auto profile = [](const TerrainTile& tile, int e, double s) {
+        double f = std::clamp(s, 0.0, 1.0) * kGrid;
+        int i = std::min(static_cast<int>(f), kGrid - 1);
+        double w = f - i;
+        const float* row = &tile.edges[static_cast<size_t>(e) * kPosts];
+        return row[i] * (1.0 - w) + row[i + 1] * w;
+    };
+    const int nx = 2 << k.level, ny = 1 << k.level;
+    const Bounds a = bounds(k);
+    double need = 0;
+    for (int dir = 0; dir < 4; ++dir) {
+        QuadKey nk = k;
+        if (dir == 0) {
+            if (k.y + 1 >= ny) continue;
+            nk.y = k.y + 1;
+        } else if (dir == 1) {
+            if (k.y == 0) continue;
+            nk.y = k.y - 1;
+        } else if (dir == 2) {
+            nk.x = (k.x + nx - 1) % nx;
+        } else {
+            nk.x = (k.x + 1) % nx;
+        }
+        const int mine = dir, theirs = dir ^ 1;
+        std::vector<std::pair<QuadKey, const TerrainTile*>> found;
+        for (int up = 0; up <= nk.level && found.empty(); ++up) {
+            QuadKey anc{nk.level - up, nk.x >> up, nk.y >> up};
+            auto it = drawn.find(anc);
+            if (it != drawn.end()) found.push_back({anc, it->second});
+        }
+        if (found.empty()) {
+            std::vector<QuadKey> frontier{nk};
+            for (int depth = 0; depth < 6 && !frontier.empty(); ++depth) {
+                std::vector<QuadKey> next;
+                for (const QuadKey& f : frontier)
+                    for (int c = 0; c < 2; ++c) {
+                        QuadKey kid{f.level + 1, f.x * 2, f.y * 2};
+                        if (dir == 0) kid = {f.level + 1, f.x * 2 + c, f.y * 2};
+                        else if (dir == 1) kid = {f.level + 1, f.x * 2 + c, f.y * 2 + 1};
+                        else if (dir == 2) kid = {f.level + 1, f.x * 2 + 1, f.y * 2 + c};
+                        else kid = {f.level + 1, f.x * 2, f.y * 2 + c};
+                        auto it = drawn.find(kid);
+                        if (it != drawn.end()) found.push_back({kid, it->second});
+                        else next.push_back(kid);
+                    }
+                frontier.swap(next);
+            }
+        }
+        for (const auto& [nkey, nt] : found) {
+            if (nt->edges.size() != static_cast<size_t>(4) * kPosts) continue;
+            const Bounds b = bounds(nkey);
+            const bool alongLon = dir < 2;
+            double lo = alongLon ? std::max(a.west, b.west) : std::max(a.south, b.south);
+            double hi = alongLon ? std::min(a.east, b.east) : std::min(a.north, b.north);
+            if (hi <= lo) continue;
+            const double spanA = a.north - a.south, spanB = b.north - b.south;
+            for (int s = 0; s <= kGrid; ++s) {
+                double v = lo + (hi - lo) * s / kGrid;
+                double sa = alongLon ? (v - a.west) / spanA : (v - a.south) / spanA;
+                double sb = alongLon ? (v - b.west) / spanB : (v - b.south) / spanB;
+                need = std::max(need, profile(t, mine, sa) - profile(*nt, theirs, sb));
+            }
+        }
+    }
+    return std::clamp(std::max(static_cast<double>(t.skirt), need * 1.05 + 1.0), 1.0, kSkirtMax);
 }
 
 int GlobeRenderer::idealImageryZ(const QuadKey& k) const {
@@ -2019,6 +2103,9 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     for (auto& dt : tiles) drawn_[dt.key] = frame_;
     if (drawn_.size() > 20000)
         for (auto it = drawn_.begin(); it != drawn_.end();) it = it->second + 2 < frame_ ? drawn_.erase(it) : std::next(it);
+    std::unordered_map<QuadKey, const TerrainTile*, QuadKeyHash> drawnNow;
+    drawnNow.reserve(tiles.size() * 2);
+    for (auto& dt : tiles) drawnNow[dt.key] = &terrain(dt.key);
     for (auto& dt : tiles) {
         TerrainTile& tt = terrain(dt.key);
         tt.used = frame_;
@@ -2095,6 +2182,11 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         toFloat(mvp, vsp.mvp);
         std::memcpy(vsp.uv_xform, uvx, sizeof(uvx));
         std::memcpy(vsp.uv_xform2, uvx2, sizeof(uvx2));
+        vsp.skirt[0] = static_cast<float>(seamSkirt(dt.key, tt, drawnNow));
+        vsp.skirt[1] = static_cast<float>(kPosts * kPosts);
+        vsp.center[0] = static_cast<float>(tt.center.x);
+        vsp.center[1] = static_cast<float>(tt.center.y);
+        vsp.center[2] = static_cast<float>(tt.center.z);
         gfs.flags[2] = blend;
         sg_apply_uniforms(UB_globe_fs_params, SG_RANGE(gfs));
         sg_bindings bind{};

@@ -95,6 +95,8 @@ private:
         Vec3 center;
         float minH = 0;
         float maxH = 0;
+        float skirt = 1;
+        std::vector<float> edges;
         int version = -1;
         bool complete = false;
         std::uint64_t used = 0;
@@ -170,6 +172,7 @@ private:
 
     static Bounds bounds(const QuadKey& k);
     NodeInfo info(const Camera& cam, const QuadKey& k) const;
+    double seamSkirt(const QuadKey& k, const TerrainTile& t, const std::unordered_map<QuadKey, const TerrainTile*, QuadKeyHash>& drawn) const;
     bool ready(const QuadKey& k) const;
     bool progressed(const SurfaceTile& s) const;
     void need(const QuadKey& k, double priority);

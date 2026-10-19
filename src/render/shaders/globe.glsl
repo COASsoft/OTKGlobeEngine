@@ -3,6 +3,8 @@ layout(binding=0) uniform globe_vs_params {
     mat4 mvp;
     vec4 uv_xform;
     vec4 uv_xform2;
+    vec4 skirt;
+    vec4 center;
 };
 
 in vec3 position;
@@ -16,7 +18,9 @@ out float light;
 out float elev;
 
 void main() {
-    gl_Position = mvp * vec4(position, 1.0);
+    vec3 p = position;
+    if (float(gl_VertexIndex) >= skirt.y) p -= normalize(center.xyz + position) * skirt.x;
+    gl_Position = mvp * vec4(p, 1.0);
     uv = texcoord0 * uv_xform.xy + uv_xform.zw;
     uv2 = texcoord0 * uv_xform2.xy + uv_xform2.zw;
     light = shade;
