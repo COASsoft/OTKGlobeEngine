@@ -17,6 +17,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <string>
 
 namespace {
@@ -39,6 +40,13 @@ struct ViewerState {
     sg_image shotDepth{};
     sg_view shotColorView{};
     sg_view shotDepthView{};
+    std::string cacheDir;
+    bool offline = false;
+    std::vector<ote::ImageryLayer> customLayers;
+    bool hasDownload = false;
+    ote::Region download;
+    int downloadMin = 0, downloadMax = 0;
+    int downloadId = 0;
     int width = 1600;
     int height = 900;
     float t0x = 0, t0y = 0, t1x = 0, t1y = 0;
@@ -87,7 +95,20 @@ void init() {
     sg_setup(&desc);
     state->engine.init();
     state->engine.setViewport(sapp_width(), sapp_height(), sapp_dpi_scale());
-    state->engine.setLayers(preset(state->preset));
+    std::string cache = state->cacheDir;
+    if (cache.empty()) {
+        if (const char* la = std::getenv("LOCALAPPDATA")) cache = std::string(la) + "/OpenTAKEngine";
+        else if (const char* home = std::getenv("HOME")) cache = std::string(home) + "/.cache/OpenTAKEngine";
+    }
+    if (!cache.empty()) {
+        std::error_code ec;
+        std::filesystem::create_directories(cache, ec);
+        state->engine.setCacheDirectory(cache);
+    }
+    state->engine.setOffline(state->offline);
+    state->engine.setLayers(state->customLayers.empty() ? preset(state->preset) : state->customLayers);
+    if (state->hasDownload)
+        state->downloadId = state->engine.downloadRegion(0, state->download, state->downloadMin, state->downloadMax);
     state->engine.setView(state->startView);
     if (!state->shotPath.empty()) {
         sg_environment env = sglue_environment();
@@ -133,7 +154,8 @@ void frame() {
         ++state->frames;
         state->shotElapsed += sapp_frame_duration();
         state->settledFrames = state->engine.needsRedraw() ? 0 : state->settledFrames + 1;
-        bool settled = state->shotElapsed > 1.0 && state->settledFrames > 10;
+        bool downloading = state->downloadId && !state->engine.downloadStatus(state->downloadId).finished;
+        bool settled = state->shotElapsed > 1.0 && state->settledFrames > 10 && !downloading;
         if (settled || state->shotElapsed >= state->shotTimeout) {
             bool ok = saveImagePng(state->shotColor, state->width, state->height,
 #if defined(SOKOL_D3D11)
@@ -148,6 +170,12 @@ void frame() {
                 std::fprintf(f, "%s frames=%d seconds=%.1f settled=%d tiles=%d L%d imagery=%d pending=%d\n",
                              ok ? "saved" : "failed", state->frames, state->shotElapsed, settled ? 1 : 0,
                              s.terrainTiles, s.maxLevel, s.imageryTextures, s.pendingRequests);
+                if (state->downloadId) {
+                    ote::DownloadStatus d = state->engine.downloadStatus(state->downloadId);
+                    std::fprintf(f, "download total=%lld done=%lld failed=%lld finished=%d\n",
+                                 static_cast<long long>(d.total), static_cast<long long>(d.done),
+                                 static_cast<long long>(d.failed), d.finished ? 1 : 0);
+                }
                 std::fclose(f);
             }
             sapp_quit();
@@ -285,6 +313,24 @@ sapp_desc sokol_main(int argc, char* argv[]) {
             state->shotTimeout = std::atof(argv[++i]);
         } else if (a == "--size") {
             std::sscanf(argv[++i], "%dx%d", &state->width, &state->height);
+        } else if (a == "--cache") {
+            state->cacheDir = argv[++i];
+        } else if (a == "--offline") {
+            state->offline = std::atoi(argv[++i]) != 0;
+        } else if (a == "--mbtiles" || a == "--gpkg" || a == "--osmdroid") {
+            ote::ImageryLayer l;
+            l.type = a == "--mbtiles" ? ote::SourceType::MBTiles
+                     : a == "--gpkg"  ? ote::SourceType::GeoPackage
+                                      : ote::SourceType::Osmdroid;
+            l.path = argv[++i];
+            l.name = l.path;
+            state->customLayers.push_back(l);
+        } else if (a == "--mobac") {
+            for (auto& l : ote::loadMobac(argv[++i])) state->customLayers.push_back(l);
+        } else if (a == "--download") {
+            ote::Region& r = state->download;
+            state->hasDownload = std::sscanf(argv[++i], "%lf,%lf,%lf,%lf,%d,%d", &r.west, &r.south, &r.east, &r.north,
+                                             &state->downloadMin, &state->downloadMax) == 6;
         } else if (a == "--preset") {
             state->preset = std::atoi(argv[++i]);
         }
