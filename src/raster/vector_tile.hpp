@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace ote {
@@ -15,7 +16,17 @@ struct VectorShape {
     std::vector<std::array<float, 2>> triangles;
 };
 
+struct VectorLabel {
+    double lon = 0;
+    double lat = 0;
+    std::string text;
+    double priority = 0;
+    std::uint32_t color = 0xFF202020;
+    float size = 12.0f;
+};
+
 struct VectorTile {
+    std::vector<VectorLabel> labels;
     std::vector<VectorShape> fills;
     std::vector<VectorShape> lines;
     std::uint32_t background = 0xFFF2EFE9;

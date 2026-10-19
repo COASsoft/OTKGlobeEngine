@@ -38,7 +38,16 @@ public:
 
     void buildSurface(const GeoRect& tile, double texelDeg, double dpi, std::vector<float>& verts);
     void drawSurface(sg_buffer buffer, int first, int count);
-    void drawOverlay(const Camera& cam, const GroundFn& ground, double dpi, bool flip);
+    struct ExternalLabel {
+        double lat = 0, lon = 0;
+        std::string text;
+        double priority = 0;
+        std::uint32_t color = 0xFF202020;
+        float size = 12.0f;
+        bool halo = true;
+    };
+    void drawOverlay(const Camera& cam, const GroundFn& ground, double dpi, bool flip,
+                     const std::vector<ExternalLabel>* extra = nullptr);
     std::uint64_t hitTest(const Camera& cam, const GroundFn& ground, const PickFn& pick, double sx, double sy,
                           double radius) const;
 

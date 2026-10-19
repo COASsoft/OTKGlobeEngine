@@ -415,8 +415,9 @@ double FeatureLayer::altitude(const Item& it, double lat, double lon, double alt
     }
 }
 
-void FeatureLayer::drawOverlay(const Camera& cam, const GroundFn& ground, double dpi, bool flip) {
-    if (!ready_ || items_.empty()) return;
+void FeatureLayer::drawOverlay(const Camera& cam, const GroundFn& ground, double dpi, bool flip,
+                               const std::vector<ExternalLabel>* extra) {
+    if (!ready_ || (items_.empty() && (!extra || extra->empty()))) return;
     const double W = cam.width, H = cam.height;
     Vec3 eye = cam.eye();
     const Mat4& vp = cam.viewProjRel();
@@ -441,6 +442,7 @@ void FeatureLayer::drawOverlay(const Camera& cam, const GroundFn& ground, double
         double x, y, offset, priority;
         float color[4];
         float size;
+        double margin = 0;
     };
     std::vector<Label> labels;
 
@@ -543,16 +545,30 @@ void FeatureLayer::drawOverlay(const Camera& cam, const GroundFn& ground, double
         }
     }
 
+    if (extra) {
+        for (const ExternalLabel& l : *extra) {
+            Vec3 e = geodeticToEcef(l.lat, l.lon, ground(l.lat, l.lon));
+            double sx, sy, sz;
+            if (!visible(e) || !project(e, sx, sy, sz) || sx < 0 || sy < 0 || sx > W || sy > H) continue;
+            float c[4];
+            color4(l.color, c);
+            double size = l.size * dpi;
+            labels.push_back({l.text, sx, sy, -size * 0.6, 1e12 + l.priority * 1e9 + length(e - eye), {c[0], c[1], c[2], c[3]},
+                              static_cast<float>(size), 28.0 * dpi});
+        }
+    }
     std::sort(labels.begin(), labels.end(), [](const Label& a, const Label& b) { return a.priority < b.priority; });
     std::vector<std::array<double, 4>> placed;
     for (const Label& l : labels) {
         double w = atlas_.measure(l.text, l.size) + 4, h = l.size * 1.25;
         double candidates[3] = {0, w * 0.5 + 10 + w * 0.5, -(w + 10)};
+        int tries = l.margin > 0 ? 1 : 3;
         bool ok = false;
         double x0 = 0, y0 = l.y + l.offset;
-        for (double shift : candidates) {
+        for (int ci = 0; ci < tries; ++ci) {
+            double shift = candidates[ci];
             x0 = l.x - w * 0.5 + shift;
-            std::array<double, 4> r{x0, y0, x0 + w, y0 + h};
+            std::array<double, 4> r{x0 - l.margin, y0 - l.margin * 0.5, x0 + w + l.margin, y0 + h + l.margin * 0.5};
             bool hit = false;
             for (const auto& p : placed)
                 if (r[0] < p[2] && r[2] > p[0] && r[1] < p[3] && r[3] > p[1]) {

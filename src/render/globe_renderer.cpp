@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <limits>
+#include <unordered_set>
 
 namespace ote {
 
@@ -1323,7 +1324,34 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         t->draw(cam, models_);
         tilesBusy = tilesBusy || t->busy();
     }
-    features_.drawOverlay(cam, [this](double lat, double lon) { return elevationAt(lat, lon); }, dpiScale_, flipSurface_);
+    std::vector<FeatureLayer::ExternalLabel> vectorLabels;
+    if (!vectorLayers_.empty()) {
+        std::unordered_set<TileId, TileIdHash> seen;
+        for (const auto& dt : tiles) {
+            Bounds b = bounds(dt.key);
+            for (int l = 0; l < static_cast<int>(matrices_.size()) && l < static_cast<int>(vectorLayers_.size()); ++l) {
+                if (!vectorLayers_[l]) continue;
+                const TileMatrix& m = matrices_[l];
+                double target = (b.north - b.south) / kSurfaceSize * m.unitsPerDegree();
+                int z = m.bestLevel(target);
+                if (z < 0) continue;
+                double clat = std::clamp(0.5 * (b.south + b.north), -84.0, 84.0), clon = 0.5 * (b.west + b.east);
+                for (int zz = z; zz >= 0; --zz) {
+                    if (!m.hasLevel(zz)) continue;
+                    TileId id{l, zz, static_cast<int>(std::floor((projectX(m.srid, clon) - m.originX) / m.spanX(zz))),
+                              static_cast<int>(std::floor((m.originY - projectY(m.srid, clat)) / m.spanY(zz)))};
+                    auto it = imagery_.find(id);
+                    if (it == imagery_.end() || !it->second.vector) continue;
+                    if (!seen.insert(id).second) break;
+                    for (const VectorLabel& vl : it->second.vector->labels)
+                        vectorLabels.push_back({vl.lat, vl.lon, vl.text, vl.priority, vl.color, vl.size, true});
+                    break;
+                }
+            }
+        }
+    }
+    features_.drawOverlay(cam, [this](double lat, double lon) { return elevationAt(lat, lon); }, dpiScale_, flipSurface_,
+                          &vectorLabels);
     sg_end_pass();
 
     bool pending = false;

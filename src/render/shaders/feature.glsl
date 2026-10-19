@@ -65,7 +65,9 @@ void main() {
     float w = max(fwidth(d), 0.02);
     float fill = smoothstep(0.5 - w, 0.5 + w, d);
     float halo = smoothstep(0.30 - w, 0.30 + w, d);
-    vec3 rgb = mix(vec3(0.0), color.rgb, fill);
+    float lum = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+    vec3 haloColor = lum < 0.5 ? vec3(1.0) : vec3(0.0);
+    vec3 rgb = mix(haloColor, color.rgb, fill);
     frag_color = vec4(rgb, halo * color.a);
 }
 @end

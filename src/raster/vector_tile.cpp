@@ -139,6 +139,7 @@ std::shared_ptr<VectorTile> decodeVectorTile(const std::vector<std::uint8_t>& ra
         std::string_view name;
         std::vector<std::string_view> keys;
         std::vector<std::string_view> values;
+        std::vector<double> numbers;
         std::vector<Reader> features;
         std::uint32_t extent = 4096;
         while (layer.ok()) {
@@ -155,28 +156,51 @@ std::shared_ptr<VectorTile> decodeVectorTile(const std::vector<std::uint8_t>& ra
             } else if (field == 4 && wire == 2) {
                 Reader v = layer.sub();
                 std::string_view sv;
+                double num = 0;
                 while (v.ok()) {
                     std::uint64_t vk = v.varint();
-                    if ((vk >> 3) == 1 && (vk & 7) == 2) {
+                    int vf = static_cast<int>(vk >> 3), vw = static_cast<int>(vk & 7);
+                    if (vf == 1 && vw == 2) {
                         Reader s = v.sub();
                         sv = std::string_view(reinterpret_cast<const char*>(s.p), static_cast<size_t>(s.end - s.p));
+                    } else if ((vf == 4 || vf == 5) && vw == 0) {
+                        num = static_cast<double>(static_cast<std::int64_t>(v.varint()));
+                    } else if (vf == 6 && vw == 0) {
+                        std::uint64_t raw = v.varint();
+                        num = static_cast<double>(static_cast<std::int64_t>((raw >> 1) ^ (~(raw & 1) + 1)));
+                    } else if (vf == 3 && vw == 1 && v.end - v.p >= 8) {
+                        std::memcpy(&num, v.p, 8);
+                        v.p += 8;
+                    } else if (vf == 2 && vw == 5 && v.end - v.p >= 4) {
+                        float f;
+                        std::memcpy(&f, v.p, 4);
+                        num = f;
+                        v.p += 4;
                     } else {
-                        v.skip(static_cast<int>(vk & 7));
+                        v.skip(vw);
                     }
                 }
                 values.push_back(sv);
+                numbers.push_back(num);
             } else if (field == 5 && wire == 0) {
                 extent = static_cast<std::uint32_t>(layer.varint());
             } else {
                 layer.skip(wire);
             }
         }
-        int classKey = -1;
-        for (size_t i = 0; i < keys.size(); ++i)
+        int classKey = -1, nameKey = -1, latinKey = -1, rankKey = -1, eleKey = -1;
+        for (size_t i = 0; i < keys.size(); ++i) {
             if (keys[i] == "class") classKey = static_cast<int>(i);
+            else if (keys[i] == "name") nameKey = static_cast<int>(i);
+            else if (keys[i] == "name:latin" || keys[i] == "name_en") latinKey = static_cast<int>(i);
+            else if (keys[i] == "rank") rankKey = static_cast<int>(i);
+            else if (keys[i] == "ele") eleKey = static_cast<int>(i);
+        }
+        bool labelLayer = name == "place" || name == "mountain_peak" || name == "water_name";
         for (Reader f : features) {
             int type = 0;
-            std::string_view cls;
+            std::string_view cls, label, latin;
+            double rank = 30, ele = -1e9;
             Reader geom{nullptr, nullptr};
             while (f.ok()) {
                 std::uint64_t k = f.varint();
@@ -185,7 +209,12 @@ std::shared_ptr<VectorTile> decodeVectorTile(const std::vector<std::uint8_t>& ra
                     Reader tags = f.sub();
                     while (tags.ok()) {
                         std::uint64_t tk = tags.varint(), tv = tags.varint();
-                        if (static_cast<int>(tk) == classKey && tv < values.size()) cls = values[tv];
+                        if (tv >= values.size()) continue;
+                        if (static_cast<int>(tk) == classKey) cls = values[tv];
+                        else if (static_cast<int>(tk) == nameKey) label = values[tv];
+                        else if (static_cast<int>(tk) == latinKey) latin = values[tv];
+                        else if (static_cast<int>(tk) == rankKey) rank = numbers[tv];
+                        else if (static_cast<int>(tk) == eleKey) ele = numbers[tv];
                     }
                 } else if (field == 3 && wire == 0) {
                     type = static_cast<int>(f.varint());
@@ -194,6 +223,46 @@ std::shared_ptr<VectorTile> decodeVectorTile(const std::vector<std::uint8_t>& ra
                 } else {
                     f.skip(wire);
                 }
+            }
+            bool wantLabel = labelLayer;
+            if (name == "place") {
+                int minZ = cls == "country" || cls == "state" || cls == "city" ? 0 : cls == "town" ? 8 : cls == "village" ? 10 : 12;
+                wantLabel = z >= minZ;
+            } else if (name == "mountain_peak") {
+                wantLabel = z >= 11;
+            }
+            if (labelLayer && !wantLabel) continue;
+            if (wantLabel && type == 1 && geom.p && (!label.empty() || !latin.empty())) {
+                Reader g = geom;
+                std::uint32_t cmd = static_cast<std::uint32_t>(g.varint());
+                if ((cmd & 7) == 1 && g.ok()) {
+                    std::uint32_t dx = static_cast<std::uint32_t>(g.varint()), dy = static_cast<std::uint32_t>(g.varint());
+                    long px = static_cast<long>((dx >> 1) ^ (~(dx & 1) + 1)), py = static_cast<long>((dy >> 1) ^ (~(dy & 1) + 1));
+                    if (px >= 0 && py >= 0 && px <= static_cast<long>(extent) && py <= static_cast<long>(extent)) {
+                        VectorLabel vl;
+                        float ll[2];
+                        toLonLat(z, x, y, static_cast<double>(px) / extent, static_cast<double>(py) / extent, ll);
+                        vl.lon = ll[0];
+                        vl.lat = ll[1];
+                        vl.text = std::string(label.empty() ? latin : label);
+                        double base = name == "place" ? (cls == "country" ? 0 : cls == "state" ? 10 : cls == "city" ? 20 : cls == "town" ? 30 : 40)
+                                                      : name == "mountain_peak" ? 45 : 50;
+                        vl.priority = base + rank;
+                        if (name == "place") {
+                            vl.size = cls == "city" || cls == "country" ? 15.0f : cls == "town" ? 13.0f : 11.5f;
+                            vl.color = 0xFF2A2A2A;
+                        } else if (name == "mountain_peak") {
+                            vl.size = 11.0f;
+                            vl.color = 0xFF6B4A2A;
+                            if (ele > -1e8) vl.text += " " + std::to_string(static_cast<int>(std::lround(ele))) + " m";
+                        } else {
+                            vl.size = 11.5f;
+                            vl.color = 0xFF2C5C9C;
+                        }
+                        tile->labels.push_back(std::move(vl));
+                    }
+                }
+                continue;
             }
             Rule rule;
             if (type < 2 || !geom.p || !styleFor(name, cls, z, rule)) continue;
