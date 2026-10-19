@@ -93,15 +93,111 @@ struct Engine::Impl {
         }
     }
 
-    void grab(double sx, double sy, Vec3& out) const {
-        Vec3 eye = camera.eye();
-        double limit = std::max(camera.range() * 3.0, 2000.0);
-        Vec3 hit;
-        if (pickGround(sx, sy, hit) && length(hit - eye) <= limit) {
-            out = hit;
-            return;
+    std::uint64_t sanityFrame = 0;
+    bool sanityHave = false;
+    GeoPoint lastFocus;
+    double lastGsd = 0;
+    double lastAz = 0;
+    double lastTilt = 0;
+
+    void sanity() {
+        if (!globe.diagnostics()) return;
+        ++sanityFrame;
+        Camera& c = camera;
+        Vec3 eye = c.eye();
+        bool finite = std::isfinite(eye.x) && std::isfinite(eye.y) && std::isfinite(eye.z) && std::isfinite(c.gsd) && std::isfinite(c.tilt) &&
+                      std::isfinite(c.azimuth) && std::isfinite(c.focus.lat) && std::isfinite(c.focus.lon) && std::isfinite(c.focus.alt);
+        const Mat4& vp = c.viewProjRel();
+        for (int i = 0; i < 4 && finite; ++i)
+            for (int j = 0; j < 4 && finite; ++j) finite = std::isfinite(vp.at(i, j));
+        if (!finite) globe.log("violation frame %llu: non-finite camera", static_cast<unsigned long long>(sanityFrame));
+        if (c.firstPerson) return;
+        GeoPoint eg = ecefToGeodetic(eye);
+        double g = globe.elevationAt(eg.lat, eg.lon);
+        if (sanityFrame % 15 == 0) {
+            Vec3 ch;
+            bool centre = pickGround(c.width * 0.5, c.height * 0.5, ch);
+            globe.log("camera frame %llu: eye %.5f %.5f alt %.1f ground %.1f above %.1f near %.2f far %.0f range %.0f focus_alt %.1f tilt %.1f gsd %.2f centre %d",
+                      static_cast<unsigned long long>(sanityFrame), eg.lat, eg.lon, eg.alt, g, c.eyeAboveGround(), c.nearPlane(), c.farPlane(), c.range(),
+                      c.focus.alt, c.tilt, c.gsd, centre ? 1 : 0);
         }
-        out = eye + camera.rayDirection(sx, sy) * limit;
+        if (std::isfinite(g) && eg.alt < g - 1.0)
+            globe.log("violation frame %llu: eye %.1f m below ground at %.5f %.5f tilt %.1f gsd %.2f", static_cast<unsigned long long>(sanityFrame),
+                      g - eg.alt, eg.lat, eg.lon, c.tilt, c.gsd);
+        if (c.tilt < 70.0) {
+            Vec3 hit;
+            if (!pickGround(c.width * 0.5, c.height * 0.5, hit))
+                globe.log("violation frame %llu: screen centre misses the ground at tilt %.1f gsd %.2f", static_cast<unsigned long long>(sanityFrame),
+                          c.tilt, c.gsd);
+        }
+        if (sanityHave && !flying) {
+            double dn = (c.focus.lat - lastFocus.lat) * 111320.0;
+            double de = std::remainder(c.focus.lon - lastFocus.lon, 360.0) * 111320.0 * std::cos(c.focus.lat * kDegToRad);
+            double moved = std::hypot(dn, de);
+            double extent = std::max(lastGsd, c.gsd) * std::hypot(static_cast<double>(c.width), static_cast<double>(c.height));
+            if (moved > extent * 1.5 && std::abs(c.focus.lat) < 89.0)
+                globe.log("violation frame %llu: focus jumped %.0f m in one frame (view extent %.0f m) tilt %.1f", static_cast<unsigned long long>(sanityFrame),
+                          moved, extent, c.tilt);
+            if (std::abs(c.gsd / std::max(lastGsd, 1e-9)) > 4.0 || std::abs(lastGsd / std::max(c.gsd, 1e-9)) > 4.0)
+                globe.log("violation frame %llu: gsd jumped %.2f -> %.2f", static_cast<unsigned long long>(sanityFrame), lastGsd, c.gsd);
+        }
+        Stats st = globe.stats();
+        if (st.blankTiles > 0 && sanityFrame > 120)
+            globe.log("violation frame %llu: %d blank tiles", static_cast<unsigned long long>(sanityFrame), st.blankTiles);
+        lastFocus = c.focus;
+        lastGsd = c.gsd;
+        lastAz = c.azimuth;
+        lastTilt = c.tilt;
+        sanityHave = true;
+    }
+
+    double grabLimit() const { return std::max(camera.range() * 3.0, 2000.0); }
+
+    Vec3 upAt(const Vec3& p) const {
+        GeoPoint g = ecefToGeodetic(p);
+        Vec3 e, n, u;
+        enuFrame(g.lat, g.lon, e, n, u);
+        return u;
+    }
+
+    Vec3 onPlane(double sx, double sy, const Vec3& origin, const Vec3& up, double limit) const {
+        Vec3 eye = camera.eye();
+        Vec3 d = normalize(camera.rayDirection(sx, sy));
+        double denom = dot(d, up);
+        double above = dot(eye - origin, up);
+        if (above > 0 && denom < -1e-6) {
+            double t = -above / denom;
+            Vec3 hit = eye + d * t;
+            Vec3 foot = eye - up * above;
+            if (length(hit - foot) <= limit) return hit;
+        }
+        Vec3 hd = d - up * denom;
+        if (length(hd) < 1e-9) {
+            Vec3 e, n, u;
+            enuFrame(camera.focus.lat, camera.focus.lon, e, n, u);
+            double az = camera.azimuth * kDegToRad;
+            hd = n * std::cos(az) + e * std::sin(az);
+        }
+        hd = normalize(hd);
+        Vec3 foot = eye - up * above;
+        return foot + hd * limit;
+    }
+
+    bool groundAnchor(double sx, double sy, double maxDistance, Vec3& out) const {
+        Vec3 hit;
+        if (!pickGround(sx, sy, hit)) return false;
+        if (length(hit - camera.eye()) > maxDistance) return false;
+        out = hit;
+        return true;
+    }
+
+    void dragPoints(double x0, double y0, double x1, double y1, Vec3& p0, Vec3& p1) const {
+        double limit = grabLimit();
+        Vec3 origin;
+        if (!groundAnchor(x0, y0, limit, origin)) origin = onPlane(x0, y0, camera.focusEcef(), upAt(camera.focusEcef()), limit);
+        Vec3 up = upAt(origin);
+        p0 = origin;
+        p1 = onPlane(x1, y1, origin, up, limit);
     }
 
     double poleLimit() const { return 89.99; }
@@ -572,8 +668,7 @@ void Engine::pan(double x0, double y0, double x1, double y1) {
     }
     double lonCap = 180.0 * std::hypot(x1 - x0, y1 - y0) / std::max(static_cast<double>(std::min(c.width, c.height)), 1.0);
     Vec3 p0, p1;
-    impl_->grab(x0, y0, p0);
-    impl_->grab(x1, y1, p1);
+    impl_->dragPoints(x0, y0, x1, y1, p0, p1);
     if (!impl_->headingLock) {
         impl_->moveCamera(p1, p0, lonCap);
     } else {
@@ -592,21 +687,22 @@ void Engine::zoomAt(double sx, double sy, double factor) {
         return;
     }
     Vec3 before;
-    impl_->grab(sx, sy, before);
+    bool anchored = impl_->groundAnchor(sx, sy, c.range() * 2.0, before);
     double ax = sx - c.width * 0.5, ay = sy - c.height * 0.5;
     c.gsd *= factor;
     c.update();
-    Vec3 after;
-    impl_->grab(sx, sy, after);
-    if (impl_->headingLock) {
-        Vec3 e, n, u;
-        enuFrame(c.focus.lat, c.focus.lon, e, n, u);
-        Vec3 move = before - after;
-        double shiftPx = std::hypot(ax, ay) * std::abs(1.0 - 1.0 / factor);
-        double cap = 180.0 * shiftPx / std::max(static_cast<double>(std::min(c.width, c.height)), 1.0);
-        impl_->shiftFocus(dot(move, e), dot(move, n), cap);
-    } else {
-        impl_->moveCamera(after, before);
+    if (anchored) {
+        Vec3 after = impl_->onPlane(sx, sy, before, impl_->upAt(before), impl_->grabLimit() * 2.0);
+        if (impl_->headingLock) {
+            Vec3 e, n, u;
+            enuFrame(c.focus.lat, c.focus.lon, e, n, u);
+            Vec3 move = before - after;
+            double shiftPx = std::hypot(ax, ay) * std::abs(1.0 - 1.0 / factor);
+            double cap = 180.0 * shiftPx / std::max(static_cast<double>(std::min(c.width, c.height)), 1.0);
+            impl_->shiftFocus(dot(move, e), dot(move, n), cap);
+        } else {
+            impl_->moveCamera(after, before);
+        }
     }
     impl_->dirty = true;
 }
@@ -618,11 +714,16 @@ void Engine::rotateAt(double sx, double sy, double degrees) {
         return;
     }
     Vec3 before;
-    bool hit = impl_->pickGround(sx, sy, before);
+    bool anchored = impl_->groundAnchor(sx, sy, c.range() * 2.0, before);
     c.azimuth += degrees;
     c.update();
-    Vec3 after;
-    if (hit && impl_->pickGround(sx, sy, after)) impl_->moveCamera(after, before);
+    if (anchored) {
+        Vec3 after = impl_->onPlane(sx, sy, before, impl_->upAt(before), impl_->grabLimit() * 2.0);
+        Vec3 e, n, u;
+        enuFrame(c.focus.lat, c.focus.lon, e, n, u);
+        Vec3 move = before - after;
+        impl_->shiftFocus(dot(move, e), dot(move, n), 30.0);
+    }
     impl_->dirty = true;
 }
 
@@ -698,6 +799,7 @@ void Engine::frame(const sg_swapchain& swapchain) {
     impl_->animate();
     impl_->followTerrain();
     impl_->globe.render(impl_->camera, &swapchain, nullptr, swapchain.width, swapchain.height);
+    impl_->sanity();
     impl_->dirty = false;
     impl_->globe.setCpuMs(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - cpuStart).count());
 }
@@ -707,6 +809,7 @@ void Engine::frameOffscreen(const sg_attachments& attachments, int width, int he
     impl_->animate();
     impl_->followTerrain();
     impl_->globe.render(impl_->camera, nullptr, &attachments, width, height);
+    impl_->sanity();
     impl_->dirty = false;
 }
 
