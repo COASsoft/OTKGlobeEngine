@@ -417,8 +417,6 @@ bool GlobeRenderer::buildSurfaceJob(const QuadKey& k, double priority, SurfaceJo
                 }
                 if (!tex || !job) continue;
                 tex->used = frame_;
-                ImageryTexture* mut = const_cast<ImageryTexture*>(tex);
-                mut->used = frame_;
 
                 int sn = 1 << src.z;
                 double sw = src.x * 360.0 / sn - 180.0, se = (src.x + 1) * 360.0 / sn - 180.0;
