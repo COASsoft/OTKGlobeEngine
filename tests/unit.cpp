@@ -5,6 +5,7 @@
 #include "ote/features.hpp"
 #include "ote/formats.hpp"
 #include "ote/mgrs.hpp"
+#include "ote/navigation.hpp"
 #include "net/http.hpp"
 #include "ote/engine.hpp"
 #include "raster/tile_cache.hpp"
@@ -336,6 +337,112 @@ int main() {
                   "export to MBTiles/GeoPackage and import into the cache");
         }
         fs::remove_all(dir, ec);
+    }
+    {
+        auto dms = [](double d, double m, double s) { return (d < 0 ? -1 : 1) * (std::abs(d) + m / 60.0 + s / 3600.0); };
+        double la1 = dms(-37, 57, 3.72030), lo1 = dms(144, 25, 29.52440), la2 = dms(-37, 39, 10.15610), lo2 = dms(143, 55, 35.38390);
+        GeodesicLine g = geodesicInverse(la1, lo1, la2, lo2);
+        check(std::abs(g.distance - 54972.271) < 0.01 && std::abs(g.initialBearing - dms(306, 52, 5.37)) < 1e-4 &&
+                  std::abs(g.finalBearing - dms(307, 10, 25.07)) < 1e-4,
+              "vincenty inverse (Flinders Peak - Buninyong)");
+        double fb = 0;
+        Coord d = geodesicDirect({la1, lo1, 0}, g.initialBearing, g.distance, &fb);
+        check(std::abs(d.lat - la2) < 1e-8 && std::abs(d.lon - lo2) < 1e-8 && std::abs(fb - g.finalBearing) < 1e-6, "vincenty direct");
+        GeodesicLine anti = geodesicInverse(0.0, 0.0, 0.5, 179.7);
+        check(anti.distance > 19900000 && anti.distance < 20100000, "near-antipodal fallback");
+        std::vector<Coord> square{{0, 0, 0}, {0, 1, 0}, {1, 1, 0}, {1, 0, 0}};
+        double area = geodesicArea(square);
+        check(std::abs(area - 1.2308e10) / 1.2308e10 < 0.01, "geodesic area of a 1 degree cell");
+    }
+    {
+        struct T {
+            double year, km, lat, lon, decl, incl;
+        };
+        const T tests[] = {{2025.0, 28, 89, -121, -99.77, 88.47}, {2025.0, 65, 43, 93, 0.50, 64.10},  {2025.0, 51, -33, 109, -5.49, -67.50},
+                           {2025.5, 69, 38, -144, 12.93, 56.97}, {2025.5, 50, -70, -133, 57.21, -71.94}, {2026.0, 46, -24, -122, 14.01, -34.17}};
+        bool ok = true;
+        for (const T& t : tests) {
+            MagneticField m = magneticField(t.lat, t.lon, t.km * 1000.0, t.year);
+            if (std::abs(m.declination - t.decl) > 0.011 || std::abs(m.inclination - t.incl) > 0.011) {
+                ok = false;
+                std::printf("     wmm %.1f %g %g: D %.3f (want %.2f) I %.3f (want %.2f)\n", t.year, t.lat, t.lon, m.declination, t.decl,
+                            m.inclination, t.incl);
+            }
+        }
+        check(ok, "WMM2025 declination and inclination match NOAA test values");
+        check(std::abs(gridConvergence(47.0, -123.0)) < 1e-9 && std::abs(gridConvergence(47.0, -122.9) - 0.1 * std::sin(47.0 * 3.14159265358979 / 180)) < 1e-4,
+              "grid convergence");
+        double t = 100.0;
+        bool refs = std::abs(bearingToTrue(bearingFromTrue(t, 47, -122.9, NorthReference::Magnetic), 47, -122.9, NorthReference::Magnetic) - t) < 1e-9 &&
+                    std::abs(bearingFromTrue(t, 47, -122.9, NorthReference::Magnetic) - (t - magneticDeclination(47, -122.9))) < 1e-9;
+        check(refs, "true/magnetic/grid bearing conversion");
+        check(formatBearing(90, AngleUnit::Mils, NorthReference::Magnetic) == "1600 mils M" && std::abs(degreesToMils(180) - 3200) < 1e-9 &&
+                  formatBearing(5.4) == "005\xC2\xB0T",
+              "bearing formatting in degrees and NATO mils");
+        check(formatDistance(850) == "850 m" && formatDistance(12345) == "12.3 km" && formatDistance(1852, DistanceUnit::Nautical) == "1.00 NM",
+              "distance formatting");
+    }
+    {
+        check(toMgrs(90.0, 0.0, 5) == "Z AH 00000 00000" && toMgrs(-90.0, 0.0, 5) == "B AN 00000 00000", "polar MGRS at the poles");
+        bool ok = true;
+        for (auto [la, lo] : {std::pair{86.0, 45.0}, {88.5, -120.0}, {-85.0, -120.0}, {-81.0, 10.0}, {84.5, 179.0}}) {
+            double rl = 0, ro = 0;
+            std::string m = toMgrs(la, lo, 5);
+            ok = ok && !m.empty() && fromMgrs(m, rl, ro) && length(geodeticToEcef(rl, ro, 0) - geodeticToEcef(la, lo, 0)) < 2.0;
+            if (!ok) std::printf("     polar %s -> %f %f\n", m.c_str(), rl, ro);
+        }
+        check(ok, "polar MGRS (UPS) roundtrip");
+        check(toGars(0.0, 0.0) == "361HN37" && toGars(-90.0, -180.0, 1) == "001AA" && toGars(89.99, 179.99, 1) == "720QZ", "GARS cells");
+        bool garsOk = true;
+        for (auto [la, lo] : {std::pair{47.04, -122.9}, {-33.87, 151.21}, {0.01, 0.01}, {64.2, -21.9}}) {
+            double rl = 0, ro = 0;
+            garsOk = garsOk && fromGars(toGars(la, lo), rl, ro) && std::abs(rl - la) <= 0.25 / 6 + 1e-9 && std::abs(ro - lo) <= 0.25 / 6 + 1e-9;
+        }
+        check(garsOk, "GARS roundtrip");
+        struct P {
+            const char* text;
+            double lat, lon;
+        };
+        const P parses[] = {{"47.04, -122.9", 47.04, -122.9},
+                            {"-33.87 151.21", -33.87, 151.21},
+                            {"33.87 -151.21", 33.87, -151.21},
+                            {"47.04N 122.9W", 47.04, -122.9},
+                            {"N 47\xC2\xB0 02.4000' W 122\xC2\xB0 54.0000'", 47.04, -122.9},
+                            {"47 02 24 N 122 54 00 W", 47.04, -122.9},
+                            {"S33 52 12 E151 12 36", -33.87, 151.21},
+                            {"10T ES 94499 89563", 46.8529, -121.7604},
+                            {"361HN37", 0.0417, 0.0417}};
+        bool parseOk = true;
+        for (const P& p : parses) {
+            double la = 0, lo = 0;
+            bool ok = parseCoordinate(p.text, la, lo) && std::abs(la - p.lat) < 1e-3 && std::abs(lo - p.lon) < 1e-3;
+            if (!ok) std::printf("     parse '%s' -> %f %f\n", p.text, la, lo);
+            parseOk = parseOk && ok;
+        }
+        check(parseOk, "coordinate parsing (DD, DM, DMS, MGRS, GARS)");
+        bool fmtOk = true;
+        for (auto [pla, plo] : {std::pair{46.8529, -121.7604}, {87.5, 33.3}})
+            for (CoordinateFormat cf : {CoordinateFormat::Decimal, CoordinateFormat::DegreesMinutes, CoordinateFormat::DegreesMinutesSeconds,
+                                        CoordinateFormat::Mgrs, CoordinateFormat::Utm}) {
+                double la = 0, lo = 0;
+                std::string s = formatCoordinate(pla, plo, cf);
+                bool ok = parseCoordinate(s, la, lo) && std::abs(la - pla) < 2e-5 && std::abs(lo - plo) < 2e-5 * (pla > 80 ? 20 : 1);
+                if (!ok) std::printf("     format/parse '%s' -> %f %f\n", s.c_str(), la, lo);
+                fmtOk = fmtOk && ok;
+            }
+        check(fmtOk, "coordinate formats roundtrip");
+    }
+    {
+        std::vector<Feature> be = bullseye({47.0, -122.9, 0}, 10000, 3, 30);
+        std::vector<Feature> rr = rangeRings({47.0, -122.9, 0}, 1000, 4, 8);
+        std::vector<Feature> rb = rangeBearingLine({47.0, -122.9, 0}, {47.1, -122.8, 0}, NorthReference::True);
+        GeodesicLine g = geodesicInverse(47.0, -122.9, 47.1, -122.8);
+        const std::string* dist = rb.empty() ? nullptr : findAttribute(rb[0], "distance_m");
+        Feature circle = geodesicCircle({10, 20, 0}, 5000);
+        double worst = 0;
+        for (const Coord& c : circle.geometries[0].points) worst = std::max(worst, std::abs(geodesicInverse(10, 20, c.lat, c.lon).distance - 5000));
+        check(be.size() == 31 && rr.size() == 16 && rb.size() == 2 && dist && std::abs(std::stod(*dist) - g.distance) < 1e-3 && worst < 1e-3,
+              "bullseye, range rings, range and bearing line, geodesic circle");
     }
     std::printf("%d failure(s)\n", failures);
     return failures == 0 ? 0 : 1;

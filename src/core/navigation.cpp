@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <ctime>
 
 namespace ote {
@@ -37,6 +38,8 @@ std::string upper(const std::string& s) {
     for (char c : s) out += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
     return out;
 }
+
+bool polarLetter(char c) { return c == 'A' || c == 'B' || c == 'Y' || c == 'Z'; }
 
 std::string trim(const std::string& s) {
     size_t a = s.find_first_not_of(" \t\r\n");
@@ -394,31 +397,61 @@ bool parseCoordinate(const std::string& input, double& lat, double& lon) {
         return true;
     if (fromMgrs(compact, lat, lon)) return true;
     {
-        int zone = 0;
-        char band = 0;
+        std::vector<std::string> tok;
+        std::string cur;
+        for (char c : text) {
+            if (std::isspace(static_cast<unsigned char>(c)) || c == ',') {
+                if (!cur.empty()) tok.push_back(cur);
+                cur.clear();
+            } else {
+                cur += c;
+            }
+        }
+        if (!cur.empty()) tok.push_back(cur);
+        if (tok.size() == 4 && tok[1].size() == 1) {
+            tok[0] += tok[1];
+            tok.erase(tok.begin() + 1);
+        }
+        auto number = [](std::string t, double& v) {
+            while (!t.empty() && (t.back() == 'E' || t.back() == 'N' || t.back() == 'M')) t.pop_back();
+            if (t.empty()) return false;
+            for (char c : t)
+                if (!std::isdigit(static_cast<unsigned char>(c)) && c != '.') return false;
+            v = std::stod(t);
+            return true;
+        };
         double e = 0, n = 0;
-        char tail[8] = {0};
-        std::string utm = text;
-        for (char& c : utm)
-            if (c == ',') c = ' ';
-        if (std::sscanf(utm.c_str(), "%d%c %lf%*[ ME] %lf%7s", &zone, &band, &e, &n, tail) >= 4 ||
-            std::sscanf(utm.c_str(), "%d %c %lf%*[ ME] %lf%7s", &zone, &band, &e, &n, tail) >= 4) {
-            if (zone >= 1 && zone <= 60 && e >= 100000 && e < 1000000 && n >= 0 && n <= 10000000 && std::isalpha(static_cast<unsigned char>(band))) {
+        if (tok.size() == 3 && tok[0].size() >= 2 && std::isalpha(static_cast<unsigned char>(tok[0].back())) && number(tok[1], e) &&
+            number(tok[2], n)) {
+            std::string zs = tok[0].substr(0, tok[0].size() - 1);
+            char band = tok[0].back();
+            bool digits = !zs.empty() && std::all_of(zs.begin(), zs.end(), [](char c) { return std::isdigit(static_cast<unsigned char>(c)) != 0; });
+            int zone = digits ? std::stoi(zs) : 0;
+            if (zone >= 1 && zone <= 60 && e >= 100000 && e < 1000000 && n >= 0 && n <= 10000000 && band >= 'C' && band <= 'X') {
                 Utm u;
                 u.zone = zone;
                 u.band = band;
-                u.north = band >= 'N' || band == 'N';
+                u.north = band >= 'N';
                 u.easting = e;
                 u.northing = n;
                 fromUtm(u, lat, lon);
                 return std::isfinite(lat) && std::isfinite(lon);
             }
         }
+        if (tok.size() == 3 && tok[0].size() == 1 && polarLetter(tok[0][0]) && number(tok[1], e) && number(tok[2], n)) {
+            Ups u;
+            u.zone = tok[0][0];
+            u.north = u.zone == 'Y' || u.zone == 'Z';
+            u.easting = e;
+            u.northing = n;
+            fromUps(u, lat, lon);
+            return std::isfinite(lat) && std::isfinite(lon);
+        }
     }
     struct Group {
         std::vector<double> values;
+        std::vector<bool> signs;
         char hemi = 0;
-        bool negative = false;
     };
     std::vector<Group> groups(1);
     bool letterLeads = false;
@@ -453,7 +486,7 @@ bool parseCoordinate(const std::string& input, double& lat, double& lon) {
                 groups.emplace_back();
                 g = &groups.back();
             }
-            if (g->values.empty() && text[i] == '-') g->negative = true;
+            g->signs.push_back(v < 0 || text[i] == '-');
             g->values.push_back(std::abs(v));
             i += used;
             continue;
@@ -470,10 +503,12 @@ bool parseCoordinate(const std::string& input, double& lat, double& lon) {
         std::vector<double> v = groups[0].values;
         if (v.size() == 2 || v.size() == 4 || v.size() == 6) {
             size_t half = v.size() / 2;
+            std::vector<bool> sg = groups[0].signs;
             Group a, b;
             a.values.assign(v.begin(), v.begin() + static_cast<long>(half));
+            a.signs.assign(sg.begin(), sg.begin() + static_cast<long>(half));
             b.values.assign(v.begin() + static_cast<long>(half), v.end());
-            a.negative = groups[0].negative;
+            b.signs.assign(sg.begin() + static_cast<long>(half), sg.end());
             groups = {a, b};
         }
     }
@@ -482,7 +517,7 @@ bool parseCoordinate(const std::string& input, double& lat, double& lon) {
         double d = g.values[0], m = g.values.size() > 1 ? g.values[1] : 0, s = g.values.size() > 2 ? g.values[2] : 0;
         ok = g.values.size() <= 3 && m < 60 && s < 60;
         double v = d + m / 60.0 + s / 3600.0;
-        return (g.negative || g.hemi == 'S' || g.hemi == 'W') ? -v : v;
+        return ((!g.signs.empty() && g.signs[0]) || g.hemi == 'S' || g.hemi == 'W') ? -v : v;
     };
     bool ok1 = false, ok2 = false;
     double a = value(groups[0], ok1), b = value(groups[1], ok2);

@@ -83,9 +83,123 @@ void fromUtm(const Utm& u, double& lat, double& lon) {
     lon /= kD2R;
 }
 
+Ups toUps(double lat, double lon) {
+    const double e = std::sqrt(kE2);
+    const double k0 = 0.994;
+    Ups u;
+    u.north = lat >= 0;
+    double phi = std::abs(lat) * kD2R, lambda = lon * kD2R;
+    double es = e * std::sin(phi);
+    double t = std::tan(kPi / 4 - phi / 2) / std::pow((1 - es) / (1 + es), e / 2);
+    double rho = 2 * kA * k0 * t / std::sqrt(std::pow(1 + e, 1 + e) * std::pow(1 - e, 1 - e));
+    u.easting = 2000000.0 + rho * std::sin(lambda);
+    u.northing = u.north ? 2000000.0 - rho * std::cos(lambda) : 2000000.0 + rho * std::cos(lambda);
+    u.zone = u.north ? (u.easting >= 2000000.0 ? 'Z' : 'Y') : (u.easting >= 2000000.0 ? 'B' : 'A');
+    return u;
+}
+
+void fromUps(const Ups& u, double& lat, double& lon) {
+    const double e = std::sqrt(kE2);
+    const double k0 = 0.994;
+    double dx = u.easting - 2000000.0, dy = u.northing - 2000000.0;
+    double rho = std::sqrt(dx * dx + dy * dy);
+    double t = rho * std::sqrt(std::pow(1 + e, 1 + e) * std::pow(1 - e, 1 - e)) / (2 * kA * k0);
+    double chi = kPi / 2 - 2 * std::atan(t);
+    double e2 = kE2, e4 = e2 * e2, e6 = e4 * e2, e8 = e4 * e4;
+    double phi = chi + (e2 / 2 + 5 * e4 / 24 + e6 / 12 + 13 * e8 / 360) * std::sin(2 * chi) +
+                 (7 * e4 / 48 + 29 * e6 / 240 + 811 * e8 / 11520) * std::sin(4 * chi) + (7 * e6 / 120 + 81 * e8 / 1120) * std::sin(6 * chi) +
+                 (4279 * e8 / 161280) * std::sin(8 * chi);
+    lat = (u.north ? phi : -phi) / kD2R;
+    lon = (rho == 0 ? 0.0 : (u.north ? std::atan2(dx, -dy) : std::atan2(dx, dy))) / kD2R;
+}
+
+namespace {
+
+struct PolarZone {
+    char letter;
+    int low;
+    double falseEasting;
+    double falseNorthing;
+};
+
+constexpr PolarZone kPolar[4] = {{'A', 'J' - 'A', 800000.0, 800000.0},
+                                 {'B', 0, 2000000.0, 800000.0},
+                                 {'Y', 'J' - 'A', 800000.0, 1300000.0},
+                                 {'Z', 0, 2000000.0, 1300000.0}};
+
+const PolarZone* polarZone(char c) {
+    for (const PolarZone& z : kPolar)
+        if (z.letter == c) return &z;
+    return nullptr;
+}
+
+std::string polarMgrs(double lat, double lon, int digits) {
+    Ups u = toUps(lat, lon);
+    const PolarZone* z = polarZone(u.zone);
+    if (!z) return {};
+    int row = static_cast<int>((u.northing - z->falseNorthing) / 100000.0);
+    if (row > 'H' - 'A') ++row;
+    if (row > 'N' - 'A') ++row;
+    int col = z->low + static_cast<int>((u.easting - z->falseEasting) / 100000.0);
+    if (u.easting < 2000000.0) {
+        if (col > 'L' - 'A') col += 3;
+        if (col > 'U' - 'A') col += 2;
+    } else {
+        if (col > 'C' - 'A') col += 2;
+        if (col > 'H' - 'A') col += 1;
+        if (col > 'L' - 'A') col += 3;
+    }
+    if (row < 0 || row > 25 || col < 0 || col > 25) return {};
+    digits = digits < 0 ? 0 : digits > 5 ? 5 : digits;
+    double div = std::pow(10.0, 5 - digits);
+    long e = static_cast<long>(std::floor(std::fmod(u.easting, 100000.0) / div));
+    long n = static_cast<long>(std::floor(std::fmod(u.northing, 100000.0) / div));
+    char buf[64];
+    if (digits == 0) std::snprintf(buf, sizeof(buf), "%c %c%c", u.zone, 'A' + col, 'A' + row);
+    else std::snprintf(buf, sizeof(buf), "%c %c%c %0*ld %0*ld", u.zone, 'A' + col, 'A' + row, digits, e, digits, n);
+    return buf;
+}
+
+bool polarFromMgrs(const std::string& s, double& lat, double& lon) {
+    if (s.size() < 3) return false;
+    const PolarZone* z = polarZone(s[0]);
+    if (!z) return false;
+    int col = s[1] - 'A', row = s[2] - 'A';
+    if (col < 0 || col > 25 || row < 0 || row > 25) return false;
+    std::string digits = s.substr(3);
+    if (digits.size() % 2) return false;
+    for (char c : digits)
+        if (!std::isdigit(static_cast<unsigned char>(c))) return false;
+    size_t half = digits.size() / 2;
+    double scale = std::pow(10.0, 5 - static_cast<int>(half));
+    double e = half ? std::stod(digits.substr(0, half)) * scale : 0;
+    double n = half ? std::stod(digits.substr(half)) * scale : 0;
+    double northing = row * 100000.0 + z->falseNorthing;
+    if (row > 'I' - 'A') northing -= 100000.0;
+    if (row > 'O' - 'A') northing -= 100000.0;
+    double easting = (col - z->low) * 100000.0 + z->falseEasting;
+    if (z->low != 0) {
+        if (col > 'L' - 'A') easting -= 300000.0;
+        if (col > 'U' - 'A') easting -= 200000.0;
+    } else {
+        if (col > 'C' - 'A') easting -= 200000.0;
+        if (col > 'I' - 'A') easting -= 100000.0;
+        if (col > 'L' - 'A') easting -= 300000.0;
+    }
+    Ups u;
+    u.zone = s[0];
+    u.north = s[0] == 'Y' || s[0] == 'Z';
+    u.easting = easting + e;
+    u.northing = northing + n;
+    fromUps(u, lat, lon);
+    return true;
+}
+
+}
+
 std::string toMgrs(double lat, double lon, int digits) {
     char band = utmBand(lat);
-    if (!band) return {};
+    if (!band) return polarMgrs(lat, lon, digits);
     Utm u = toUtm(lat, lon);
     int set = (u.zone - 1) % 3;
     int col = static_cast<int>(std::floor(u.easting / 100000.0));
@@ -106,6 +220,7 @@ bool fromMgrs(const std::string& text, double& lat, double& lon) {
     std::string s;
     for (char c : text)
         if (!std::isspace(static_cast<unsigned char>(c))) s += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    if (!s.empty() && std::isalpha(static_cast<unsigned char>(s[0]))) return polarFromMgrs(s, lat, lon);
     size_t i = 0;
     int zone = 0;
     while (i < s.size() && std::isdigit(static_cast<unsigned char>(s[i]))) zone = zone * 10 + (s[i++] - '0');

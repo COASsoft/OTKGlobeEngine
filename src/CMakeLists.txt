@@ -12,6 +12,8 @@ add_library(opentakengine STATIC
     core/geo.cpp
     core/camera.cpp
     core/mgrs.cpp
+    core/navigation.cpp
+    core/wmm.cpp
     core/geoid.cpp
     raster/tile_loader.cpp
     raster/tile_matrix.cpp
