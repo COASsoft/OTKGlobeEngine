@@ -1,0 +1,242 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        run: |
+          version=$(sed -n 's/^project(OpenTAKEngine VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          dotnet=$(sed -n 's/.*<Version>\(.*\)<\/Version>.*/\1/p' bindings/dotnet/OpenTakEngine.csproj)
+          test "$version" = "$dotnet"
+          grep -q "^## $version\$" CHANGELOG.md
+          if [ "${GITHUB_REF_TYPE}" = tag ]; then test "${GITHUB_REF_NAME}" = "v$version"; fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  windows:
+    needs: version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756
+      - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build build
+      - run: ctest --test-dir build --output-on-failure
+      - run: cpack --config build/CPackConfig.cmake -B dist
+      - name: Package consumer test
+        shell: bash
+        run: |
+          mkdir -p consumer native/win-x64
+          unzip -q dist/opentakengine-*.zip -d consumer
+          prefix=$(ls -d "$PWD"/consumer/opentakengine-*)
+          cmake -S tests/package_consumer -B consumer/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$prefix"
+          cmake --build consumer/build
+          PATH="$prefix/bin:$PATH" consumer/build/consumer.exe
+          cp "$prefix/bin/opentakengine_c.dll" native/win-x64/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg-windows
+          path: dist/*.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-win-x64
+          path: native/win-x64
+
+  linux:
+    needs: version
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            rid: linux-x64
+          - runner: ubuntu-22.04-arm
+            rid: linux-arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build libcurl4-openssl-dev libx11-dev libxi-dev libxcursor-dev libgl1-mesa-dev rpm
+      - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build build
+      - run: ctest --test-dir build --output-on-failure
+      - run: cpack --config build/CPackConfig.cmake -B dist
+      - name: Package consumer test
+        run: |
+          mkdir -p consumer native/${{ matrix.rid }}
+          tar -xzf dist/opentakengine-*.tar.gz -C consumer
+          prefix=$(ls -d "$PWD"/consumer/opentakengine-*)
+          cmake -S tests/package_consumer -B consumer/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$prefix"
+          cmake --build consumer/build
+          LD_LIBRARY_PATH="$prefix/lib" consumer/build/consumer
+          cp -L "$prefix/lib/libopentakengine_c.so" native/${{ matrix.rid }}/libopentakengine_c.so
+          dpkg-deb --info dist/*.deb
+          rpm -qpl dist/*.rpm | head
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg-${{ matrix.rid }}
+          path: |
+            dist/*.tar.gz
+            dist/*.deb
+            dist/*.rpm
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.rid }}
+          path: native/${{ matrix.rid }}
+
+  macos:
+    needs: version
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install ninja
+      - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0
+      - run: cmake --build build
+      - run: ctest --test-dir build --output-on-failure
+      - run: cpack --config build/CPackConfig.cmake -B dist
+      - name: Package consumer test
+        run: |
+          mkdir -p consumer native/osx
+          tar -xzf dist/opentakengine-*.tar.gz -C consumer
+          prefix=$(ls -d "$PWD"/consumer/opentakengine-*)
+          cmake -S tests/package_consumer -B consumer/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$prefix"
+          cmake --build consumer/build
+          DYLD_LIBRARY_PATH="$prefix/lib" consumer/build/consumer
+          cp -L "$prefix/lib/libopentakengine_c.dylib" native/osx/libopentakengine_c.dylib
+          lipo -info native/osx/libopentakengine_c.dylib
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg-macos
+          path: dist/*.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-osx
+          path: native/osx
+
+  apple-xcframework:
+    needs: version
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/apple_xcframework.sh
+      - run: |
+          mkdir -p dist
+          cd build/apple && zip -qry "../../dist/OpenTAKEngine-${{ needs.version.outputs.version }}.xcframework.zip" OpenTAKEngine.xcframework
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg-xcframework
+          path: dist/*.zip
+
+  android:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - run: python3 scripts/android_apk.py
+      - run: python3 scripts/android_aar.py
+      - run: |
+          mkdir -p dist
+          cp build/opentakengine-*.aar dist/
+          cp build/android-arm64-v8a/opentakengine-viewer.apk "dist/opentakengine-viewer-${{ needs.version.outputs.version }}-android-arm64.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg-android
+          path: dist/*
+
+  bsd:
+    needs: version
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: freebsd
+            version: '15.1'
+          - os: openbsd
+            version: '7.9'
+          - os: netbsd
+            version: '11.0'
+    defaults:
+      run:
+        shell: cpa.sh {0}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start ${{ matrix.os }} ${{ matrix.version }}
+        uses: cross-platform-actions/action@e0b9770014ba65d5e0815f15b74031c3a635f641
+        with:
+          operating_system: ${{ matrix.os }}
+          version: ${{ matrix.version }}
+          architecture: x86-64
+          cpu_count: 4
+          memory: 8G
+      - name: Build, test and package
+        run: env OTE_PACKAGE=1 sh scripts/bsd_build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg-${{ matrix.os }}
+          path: dist/*
+
+  nuget:
+    needs: [version, windows, linux, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: native-*
+          path: natives
+      - run: |
+          r=bindings/dotnet/runtimes
+          mkdir -p $r/win-x64/native $r/linux-x64/native $r/linux-arm64/native $r/osx-arm64/native $r/osx-x64/native
+          cp natives/native-win-x64/opentakengine_c.dll $r/win-x64/native/
+          cp natives/native-linux-x64/libopentakengine_c.so $r/linux-x64/native/
+          cp natives/native-linux-arm64/libopentakengine_c.so $r/linux-arm64/native/
+          cp natives/native-osx/libopentakengine_c.dylib $r/osx-arm64/native/
+          cp natives/native-osx/libopentakengine_c.dylib $r/osx-x64/native/
+          dotnet pack bindings/dotnet/OpenTakEngine.csproj -c Release -o dist
+          unzip -l dist/*.nupkg | grep runtimes
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg-nuget
+          path: dist/*.nupkg
+
+  release:
+    needs: [version, windows, linux, macos, apple-xcframework, android, bsd, nuget]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: pkg-*
+          path: assets
+          merge-multiple: true
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          cd assets
+          sha256sum * > SHA256SUMS.txt
+          cd ..
+          awk -v v="## $VERSION" '$0 == v {on = 1; next} /^## / {on = 0} on' CHANGELOG.md > notes.md
+          gh release create "$GITHUB_REF_NAME" assets/* --title "OpenTAKEngine $VERSION" --notes-file notes.md
