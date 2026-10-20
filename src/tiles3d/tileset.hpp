@@ -2,6 +2,7 @@
 
 #include "core/camera.hpp"
 #include "model/model_layer.hpp"
+#include "model/pointcloud.hpp"
 
 #include <array>
 #include <atomic>
@@ -26,12 +27,15 @@ public:
 
     bool valid() const { return root_ != nullptr; }
     void update(const Camera& cam, const std::array<double, 16>& frustum, std::uint64_t frame);
-    void draw(const Camera& cam, ModelLayer& models);
+    void draw(const Camera& cam, ModelLayer& models, PointCloudLayer& points, double dpi);
     bool busy() const;
     std::size_t residentBytes() const { return resident_; }
     int drawnTiles() const { return static_cast<int>(draw_.size()); }
     int failedTiles() const { return failed_; }
     Vec3 center() const;
+
+    struct Implicit;
+    struct Subtree;
 
 private:
     struct Node {
@@ -43,27 +47,42 @@ private:
         std::string content;
         std::string base;
         std::vector<std::unique_ptr<Node>> children;
-        std::shared_ptr<GpuMesh> mesh;
+        std::vector<std::shared_ptr<GpuMesh>> meshes;
         std::atomic<int> state{0};
         bool permanent = false;
         double retryAt = 0;
         std::uint64_t failedEpoch = 0;
         std::uint64_t used = 0;
+        std::shared_ptr<const Implicit> implicit;
+        std::shared_ptr<const Subtree> subtree;
+        int level = 0;
+        std::uint32_t x = 0, y = 0, z = 0;
+        int rootLevel = 0;
+        std::uint32_t rootX = 0, rootY = 0, rootZ = 0;
+        std::atomic<int> subtreeState{2};
+        bool subtreePermanent = false;
+        double subtreeRetryAt = 0;
+        bool expanded = false;
     };
     struct Job {
         Node* node;
         std::string path;
         double priority;
+        bool subtree = false;
     };
     struct Done {
         Node* node = nullptr;
-        std::unique_ptr<CpuModel> model;
+        std::vector<CpuModel> models;
         std::unique_ptr<Node> subtree;
+        std::shared_ptr<const Subtree> availability;
+        bool isSubtree = false;
         bool ok = false;
         bool transient = false;
     };
 
     std::unique_ptr<Node> parse(const void* json, const Mat4& parent, const std::string& base, bool parentAdd);
+    std::unique_ptr<Node> implicitNode(const std::shared_ptr<const Implicit>& im, int level, std::uint32_t x, std::uint32_t y, std::uint32_t z) const;
+    void expand(Node* n);
     void select(Node* n, const Camera& cam, const std::array<double, 16>& frustum, std::uint64_t frame);
     bool contentReady(const Node* n) const;
     bool hasFallback(const Node* n) const;
