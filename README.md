@@ -50,6 +50,7 @@ ATAK reference captures are in `screenshots/atak`.
 - Coordinates: decimal, DM, DMS, MGRS (including polar UPS), UTM/UPS and GARS formatting, and a parser that accepts all of them
 - Vincenty geodesics (inverse, direct, densified paths, area), range rings, bullseye, range and bearing lines, sectors, ellipses and geodesic circles as features
 - Contour lines from loaded elevation (MSL, major/minor with labels), terrain slope shading, MGRS, lat/lon and GARS grids
+- Tracks past their CoT stale time are drawn faded
 
 **Loading behaviour**
 - Readiness-gated refinement: a parent tile stays on screen until its children are fully loaded, so zooming never shows tiles popping in

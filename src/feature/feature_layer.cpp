@@ -5,6 +5,7 @@
 #include <earcut.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 
@@ -445,10 +446,12 @@ void FeatureLayer::drawOverlay(const Camera& cam, const GroundFn& ground, double
         double margin = 0;
     };
     std::vector<Label> labels;
+    const double nowSeconds = std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();
 
     for (auto& [id, it] : items_) {
         const Feature& f = it.feature;
         if (!f.visible) continue;
+        const float fade = f.stale > 0 && f.stale < nowSeconds ? 0.45f : 1.0f;
         if (f.altitudeMode != AltitudeMode::ClampToGround && (f.style.strokeColor >> 24) && f.style.strokeWidth > 0) {
             float c[4];
             color4(f.style.strokeColor, c);
@@ -476,6 +479,7 @@ void FeatureLayer::drawOverlay(const Camera& cam, const GroundFn& ground, double
         }
         float lc[4];
         color4(f.style.labelColor, lc);
+        lc[3] *= fade;
         float size = static_cast<float>(14.0 * f.style.labelScale * dpi);
         for (const auto& p : it.points) {
             Vec3 e = geodeticToEcef(p[1], p[0], altitude(it, p[1], p[0], p[2], ground));
@@ -489,6 +493,7 @@ void FeatureLayer::drawOverlay(const Camera& cam, const GroundFn& ground, double
                     atlasRefs_.push_back(f.style.iconImage);
                 float c[4];
                 color4(f.style.iconColor, c);
+                c[3] *= fade;
                 double aspect = static_cast<double>(f.style.iconImage->width) / std::max(f.style.iconImage->height, 1);
                 double hh = s * 1.4, ww = hh * aspect;
                 float x0 = nx(sx - ww * 0.5), x1 = nx(sx + ww * 0.5), y0 = ny(sy - hh * 0.5), y1 = ny(sy + hh * 0.5);
@@ -504,6 +509,7 @@ void FeatureLayer::drawOverlay(const Camera& cam, const GroundFn& ground, double
                 double cx = sx, cy = f.style.icon == IconShape::Pin ? sy - s * 0.5 : sy;
                 float c[4];
                 color4(f.style.iconColor, c);
+                c[3] *= fade;
                 float u0 = shape * 0.25f, u1 = u0 + 0.25f;
                 float x0 = nx(cx - s * 0.5), x1 = nx(cx + s * 0.5), y0 = ny(cy - s * 0.5), y1 = ny(cy + s * 0.5);
                 iw.vertex(x0, y0, 0, u0, 0, c);
