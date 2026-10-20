@@ -81,7 +81,7 @@ def tile_xy(z, lat, lon):
 
 def main():
     out, metres, maxzoom, fmt = sys.argv[1], float(sys.argv[2]), int(sys.argv[3]), sys.argv[4]
-    box = (44.0, -112.0, 45.5, -110.0)
+    box = tuple(float(v) for v in sys.argv[5].split(",")) if len(sys.argv) > 5 else (44.0, -112.0, 45.5, -110.0)
     tiles = []
     for z in range(0, maxzoom + 1):
         x0, y0 = tile_xy(z, box[2], box[1])

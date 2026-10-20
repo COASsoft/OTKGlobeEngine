@@ -13,8 +13,12 @@
 #define OTE_GL_MIPS 1
 #endif
 #if defined(_WIN32)
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
+#endif
 #include <windows.h>
 #if defined(SOKOL_D3D11)
 #include <d3d11.h>

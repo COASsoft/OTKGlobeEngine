@@ -16,6 +16,8 @@
 #include "raster/tile_matrix.hpp"
 #include "raster/tile_package.hpp"
 #include "raster/tile_provider.hpp"
+#include "raster/pmtiles.hpp"
+#include "ote/image.hpp"
 #include "raster/vector_tile.hpp"
 #include "formats/adapters.hpp"
 #include "core/astro.hpp"
@@ -774,6 +776,59 @@ int main() {
             }
             std::ofstream(out, std::ios::binary).write(reinterpret_cast<const char*>(ts.data()), static_cast<std::streamsize>(ts.size()));
         }
+    }
+
+    {
+        check(PmTilesArchive::tileId(0, 0, 0) == 0 && PmTilesArchive::tileId(1, 0, 0) == 1 && PmTilesArchive::tileId(1, 0, 1) == 2 &&
+                  PmTilesArchive::tileId(1, 1, 1) == 3 && PmTilesArchive::tileId(1, 1, 0) == 4 && PmTilesArchive::tileId(2, 0, 0) == 5,
+              "pmtiles hilbert tile ids");
+        for (const char* name : {"dem-1234-webp.pmtiles", "dem-1234-png.pmtiles", "dem-1234-z10.pmtiles"}) {
+            std::string error;
+            auto archive = PmTilesArchive::open(data(name), &error);
+            check(archive && archive->header().maxZoom >= 8 && !archive->vector(), (std::string("pmtiles header ") + name).c_str());
+            Engine engine;
+            ElevationLayer dem;
+            dem.type = ElevationType::PMTiles;
+            dem.path = data(name);
+            engine.setElevation({dem});
+            std::vector<Coord> pts{{44.428, -110.5885, 0}, {44.928, -111.0885, 0}, {45.2, -111.9, 0}, {-33.87, 151.2, 0}};
+            std::vector<double> res;
+            std::vector<double> h = engine.queryElevation(pts, 100.0, &res);
+            bool ok = h.size() == pts.size() && std::isnan(h[3]);
+            for (int i = 0; i < 3 && ok; ++i) {
+                double msl = h[i] - geoidOffset(pts[i].lat, pts[i].lon);
+                ok = std::abs(msl - 1234.0) < 0.05 && res[i] > 0;
+                if (!ok) std::printf("  point %d: %.4f (geoid %.4f) res %.2f\n", i, h[i], geoidOffset(pts[i].lat, pts[i].lon), res[i]);
+            }
+            check(ok, (std::string("terrarium heights from ") + name).c_str());
+            std::vector<double> after = engine.queryElevation({{44.428, -110.5885, 0}, {-33.87, 151.2, 0}, {44.928, -111.0885, 0}}, 100.0);
+            check(after.size() == 3 && std::abs(after[2] - geoidOffset(44.928, -111.0885) - 1234.0) < 0.05,
+                  (std::string("a hole does not leave a coarse tile behind in ") + name).c_str());
+            std::vector<double> top = engine.queryElevation({{44.928, -111.0885, 0}});
+            check(top.size() == 1 && std::abs(top[0] - geoidOffset(44.928, -111.0885) - 1234.0) < 0.05,
+                  (std::string("deepest level heights from ") + name).c_str());
+        }
+    }
+    {
+        struct Checker : HostTileSource {
+            int tile(int z, int, int, TileData& out, const UrlFetch&) override {
+                if (z > 3) return 404;
+                out.width = 2;
+                out.height = 2;
+                out.rgba.assign(16, 200);
+                return 200;
+            }
+            bool remote() const override { return false; }
+        };
+        ImageryLayer host;
+        host.type = SourceType::Host;
+        host.source = std::make_shared<Checker>();
+        host.maxZoom = 5;
+        auto provider = makeProvider(host, nullptr, nullptr);
+        FetchResult r = provider->fetch(2, 1, 1);
+        FetchResult missing = provider->fetch(4, 1, 1);
+        check(r.status == 200 && r.raw && r.width == 2 && r.data.size() == 16 && missing.status == 404, "host tile source");
+        check(layerIdentity(host) != layerIdentity(ImageryLayer{}), "layer identity includes the host source");
     }
     std::printf("%d failure(s)\n", failures);
     return failures == 0 ? 0 : 1;

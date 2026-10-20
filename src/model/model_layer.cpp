@@ -678,6 +678,13 @@ std::uint64_t ModelLayer::add(const std::string& path, const ModelPlacement& pla
     return id;
 }
 
+std::uint64_t ModelLayer::add(std::shared_ptr<GpuMesh> mesh, const ModelPlacement& placement) {
+    if (!mesh) return 0;
+    std::uint64_t id = nextId_++;
+    instances_[id] = {std::move(mesh), placement};
+    return id;
+}
+
 bool ModelLayer::update(std::uint64_t id, const ModelPlacement& placement) {
     auto it = instances_.find(id);
     if (it == instances_.end()) return false;

@@ -45,6 +45,8 @@ struct Engine::Impl {
         if (t >= 1.0) {
             t = 1.0;
             flying = false;
+            camera.holdAltitude = flyTo.holdAltitude;
+            if (flyTo.holdAltitude) camera.focus.alt = flyTo.alt;
         }
         double s = t * t * (3.0 - 2.0 * t);
         Vec3 a = normalize(geodeticToEcef(flyFrom.lat, flyFrom.lon, 0)), b = normalize(geodeticToEcef(flyTo.lat, flyTo.lon, 0));
@@ -88,7 +90,7 @@ struct Engine::Impl {
             return;
         }
         double h = globe.elevationAt(camera.focus.lat, camera.focus.lon);
-        if (std::abs(h - camera.focus.alt) > 0.01) {
+        if (!camera.holdAltitude && std::abs(h - camera.focus.alt) > 0.01) {
             camera.focus.alt = h;
             camera.update();
             return;
@@ -454,6 +456,65 @@ std::uint64_t Engine::hitTest(double sx, double sy, double radiusPx) const {
 std::uint64_t Engine::addModel(const std::string& path, const ModelPlacement& placement) {
     impl_->dirty = true;
     return impl_->globe.models().add(path, placement);
+}
+
+std::uint64_t Engine::addMesh(const Mesh& mesh, const ModelPlacement& placement) {
+    CpuModel model;
+    for (const MeshPart& part : mesh.parts) {
+        const size_t n = part.positions.size() / 3;
+        if (n < 3 || part.indices.empty()) continue;
+        std::vector<float> normals = part.normals;
+        if (normals.size() != n * 3) {
+            normals.assign(n * 3, 0.0f);
+            for (size_t t = 0; t + 2 < part.indices.size(); t += 3) {
+                std::uint32_t a = part.indices[t], b = part.indices[t + 1], c = part.indices[t + 2];
+                if (a >= n || b >= n || c >= n) continue;
+                Vec3 pa{part.positions[a * 3], part.positions[a * 3 + 1], part.positions[a * 3 + 2]};
+                Vec3 pb{part.positions[b * 3], part.positions[b * 3 + 1], part.positions[b * 3 + 2]};
+                Vec3 pc{part.positions[c * 3], part.positions[c * 3 + 1], part.positions[c * 3 + 2]};
+                Vec3 f = cross(pb - pa, pc - pa);
+                for (std::uint32_t v : {a, b, c}) {
+                    normals[v * 3] += static_cast<float>(f.x);
+                    normals[v * 3 + 1] += static_cast<float>(f.y);
+                    normals[v * 3 + 2] += static_cast<float>(f.z);
+                }
+            }
+        }
+        CpuMaterial mat;
+        mat.color = {((part.color >> 16) & 0xFF) / 255.0f, ((part.color >> 8) & 0xFF) / 255.0f, (part.color & 0xFF) / 255.0f,
+                     ((part.color >> 24) & 0xFF) / 255.0f};
+        mat.unlit = part.unlit;
+        mat.metallic = 0.0f;
+        mat.roughness = 1.0f;
+        CpuPrimitive prim;
+        prim.material = static_cast<int>(model.materials.size());
+        model.materials.push_back(mat);
+        prim.matrix = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+        prim.vertices.reserve(n * 8);
+        for (size_t i = 0; i < n; ++i) {
+            float nx = normals[i * 3], ny = normals[i * 3 + 1], nz = normals[i * 3 + 2];
+            float len = std::sqrt(nx * nx + ny * ny + nz * nz);
+            if (len > 0) {
+                nx /= len;
+                ny /= len;
+                nz /= len;
+            } else {
+                nz = 1.0f;
+            }
+            prim.vertices.insert(prim.vertices.end(), {part.positions[i * 3], part.positions[i * 3 + 2], -part.positions[i * 3 + 1],
+                                                       nx, nz, -ny, 0.0f, 0.0f});
+        }
+        prim.indices = part.indices;
+        model.primitives.push_back(std::move(prim));
+    }
+    if (model.primitives.empty()) return 0;
+    finishModel(model);
+    impl_->dirty = true;
+    return impl_->globe.models().add(ModelLayer::upload(model), placement);
+}
+
+int Engine::fetchUrl(const std::string& url, std::vector<std::uint8_t>& body, const FetchOptions& options) const {
+    return impl_->globe.fetch(url, body, options);
 }
 
 bool Engine::updateModel(std::uint64_t id, const ModelPlacement& placement) {
@@ -883,11 +944,11 @@ void Engine::setDiagnostics(bool enabled) { impl_->globe.setDiagnostics(enabled)
 
 double Engine::elevationAt(double lat, double lon) const { return impl_->globe.elevationAt(lat, lon); }
 
-std::vector<double> Engine::queryElevation(const std::vector<Coord>& points, double resolutionMeters) const {
+std::vector<double> Engine::queryElevation(const std::vector<Coord>& points, double resolutionMeters, std::vector<double>* resolutions) const {
     std::vector<std::pair<double, double>> ll;
     ll.reserve(points.size());
     for (const Coord& c : points) ll.emplace_back(c.lat, c.lon);
-    return impl_->globe.queryElevation(ll, resolutionMeters);
+    return impl_->globe.queryElevation(ll, resolutionMeters, resolutions);
 }
 
 void Engine::setImageryScale(double scale) {
@@ -897,7 +958,7 @@ void Engine::setImageryScale(double scale) {
 
 View Engine::view() const {
     const Camera& c = impl_->camera;
-    return {c.focus.lat, c.focus.lon, c.focus.alt, c.gsd, c.azimuth, c.tilt};
+    return {c.focus.lat, c.focus.lon, c.focus.alt, c.gsd, c.azimuth, c.tilt, c.holdAltitude};
 }
 
 void Engine::setView(const View& v) {
@@ -913,6 +974,7 @@ void Engine::setView(const View& v) {
     c.gsd = v.gsd;
     c.azimuth = v.azimuth;
     c.tilt = v.tilt;
+    c.holdAltitude = v.holdAltitude;
     c.update();
     impl_->dirty = true;
 }
@@ -1132,12 +1194,20 @@ void Engine::flyTo(const View& target, double seconds) {
     m.flyPeak = std::max({std::log(m.flyFrom.gsd), std::log(target.gsd), needed});
     m.flyStart = std::chrono::steady_clock::now();
     m.flying = true;
+    m.camera.holdAltitude = false;
     m.dirty = true;
 }
 
 bool Engine::animating() const { return impl_->flying; }
 
 void Engine::stopAnimation() { impl_->flying = false; }
+
+void Engine::setTiltLimits(double maxTiltDegrees, bool limitByRange) {
+    impl_->camera.maxTilt = std::clamp(maxTiltDegrees, 0.0, 89.9);
+    impl_->camera.rangeTiltLimit = limitByRange;
+    impl_->camera.update();
+    impl_->dirty = true;
+}
 
 void Engine::setCacheEnabled(bool enabled) { impl_->cacheDisabled = !enabled; }
 

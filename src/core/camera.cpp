@@ -5,11 +5,12 @@
 namespace ote {
 
 double Camera::maxTiltForRange(double r) const {
+    if (!rangeTiltLimit) return maxTilt;
     const double r0 = 2.0e5, r1 = 1.5e7;
-    if (r <= r0) return kMaxTilt;
-    if (r >= r1) return 15.0;
+    if (r <= r0) return maxTilt;
+    if (r >= r1) return std::min(15.0, maxTilt);
     double t = std::log(r / r0) / std::log(r1 / r0);
-    return kMaxTilt + (15.0 - kMaxTilt) * t;
+    return maxTilt + (std::min(15.0, maxTilt) - maxTilt) * t;
 }
 
 void Camera::setRange(double r) {

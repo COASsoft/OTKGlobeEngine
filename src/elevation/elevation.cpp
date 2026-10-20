@@ -29,13 +29,11 @@ void applyGeoid(HeightGrid& g, int srid) {
     for (int r = 0; r < g.height; ++r) {
         double y = g.maxY - (r + 0.5) * (g.maxY - g.minY) / g.height;
         double lat = unprojectY(srid, y);
-        for (int c = 0; c < g.width; c += 8) {
-            double lon0 = unprojectX(srid, g.minX + (c + 0.5) * (g.maxX - g.minX) / g.width);
-            float n = static_cast<float>(geoidHeight(lat, lon0));
-            for (int k = c; k < std::min(c + 8, g.width); ++k) {
-                float& v = g.values[static_cast<size_t>(r) * g.width + k];
-                if (!std::isnan(v)) v += n;
-            }
+        for (int c = 0; c < g.width; ++c) {
+            float& v = g.values[static_cast<size_t>(r) * g.width + c];
+            if (std::isnan(v)) continue;
+            double lon = unprojectX(srid, g.minX + (c + 0.5) * (g.maxX - g.minX) / g.width);
+            v += static_cast<float>(geoidHeight(lat, lon));
         }
     }
 }
@@ -630,8 +628,14 @@ std::shared_ptr<const HeightGrid> ElevationManager::queryTile(const std::shared_
     return grid;
 }
 
-std::vector<double> ElevationManager::query(const std::vector<std::pair<double, double>>& latLon, double resolutionMeters) const {
+std::vector<double> ElevationManager::query(const std::vector<std::pair<double, double>>& latLon, double resolutionMeters,
+                                            std::vector<double>* resolutions) const {
     std::vector<double> out(latLon.size(), std::numeric_limits<double>::quiet_NaN());
+    if (resolutions) resolutions->assign(latLon.size(), 0.0);
+    auto metresPerPixel = [](const TileMatrix& m, const HeightGrid& g, double coslat) {
+        double units = (g.maxX - g.minX) / std::max(g.width, 1);
+        return m.srid == 4326 ? units * 111319.49 * coslat : units * coslat;
+    };
     std::vector<std::shared_ptr<ElevationProvider>> providers;
     int generation = 0;
     {
@@ -655,6 +659,7 @@ std::vector<double> ElevationManager::query(const std::vector<std::pair<double, 
             if (m.levels.empty()) continue;
             double maxLat = maxLatitude(m.srid) * 0.9999999;
             std::shared_ptr<const HeightGrid> last;
+            int lastZ = -1;
             for (size_t i = 0; i < latLon.size(); ++i) {
                 if (!std::isnan(out[i])) continue;
                 double lat = latLon[i].first, lon = latLon[i].second;
@@ -663,17 +668,18 @@ std::vector<double> ElevationManager::query(const std::vector<std::pair<double, 
                 double target = resolutionMeters > 0 ? resolutionMeters : 0.0;
                 if (pass == 0 && yields(s, target > 0 ? target : 0.0)) continue;
                 double px = projectX(m.srid, lon), py = projectY(m.srid, lat);
-                if (last && px >= last->minX && px <= last->maxX && py >= last->minY && py <= last->maxY) {
-                    float v = last->sample(px, py);
-                    if (!std::isnan(v)) {
-                        out[i] = v;
-                        continue;
-                    }
-                }
                 int z = m.maxZoom;
                 if (target > 0) {
                     double units = m.srid == 4326 ? target / 111319.49 : target / coslat;
                     z = std::clamp(m.bestLevel(units), m.minZoom, m.maxZoom);
+                }
+                if (last && lastZ == z && px >= last->minX && px <= last->maxX && py >= last->minY && py <= last->maxY) {
+                    float v = last->sample(px, py);
+                    if (!std::isnan(v)) {
+                        out[i] = v;
+                        if (resolutions) (*resolutions)[i] = metresPerPixel(m, *last, coslat);
+                        continue;
+                    }
                 }
                 for (int zz = z; zz >= m.minZoom && zz >= 0; --zz) {
                     if (!m.hasLevel(zz)) continue;
@@ -684,8 +690,12 @@ std::vector<double> ElevationManager::query(const std::vector<std::pair<double, 
                     auto g = queryTile(providers[s], s, zz, tx, ty, status);
                     if (!g) continue;
                     last = g;
+                    lastZ = zz;
                     float v = g->sample(px, py);
-                    if (!std::isnan(v)) out[i] = v;
+                    if (!std::isnan(v)) {
+                        out[i] = v;
+                        if (resolutions) (*resolutions)[i] = metresPerPixel(m, *g, coslat);
+                    }
                     break;
                 }
             }

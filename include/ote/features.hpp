@@ -92,6 +92,18 @@ struct ModelPlacement {
     double scale = 1;
 };
 
+struct MeshPart {
+    std::vector<float> positions;
+    std::vector<float> normals;
+    std::vector<std::uint32_t> indices;
+    std::uint32_t color = 0xFFFFFFFF;
+    bool unlit = false;
+};
+
+struct Mesh {
+    std::vector<MeshPart> parts;
+};
+
 struct GroundOverlay {
     std::string name;
     double north = 0;

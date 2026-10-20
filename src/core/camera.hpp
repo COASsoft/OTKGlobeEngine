@@ -26,6 +26,9 @@ public:
     double fpHeading = 0.0;
     double fpPitch = 0.0;
     bool lock2d = false;
+    double maxTilt = kMaxTilt;
+    bool rangeTiltLimit = true;
+    bool holdAltitude = false;
 
     static constexpr double kMinGsd = 0.02;
     static constexpr double kMaxRange = 4.0e7;

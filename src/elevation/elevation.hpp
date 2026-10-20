@@ -50,7 +50,8 @@ public:
     bool gridFor(double west, double south, double east, double north, int posts, double priority,
                  std::vector<float>& heights, bool sampleHeights = true);
     double sample(double lat, double lon) const;
-    std::vector<double> query(const std::vector<std::pair<double, double>>& latLon, double resolutionMeters) const;
+    std::vector<double> query(const std::vector<std::pair<double, double>>& latLon, double resolutionMeters,
+                              std::vector<double>* resolutions = nullptr) const;
     void beginFrame() { requests_.clear(); }
     void submit();
     bool processResults(size_t max);

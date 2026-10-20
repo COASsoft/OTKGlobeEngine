@@ -8,6 +8,7 @@
 #include "tiles3d/tileset.hpp"
 #include "raster/tile_cache.hpp"
 #include "raster/tile_loader.hpp"
+#include "raster/tile_provider.hpp"
 
 #include <sokol_gfx.h>
 
@@ -61,6 +62,9 @@ public:
     TileCache& cache() { return cache_; }
     bool reachabilityChanged() const;
     void setOffline(bool offline);
+    int fetch(const std::string& url, std::vector<std::uint8_t>& body, const FetchOptions& options) {
+        return fetchUrl(url, body, options, cache_.isOpen() ? &cache_ : nullptr, &offline_, "OpenTAKEngine/0.1");
+    }
     void retryUnavailable();
     void setBackdrop(bool enabled) { backdropEnabled_ = enabled; }
     void setMemoryBudget(int megabytes);
@@ -110,8 +114,9 @@ public:
     std::uint64_t addOverlay(const GeoRect& rect, int width, int height, const std::vector<std::uint8_t>& rgba, float opacity);
     bool removeOverlay(std::uint64_t id);
     double elevationAt(double lat, double lon) const;
-    std::vector<double> queryElevation(const std::vector<std::pair<double, double>>& latLon, double resolutionMeters) const {
-        return elevation_.query(latLon, resolutionMeters);
+    std::vector<double> queryElevation(const std::vector<std::pair<double, double>>& latLon, double resolutionMeters,
+                                       std::vector<double>* resolutions = nullptr) const {
+        return elevation_.query(latLon, resolutionMeters, resolutions);
     }
     void explain(const Camera& cam, double lat, double lon, const char* tag) const;
     TileLoader& loader() { return loader_; }

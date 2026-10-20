@@ -103,6 +103,7 @@ public:
     bool init();
     void shutdown();
     std::uint64_t add(const std::string& path, const ModelPlacement& placement);
+    std::uint64_t add(std::shared_ptr<GpuMesh> mesh, const ModelPlacement& placement);
     bool update(std::uint64_t id, const ModelPlacement& placement);
     bool remove(std::uint64_t id);
     bool empty() const { return instances_.empty(); }

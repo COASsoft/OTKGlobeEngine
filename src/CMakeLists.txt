@@ -105,7 +105,7 @@ else()
 endif()
 if(MSVC)
     target_compile_options(opentakengine PRIVATE /W3 /utf-8)
-    target_compile_definitions(opentakengine PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
+    target_compile_definitions(opentakengine PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS _SILENCE_CXX20_U8PATH_DEPRECATION_WARNING)
 endif()
 
 ote_add_shaders(opentakengine

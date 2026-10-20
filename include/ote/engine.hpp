@@ -105,6 +105,7 @@ struct View {
     double gsd = 20000.0;
     double azimuth = 0.0;
     double tilt = 0.0;
+    bool holdAltitude = false;
 };
 
 struct Stats {
@@ -233,7 +234,8 @@ public:
     void setElevationHeatmap(bool enabled, double minHeight = 0, double maxHeight = 4500, float opacity = 0.55f);
     std::vector<ProfileSample> elevationProfile(const std::vector<Coord>& path, int samples) const;
     double elevationAt(double lat, double lon) const;
-    std::vector<double> queryElevation(const std::vector<Coord>& points, double resolutionMeters = 0.0) const;
+    std::vector<double> queryElevation(const std::vector<Coord>& points, double resolutionMeters = 0.0,
+                                       std::vector<double>* resolutions = nullptr) const;
 
     View view() const;
     void setView(const View& v);
@@ -256,6 +258,7 @@ public:
     void tiltBy(double degrees);
     void flyTo(const View& target, double seconds = 2.0);
     void stopAnimation();
+    void setTiltLimits(double maxTiltDegrees, bool limitByRange);
     void setFirstPerson(bool enabled, double heightAboveGround = 2.0);
     bool firstPerson() const;
     void walk(double forwardMeters, double rightMeters);
@@ -275,6 +278,8 @@ public:
     std::uint64_t hitTest(double sx, double sy, double radiusPx = 16.0) const;
 
     std::uint64_t addModel(const std::string& path, const ModelPlacement& placement);
+    std::uint64_t addMesh(const Mesh& mesh, const ModelPlacement& placement);
+    int fetchUrl(const std::string& url, std::vector<std::uint8_t>& body, const FetchOptions& options = {}) const;
     bool updateModel(std::uint64_t id, const ModelPlacement& placement);
     bool removeModel(std::uint64_t id);
     std::uint64_t addTileset(const std::string& pathOrUrl, double maxScreenSpaceError = 16.0);
