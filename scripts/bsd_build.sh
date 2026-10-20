@@ -9,7 +9,7 @@ prefix_path=""
 
 case "$os" in
 FreeBSD)
-    sudo env ASSUME_ALWAYS_YES=yes pkg install -y cmake ninja curl git pkgconf libX11 libXi libXcursor mesa-libs
+    sudo env ASSUME_ALWAYS_YES=yes pkg install -y cmake ninja curl git pkgconf libX11 libXi libXcursor mesa-libs libglvnd
     ;;
 OpenBSD)
     sudo pkg_add -I cmake ninja curl git
@@ -44,7 +44,7 @@ LD_LIBRARY_PATH="$build/stage/usr/local/lib" "$build/consumer/consumer"
 if [ "$os" = FreeBSD ]; then
     version=$(sed -n 's/^project(OpenTAKEngine VERSION \([0-9.]*\).*/\1/p' "$root/CMakeLists.txt")
     deps=""
-    for p in curl mesa-libs libX11 libXi libXcursor; do
+    for p in curl mesa-libs libglvnd libX11 libXi libXcursor; do
         line=$(pkg query '%n %o %v' "$p")
         set -- $line
         deps="$deps  \"$1\": { origin: \"$2\", version: \"$3\" },
