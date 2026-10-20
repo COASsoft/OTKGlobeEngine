@@ -6,7 +6,7 @@
 #if defined(SOKOL_GLES3)
 #include <GLES3/gl3.h>
 #define OTE_GL_MIPS 1
-#elif defined(SOKOL_GLCORE) && defined(__linux__)
+#elif defined(SOKOL_GLCORE) && !defined(_WIN32) && !defined(__APPLE__)
 #define GL_GLEXT_PROTOTYPES
 #include <GL/gl.h>
 #include <GL/glext.h>

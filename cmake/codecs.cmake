@@ -65,7 +65,7 @@ if(OTE_WITH_KTX2)
         transcoder/basisu_transcoder_tables_dxt1_6.inc transcoder/basisu_transcoder_tables_pvrtc2_45.inc
         transcoder/basisu_transcoder_tables_pvrtc2_alpha_33.inc transcoder/basisu_transcoder_uastc.h
         transcoder/basisu_xbc7_decoder.h transcoder/basisu_xbc7_decoder.inl
-        zstd/zstd.h zstd/zstd_errors.h zstd/zstddeclib.c LICENSE)
+        zstd/zstd.h zstd/zstd_errors.h zstd/zstddeclib.c zstd/LICENSE LICENSE)
     foreach(_f IN LISTS _basisu_files)
         if(NOT EXISTS ${_basisu_dir}/${_f})
             file(DOWNLOAD https://raw.githubusercontent.com/BinomialLLC/basis_universal/${_basisu_tag}/${_f} ${_basisu_dir}/${_f}.part
