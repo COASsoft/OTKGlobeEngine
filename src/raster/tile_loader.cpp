@@ -507,8 +507,15 @@ void TileLoader::runNetwork() {
                     }
                     auto p = netPriority_.find(*it);
                     double v = p == netPriority_.end() ? 1e299 : p->second;
-                    if (netLayerBusy_[it->layer] >= netLayerCap_) {
+                    int cap = netLayerCap_;
+                    int own = 0;
+                    if (it->layer >= 0 && it->layer < static_cast<int>(providers_.size())) {
+                        own = providers_[it->layer]->maxConcurrent();
+                        if (own > 0) cap = std::min(cap, own);
+                    }
+                    if (netLayerBusy_[it->layer] >= cap) {
                         capped = true;
+                        if (own > 0 && netLayerBusy_[it->layer] >= own) continue;
                         if (v < fp) {
                             fp = v;
                             fallback = it;
