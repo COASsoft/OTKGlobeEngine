@@ -1443,8 +1443,19 @@ void GlobeRenderer::dropImagery(ImageryTexture& t) {
     t = ImageryTexture{};
 }
 
+bool GlobeRenderer::standIn(const Camera& cam, const QuadKey& k) const {
+    if (k.level + 2 > maxRefine()) return false;
+    Bounds b = bounds(k);
+    Vec3 c = geodeticToEcef(0.5 * (b.south + b.north), 0.5 * (b.west + b.east), 0.0);
+    double r = (b.north - b.south) * kDegToRad * kWgs84A * 0.75;
+    double d = std::max(length(c - cam.eye()) - r, cam.eyeAboveGround());
+    double texel = (b.north - b.south) / kSurfaceSize;
+    double pixel = cam.pixelSizeAt(d) / 111320.0;
+    return pixel > 0 && texel / pixel > 3.0;
+}
+
 bool GlobeRenderer::buildSurfaceJob(const QuadKey& k, double priority, SurfaceJob* job, std::vector<float>* verts,
-                                    std::vector<float>* fverts, double texelDeg) {
+                                    std::vector<float>* fverts, double texelDeg, bool standIn) {
     Bounds b = bounds(k);
     double span = b.north - b.south;
     bool complete = true;
@@ -1458,6 +1469,7 @@ bool GlobeRenderer::buildSurfaceJob(const QuadKey& k, double priority, SurfaceJo
         }
     for (int l = 0; l < static_cast<int>(matrices_.size()) && l < static_cast<int>(layers_.size()); ++l) {
       if (!shown(l)) continue;
+      if (standIn && l != baseLayer_ && !layers_[l].polarFill) continue;
       const TileMatrix& m = matrices_[l];
       double maxLat = maxLatitude(m.srid);
       double bandS[2], bandN[2];
@@ -2008,6 +2020,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             work.push_back({needs_[i].priority, i, true, pf});
         } else {
             it->second.used = frame_;
+            if (it->second.complete && it->second.overlaysOmitted && !standIn(cam, needs_[i].key)) it->second.complete = false;
             if (!it->second.complete && progressed(it->second)) work.push_back({needs_[i].priority * 1.5, i, true, pf});
             else if (!it->second.complete) work.push_back({needs_[i].priority, i, false, pf});
         }
@@ -2038,12 +2051,14 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         }
         double specBudget = prefetchBudgetMs * (urgentPrefetch_ ? 3.0 : 1.0);
         bool overBudget = renders > 0 && (elapsedMs() > budgetMs || (speculative && elapsedMs() - visibleDone > specBudget));
+        const bool placeholder = standIn(cam, needs_[i].key);
         if (!w.render || renders >= kSurfaceRendersPerFrame || verts.size() * sizeof(float) > kSurfaceBufferBytes / 2 || overBudget) {
-            buildSurfaceJob(needs_[i].key, needs_[i].priority, nullptr, nullptr);
+            buildSurfaceJob(needs_[i].key, needs_[i].priority, nullptr, nullptr, nullptr, 0, placeholder);
             continue;
         }
         SurfaceJob job;
         job.key = needs_[i].key;
+        job.standIn = placeholder;
         size_t vertsBefore = verts.size();
         Bounds jb = bounds(job.key);
         Vec3 jc = geodeticToEcef(0.5 * (jb.south + jb.north), 0.5 * (jb.west + jb.east), 0.0);
@@ -2051,7 +2066,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         double jd = std::max(length(jc - cam.eye()) - jr, cam.eyeAboveGround());
         double texelDeg = std::min((jb.north - jb.south) / kSurfaceSize, cam.pixelSizeAt(jd) / 111320.0);
         size_t vectorStart = fverts.size();
-        buildSurfaceJob(job.key, needs_[i].priority, &job, &verts, nullptr, texelDeg);
+        buildSurfaceJob(job.key, needs_[i].priority, &job, &verts, nullptr, texelDeg, job.standIn);
         if (job.hollow > 0) {
             verts.resize(vertsBefore);
             ++hollowSkipped;
@@ -2204,6 +2219,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             s->imageryZ = job.imageryZ;
             s->sourceZ = job.sourceZ;
             s->degraded = job.degraded;
+            s->overlaysOmitted = job.standIn;
             continue;
         }
         for (int level = 0; level < kMips; ++level) {
@@ -2233,6 +2249,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         s->imageryZ = job.imageryZ;
         s->sourceZ = job.sourceZ;
         s->degraded = job.degraded;
+        s->overlaysOmitted = job.standIn;
     }
 
     if (!mipQueue.empty()) generateMips(mipQueue);
