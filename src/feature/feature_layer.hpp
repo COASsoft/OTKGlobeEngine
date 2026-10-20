@@ -61,6 +61,9 @@ private:
     };
 
     void prepare(Item& it);
+    static bool draped(const Item& it) {
+        return it.feature.altitudeMode == AltitudeMode::ClampToGround && (!it.lines.empty() || !it.triangles.empty());
+    }
     const std::vector<std::uint64_t>& ordered();
     double altitude(const Item& it, double lat, double lon, double alt, const GroundFn& ground) const;
     void uploadText();

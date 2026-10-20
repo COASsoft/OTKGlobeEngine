@@ -302,7 +302,7 @@ std::uint64_t FeatureLayer::add(const Feature& f) {
     it.feature = f;
     it.feature.id = id;
     prepare(it);
-    dirty_.push_back(it.bounds);
+    if (draped(it)) dirty_.push_back(it.bounds);
     sortDirty_ = true;
     return id;
 }
@@ -310,26 +310,27 @@ std::uint64_t FeatureLayer::add(const Feature& f) {
 bool FeatureLayer::update(std::uint64_t id, const Feature& f) {
     auto it = items_.find(id);
     if (it == items_.end()) return false;
-    dirty_.push_back(it->second.bounds);
+    if (draped(it->second)) dirty_.push_back(it->second.bounds);
     if (it->second.feature.order != f.order) sortDirty_ = true;
     it->second.feature = f;
     it->second.feature.id = id;
     prepare(it->second);
-    dirty_.push_back(it->second.bounds);
+    if (draped(it->second)) dirty_.push_back(it->second.bounds);
     return true;
 }
 
 bool FeatureLayer::remove(std::uint64_t id) {
     auto it = items_.find(id);
     if (it == items_.end()) return false;
-    dirty_.push_back(it->second.bounds);
+    if (draped(it->second)) dirty_.push_back(it->second.bounds);
     items_.erase(it);
     sortDirty_ = true;
     return true;
 }
 
 void FeatureLayer::clear() {
-    for (auto& [k, v] : items_) dirty_.push_back(v.bounds);
+    for (auto& [k, v] : items_)
+        if (draped(v)) dirty_.push_back(v.bounds);
     items_.clear();
     sortDirty_ = true;
 }
