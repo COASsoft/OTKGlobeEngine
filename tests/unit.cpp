@@ -5,14 +5,20 @@
 #include "ote/features.hpp"
 #include "ote/formats.hpp"
 #include "ote/mgrs.hpp"
+#include "net/http.hpp"
+#include "ote/engine.hpp"
+#include "raster/tile_cache.hpp"
 #include "raster/tile_loader.hpp"
 #include "raster/tile_matrix.hpp"
+#include "raster/tile_package.hpp"
+#include "raster/tile_provider.hpp"
 #include "raster/vector_tile.hpp"
 #include "formats/adapters.hpp"
 
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <string>
@@ -221,6 +227,115 @@ int main() {
         std::vector<std::uint8_t> pkg = exportBytes(two, "tak-package");
         ImportResult limited = importBytes(pkg, "tak-package", tight);
         check(!limited.ok && !limited.error.empty(), "archive entry limit enforced");
+    }
+    {
+        const std::string host = "http://unit-unreachable.invalid";
+        std::uint64_t epoch = net::reachabilityEpoch();
+        for (int i = 0; i < 3; ++i) net::report(host + "/1/0/0.png", 0);
+        bool down = !net::hostAvailable(host + "/2/0/0.png") && net::hostsDown() == 1 && !net::admit(host + "/2/1/1.png");
+        net::report(host + "/1/0/0.png", 200);
+        check(down && net::hostAvailable(host + "/x") && net::hostsDown() == 0 && net::reachabilityEpoch() == epoch + 1,
+              "unreachable host fails fast and recovers");
+        check(net::hostKey("HTTPS://Tiles.Example.com:8443/a/b?c=d") == "https://tiles.example.com:8443", "host key");
+    }
+    check(stripCredentials("https://t.example/{z}/{x}/{y}.png?key=abc&style=dark&access_token=x") ==
+              "https://t.example/{z}/{x}/{y}.png?style=dark" &&
+              stripCredentials("https://t.example/{z}?apikey=1") == "https://t.example/{z}",
+          "cache key ignores credentials");
+    {
+        auto layers = loadMobac("<customMapSource><name>n</name><url>http://a/{$z}/{$x}/{$y}</url><tileUpdate>0</tileUpdate></customMapSource>");
+        auto hourly = loadMobac("<customMapSource><name>n</name><url>http://a/{$z}/{$x}/{$y}</url><tileUpdate>3600000</tileUpdate></customMapSource>");
+        check(layers.size() == 1 && layers[0].expirySeconds < 0 && hourly.size() == 1 && hourly[0].expirySeconds == 3600,
+              "mobac tileUpdate");
+    }
+    {
+        namespace fs = std::filesystem;
+        fs::path dir = fs::temp_directory_path() / "ote_unit_cache";
+        std::error_code ec;
+        fs::remove_all(dir, ec);
+        fs::create_directories(dir);
+        {
+            TileCache cache;
+            bool opened = cache.open((dir / "tiles.sqlite").string());
+            std::vector<std::uint8_t> blob(64 * 1024, 7);
+            cache.put("a", 3, 1, 1, blob, TileCache::now() + 100, true);
+            for (int i = 0; i < 64; ++i) cache.put("a", 10, i, 0, blob, TileCache::now() + 100);
+            cache.setLimit(1 << 20);
+            std::vector<std::uint8_t> got;
+            std::int64_t exp = 0;
+            int left = 0;
+            for (int i = 0; i < 64; ++i) left += cache.has("a", 10, i, 0) ? 1 : 0;
+            check(opened && cache.get("a", 3, 1, 1, got, exp) && got.size() == blob.size() && left < 64 && cache.bytes() <= (1 << 20) + 128 * 1024,
+                  "cache limit evicts oldest, keeps pinned");
+            cache.put("a", 3, 1, 1, std::vector<std::uint8_t>(10, 1), TileCache::now() + 100, false);
+            cache.setLimit(1);
+            check(cache.get("a", 3, 1, 1, got, exp) && got.size() == 10, "refresh keeps pin");
+            cache.setLimit(0);
+        }
+        {
+            std::ofstream(dir / "garbage.sqlite", std::ios::binary) << std::string(4096, 'x');
+            TileCache cache;
+            bool ok = cache.open((dir / "garbage.sqlite").string());
+            cache.put("b", 0, 0, 0, {1, 2, 3}, TileCache::now() + 100);
+            check(ok && cache.has("b", 0, 0, 0), "corrupt cache file replaced");
+        }
+        {
+            TileCache cache;
+            cache.open((dir / "stale.sqlite").string());
+            std::atomic<bool> offline{false};
+            ImageryLayer layer;
+            layer.url = "http://unit-stale.invalid/{z}/{x}/{y}.png";
+            auto provider = makeProvider(layer, &cache, &offline);
+            std::string key = layerCacheKey(layer);
+            cache.put(key, 4, 2, 3, {9, 9, 9}, TileCache::now() - 10);
+            FetchResult r;
+            bool local = provider->fetchLocal(4, 2, 3, r);
+            check(local && r.status == 200 && r.stale && r.data.size() == 3, "expired tile served immediately");
+            for (int i = 0; i < 3; ++i) net::report("http://unit-stale.invalid/0/0/0.png", 0);
+            FetchResult miss;
+            bool fast = provider->fetchLocal(5, 0, 0, miss);
+            check(fast && miss.status == -3 && !provider->available(5, 0, 0), "uncached tile fails fast while host is down");
+            offline = true;
+            FetchResult off;
+            check(provider->fetchLocal(5, 1, 1, off) && off.status == -2, "offline miss");
+            net::resetReachability();
+        }
+        {
+            TileCache cache;
+            cache.open((dir / "export.sqlite").string());
+            TileLoader loader(1, 1);
+            loader.setCache(&cache);
+            ImageryLayer layer;
+            layer.name = "Unit";
+            layer.url = "http://unit-export.invalid/{z}/{x}/{y}.png";
+            loader.setLayers({layer});
+            std::string key = layerCacheKey(layer);
+            std::vector<std::uint8_t> png = {0x89, 'P', 'N', 'G', 1, 2, 3, 4};
+            int stored = 0;
+            for (int z = 0; z <= 3; ++z)
+                for (int n = 0; n < (1 << (2 * z)); ++n, ++stored) cache.put(key, z, n % (1 << z), n / (1 << z), png, TileCache::now() + 100);
+            std::string err;
+            std::int64_t mb = loader.exportTiles(0, {-180, -85, 180, 85}, 0, 3, (dir / "out.mbtiles").string(), err);
+            std::int64_t gp = loader.exportTiles(0, {0, 0, 180, 85}, 0, 3, (dir / "out.gpkg").string(), err);
+            TileCache other;
+            other.open((dir / "import.sqlite").string());
+            TileLoader target(1, 1);
+            target.setCache(&other);
+            target.setLayers({layer});
+            std::int64_t in = target.importTiles(0, (dir / "out.mbtiles").string(), err);
+            std::vector<std::uint8_t> got;
+            std::int64_t exp = 0;
+            bool roundtrip = other.get(key, 3, 5, 2, got, exp) && got == png;
+            TileMatrix gm;
+            std::int64_t gcount = 0;
+            readTilePackage((dir / "out.gpkg").string(), gm, [&](int, int, int, const std::vector<std::uint8_t>&) {
+                ++gcount;
+                return true;
+            }, err);
+            check(mb == stored && in == stored && roundtrip && gp > 0 && gcount == gp && sameTiling(gm, TileMatrix::webMercator(0, 3)),
+                  "export to MBTiles/GeoPackage and import into the cache");
+        }
+        fs::remove_all(dir, ec);
     }
     std::printf("%d failure(s)\n", failures);
     return failures == 0 ? 0 : 1;

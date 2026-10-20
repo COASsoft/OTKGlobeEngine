@@ -4,12 +4,31 @@
 #include <android/log.h>
 #endif
 
+#include "raster/tile_cache.hpp"
+#include "raster/tile_package.hpp"
+#include "net/http.hpp"
+
 #include <stb_image.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 
 namespace ote {
+
+namespace {
+
+constexpr size_t kRefreshCapacity = 4096;
+constexpr int kRefreshThreads = 2;
+constexpr int kDownloadAttempts = 8;
+
+double seconds() {
+    return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+bool transient(int status) { return status == 0 || status == -3 || status == 429 || status >= 500; }
+
+}
 
 std::vector<TileRange> regionRanges(const TileMatrix& m, const Region& r, int minZoom, int maxZoom) {
     std::vector<TileRange> out;
@@ -59,6 +78,8 @@ void TileLoader::setLayers(const std::vector<ImageryLayer>& layers) {
     netQueue_.clear();
     done_.clear();
     doneIds_.clear();
+    refresh_.clear();
+    refreshSet_.clear();
     ++generation_;
 }
 
@@ -166,24 +187,156 @@ void TileLoader::cancelDownload(int id) {
     if (it == downloads_.end()) return;
     it->second.status.cancelled = true;
     it->second.status.finished = true;
+    it->second.retry.clear();
+    it->second.status.retrying = 0;
 }
 
-bool TileLoader::nextDownload(int& id, TileId& tile) {
+std::int64_t TileLoader::exportTiles(int layer, const Region& region, int minZoom, int maxZoom, const std::string& path,
+                                     std::string& error) {
+    std::shared_ptr<TileProvider> provider;
+    std::string name;
+    {
+        std::lock_guard lock(mutex_);
+        if (layer < 0 || layer >= static_cast<int>(providers_.size())) {
+            error = "no such layer";
+            return -1;
+        }
+        provider = providers_[layer];
+        name = layers_[layer].name;
+    }
+    const TileMatrix& m = provider->matrix();
+    TilePackageWriter writer;
+    if (!writer.open(path, m, name, error)) return -1;
+    std::int64_t written = 0;
+    std::string key = provider->cacheKey();
+    for (const TileRange& r : regionRanges(m, region, std::max(minZoom, m.minZoom), std::min(maxZoom, m.maxZoom))) {
+        for (int y = r.y0; y <= r.y1; ++y) {
+            if (!key.empty() && cache_) {
+                cache_->forEach(key, r.z, r.x0, r.x1, y, y, [&](int x, int yy, const std::vector<std::uint8_t>& data) {
+                    if (writer.put(r.z, x, yy, data)) ++written;
+                });
+                continue;
+            }
+            if (provider->vector() || provider->remote()) continue;
+            for (int x = r.x0; x <= r.x1; ++x) {
+                FetchResult res;
+                if (!provider->fetchLocal(r.z, x, y, res) || res.status != 200 || res.raw || res.data.empty()) continue;
+                if (writer.put(r.z, x, y, res.data)) ++written;
+            }
+        }
+    }
+    double west = std::max(region.west, -180.0), east = std::min(region.east, 180.0);
+    double south = std::max(region.south, -maxLatitude(m.srid)), north = std::min(region.north, maxLatitude(m.srid));
+    writer.extend(west, south, east, north);
+    writer.close();
+    return written;
+}
+
+std::int64_t TileLoader::importTiles(int layer, const std::string& path, std::string& error) {
+    std::shared_ptr<TileProvider> provider;
+    {
+        std::lock_guard lock(mutex_);
+        if (layer < 0 || layer >= static_cast<int>(providers_.size())) {
+            error = "no such layer";
+            return -1;
+        }
+        provider = providers_[layer];
+    }
+    std::string key = provider->cacheKey();
+    if (key.empty() || !cache_ || !cache_->isOpen()) {
+        error = "layer has no tile cache (set a cache directory and use an online layer with caching on)";
+        return -1;
+    }
+    const TileMatrix& target = provider->matrix();
+    TileMatrix source;
+    std::vector<int> levelMap;
+    bool mapped = false;
+    std::int64_t imported = 0, skipped = 0;
+    auto mapLevels = [&]() {
+        mapped = true;
+        levelMap.assign(source.levels.size(), -1);
+        double tol = source.srid == 4326 ? 1e-7 : 1e-2;
+        if (source.srid != target.srid || std::abs(source.originX - target.originX) > tol || std::abs(source.originY - target.originY) > tol)
+            return;
+        for (int sz = 0; sz < static_cast<int>(source.levels.size()); ++sz) {
+            if (!source.hasLevel(sz)) continue;
+            const TileLevel& a = source.levels[sz];
+            for (int tz = 0; tz < static_cast<int>(target.levels.size()); ++tz) {
+                const TileLevel& b = target.levels[tz];
+                if (a.tileWidth == b.tileWidth && std::abs(a.resolutionX - b.resolutionX) <= b.resolutionX * 1e-6) {
+                    levelMap[sz] = tz;
+                    break;
+                }
+            }
+        }
+    };
+    cache_->begin();
+    int batch = 0;
+    bool ok = readTilePackage(path, source, [&](int z, int x, int y, const std::vector<std::uint8_t>& data) {
+        if (!mapped) mapLevels();
+        int tz = z >= 0 && z < static_cast<int>(levelMap.size()) ? levelMap[z] : -1;
+        if (tz < 0 || data.empty()) {
+            ++skipped;
+            return true;
+        }
+        cache_->put(key, tz, x, y, data, TileCache::now() + (std::int64_t(1) << 40), true);
+        ++imported;
+        if (++batch >= 2000) {
+            cache_->commit();
+            cache_->begin();
+            batch = 0;
+        }
+        return true;
+    }, error);
+    cache_->commit();
+    if (!ok) return -1;
+    if (imported == 0 && skipped > 0) error = "package tiling does not match the layer's tile matrix";
+    return imported;
+}
+
+bool TileLoader::nextDownload(int& id, TileId& tile, int& attempt, bool& blocked) {
+    double t = seconds();
     for (auto& [k, d] : downloads_) {
         if (d.status.finished || d.generation != generation_) continue;
+        if (d.layer < 0 || d.layer >= static_cast<int>(providers_.size())) continue;
+        const auto& provider = providers_[d.layer];
         while (d.range < d.ranges.size()) {
             const TileRange& r = d.ranges[d.range];
             if (d.index < r.count()) {
                 int w = r.x1 - r.x0 + 1;
-                tile = {d.layer, r.z, r.x0 + static_cast<int>(d.index % w), r.y0 + static_cast<int>(d.index / w)};
+                TileId next{d.layer, r.z, r.x0 + static_cast<int>(d.index % w), r.y0 + static_cast<int>(d.index / w)};
+                if (!provider->available(next.z, next.x, next.y)) {
+                    blocked = true;
+                    break;
+                }
+                tile = next;
                 ++d.index;
                 ++d.inflight;
                 id = k;
+                attempt = 0;
                 return true;
             }
             ++d.range;
             d.index = 0;
         }
+        if (d.range < d.ranges.size() || d.retry.empty()) continue;
+        if (t < d.retryAt) {
+            blocked = true;
+            continue;
+        }
+        auto [next, tries] = d.retry.front();
+        if (!provider->available(next.z, next.x, next.y)) {
+            d.retryAt = t + 2.0;
+            blocked = true;
+            continue;
+        }
+        d.retry.pop_front();
+        d.status.retrying = static_cast<std::int64_t>(d.retry.size());
+        tile = next;
+        ++d.inflight;
+        id = k;
+        attempt = tries;
+        return true;
     }
     return false;
 }
@@ -262,7 +415,8 @@ void TileLoader::finish(const TileId& id, int gen, const std::shared_ptr<TilePro
         } else {
             undecodable();
         }
-    } else if (res.status == 404 || res.status == 204 || res.status == 400 || res.status == -2 || (res.status == 200 && res.data.empty())) {
+    } else if (res.status == 404 || res.status == 204 || res.status == 400 || res.status == -2 || res.status == -3 ||
+               (res.status == 200 && res.data.empty())) {
         tile.permanent = true;
     }
     std::lock_guard lock(mutex_);
@@ -288,6 +442,16 @@ void TileLoader::runLocal() {
         }
         FetchResult res;
         if (provider->fetchLocal(id.z, id.x, id.y, res)) {
+            if (res.stale) {
+                staleServed_.fetch_add(1);
+                if (provider->remote() && !offline_.load()) {
+                    std::lock_guard lock(mutex_);
+                    if (gen == generation_ && refreshSet_.size() < kRefreshCapacity && refreshSet_.insert(id).second) {
+                        refresh_.push_back(id);
+                        netCv_.notify_one();
+                    }
+                }
+            }
             finish(id, gen, provider, res);
             continue;
         }
@@ -303,15 +467,26 @@ void TileLoader::runNetwork() {
         std::shared_ptr<TileProvider> provider;
         int gen = 0;
         int download = 0;
+        int attempt = 0;
+        bool refreshing = false;
         {
             std::unique_lock lock(mutex_);
-            netCv_.wait(lock, [this] {
+            bool woke = netCv_.wait_for(lock, std::chrono::seconds(3), [this] {
                 if (stop_ || !netQueue_.empty()) return true;
+                if (!refresh_.empty() && refreshBusy_ < kRefreshThreads) return true;
                 for (auto& [k, d] : downloads_)
-                    if (!d.status.finished && d.generation == generation_ && d.range < d.ranges.size()) return true;
+                    if (!d.status.finished && d.generation == generation_ && (d.range < d.ranges.size() || !d.retry.empty())) return true;
                 return false;
             });
             if (stop_) return;
+            if (!woke) {
+                if (net::hostsDown() > 0 && !probing_.exchange(true)) {
+                    lock.unlock();
+                    net::probeDueHosts("OpenTAKEngine/0.1");
+                    probing_ = false;
+                }
+                continue;
+            }
             bool picked = false;
             bool capped = false;
             while (!netQueue_.empty() && !picked) {
@@ -354,9 +529,21 @@ void TileLoader::runNetwork() {
                 }
                 picked = true;
             }
-            if (!picked && !nextDownload(download, id)) {
-                if (capped) netCv_.wait_for(lock, std::chrono::milliseconds(50));
-                continue;
+            bool blocked = false;
+            if (!picked && !nextDownload(download, id, attempt, blocked)) {
+                if (!refresh_.empty() && refreshBusy_ < kRefreshThreads) {
+                    id = refresh_.front();
+                    refresh_.pop_front();
+                    refreshSet_.erase(id);
+                    if (id.layer < 0 || id.layer >= static_cast<int>(providers_.size())) continue;
+                    if (!providers_[id.layer]->available(id.z, id.x, id.y)) continue;
+                    refreshing = true;
+                    ++refreshBusy_;
+                } else {
+                    if (capped) netCv_.wait_for(lock, std::chrono::milliseconds(50));
+                    else if (blocked) netCv_.wait_for(lock, std::chrono::milliseconds(500));
+                    continue;
+                }
             }
             if (picked) ++netLayerBusy_[id.layer];
             if (id.layer < 0 || id.layer >= static_cast<int>(providers_.size())) {
@@ -367,15 +554,29 @@ void TileLoader::runNetwork() {
             gen = generation_;
         }
 
+        if (refreshing) {
+            provider->refresh(id.z, id.x, id.y);
+            std::lock_guard lock(mutex_);
+            --refreshBusy_;
+            continue;
+        }
         if (download) {
-            bool ok = provider->cached(id.z, id.x, id.y) || provider->fetch(id.z, id.x, id.y).status == 200;
+            int status = provider->download(id.z, id.x, id.y);
             std::lock_guard lock(mutex_);
             auto it = downloads_.find(download);
             if (it != downloads_.end()) {
                 Download& d = it->second;
                 --d.inflight;
-                ++(ok ? d.status.done : d.status.failed);
-                if (d.range >= d.ranges.size() && d.inflight == 0) d.status.finished = true;
+                if (status == 200) {
+                    ++d.status.done;
+                } else if (transient(status) && attempt + 1 < kDownloadAttempts && !d.status.cancelled) {
+                    d.retry.push_back({id, attempt + 1});
+                    d.retryAt = std::max(d.retryAt, seconds() + (status == -3 ? 5.0 : 1.0 + attempt));
+                    d.status.retrying = static_cast<std::int64_t>(d.retry.size());
+                } else {
+                    ++d.status.failed;
+                }
+                if (d.range >= d.ranges.size() && d.inflight == 0 && d.retry.empty()) d.status.finished = true;
             }
             continue;
         }

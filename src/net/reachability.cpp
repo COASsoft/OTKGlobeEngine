@@ -6,6 +6,7 @@
 #include <chrono>
 #include <mutex>
 #include <unordered_map>
+#include <vector>
 
 namespace ote::net {
 
@@ -23,6 +24,7 @@ struct Host {
     double backoff = 0;
     double downUntil = 0;
     double lastSuccess = -1e9;
+    std::string probeUrl;
 };
 
 struct State {
@@ -92,6 +94,7 @@ void report(const std::string& url, int status) {
         h.lastSuccess = t;
         return;
     }
+    h.probeUrl = url;
     if (h.down) {
         if (h.probing) {
             h.probing = false;
@@ -110,6 +113,19 @@ void report(const std::string& url, int status) {
 }
 
 std::uint64_t reachabilityEpoch() { return state().epoch.load(); }
+
+void probeDueHosts(const std::string& userAgent) {
+    State& s = state();
+    if (s.down.load() == 0) return;
+    std::vector<std::string> due;
+    {
+        std::lock_guard lock(s.mutex);
+        double t = seconds();
+        for (const auto& [key, h] : s.hosts)
+            if (h.down && !h.probing && t >= h.downUntil && !h.probeUrl.empty()) due.push_back(h.probeUrl);
+    }
+    for (const std::string& url : due) get(url, userAgent);
+}
 
 int hostsDown() { return state().down.load(); }
 

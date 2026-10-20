@@ -9,6 +9,7 @@
 #include <stb_image.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
@@ -368,6 +369,7 @@ void ElevationManager::setSources(const std::vector<ElevationLayer>& layers, Til
     grids_.clear();
     used_.clear();
     failed_.clear();
+    retry_.clear();
     ++generation_;
     ++version_;
 }
@@ -394,6 +396,7 @@ bool ElevationManager::gridFor(double west, double south, double east, double no
                                std::vector<float>& heights, bool sampleHeights) {
     heights.assign(sampleHeights ? static_cast<size_t>(posts) * posts : 0, kNaN);
     bool complete = true;
+    const double now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
     ++tick_;
     for (int s = 0; s < static_cast<int>(providers_.size()); ++s) {
         const TileMatrix& m = providers_[s]->matrix();
@@ -421,6 +424,8 @@ bool ElevationManager::gridFor(double west, double south, double east, double no
                     }
                     if (failed_.count(k)) continue;
                     complete = false;
+                    auto rt = retry_.find(k);
+                    if (rt != retry_.end() && rt->second.first > now) continue;
                     requests_.push_back({k, priority});
                 }
         if (!sampleHeights) continue;
@@ -480,9 +485,20 @@ bool ElevationManager::processResults(size_t max) {
             done_.pop_front();
         }
     }
+    const double now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
     for (auto& r : results) {
-        if (r.status == 200) grids_[r.key] = std::make_shared<HeightGrid>(std::move(r.grid));
-        else if (r.status == 404 || r.status == 204 || r.status == 400) failed_.insert(r.key);
+        if (r.status == 200) {
+            grids_[r.key] = std::make_shared<HeightGrid>(std::move(r.grid));
+            retry_.erase(r.key);
+        } else if (r.status == 404 || r.status == 204 || r.status == 400 || r.status == -2 || r.status == -3) {
+            failed_.insert(r.key);
+            retry_.erase(r.key);
+        } else {
+            if (retry_.size() > 20000) retry_.clear();
+            auto& rt = retry_[r.key];
+            rt.second = std::min(rt.second + 1, 6);
+            rt.first = now + std::min(30.0, 0.5 * static_cast<double>(1 << rt.second));
+        }
         used_[r.key] = tick_;
     }
     if (grids_.size() > kGridCapacity) {
@@ -500,6 +516,12 @@ bool ElevationManager::processResults(size_t max) {
     }
     if (!results.empty()) ++version_;
     return !results.empty();
+}
+
+void ElevationManager::clearFailures() {
+    failed_.clear();
+    retry_.clear();
+    ++version_;
 }
 
 int ElevationManager::pending() const {

@@ -32,6 +32,7 @@ struct ImageryLayer {
     double level0Resolution = 0;
     bool tms = false;
     bool cache = true;
+    int expirySeconds = 0;
     float opacity = 1.0f;
     bool polarFill = false;
     float polarTintNorth[3] = {1.0f, 1.0f, 1.0f};
@@ -93,6 +94,8 @@ struct Stats {
     long long imageryLoads = 0;
     int terrainBuilds = 0;
     int uploads = 0;
+    int unreachableHosts = 0;
+    long long staleTiles = 0;
     double cpuMs = 0;
 };
 
@@ -100,6 +103,7 @@ struct DownloadStatus {
     std::int64_t total = 0;
     std::int64_t done = 0;
     std::int64_t failed = 0;
+    std::int64_t retrying = 0;
     bool finished = false;
     bool cancelled = false;
 };
@@ -150,7 +154,11 @@ public:
     std::vector<ImageryLayer> layers() const;
     void setImageryScale(double scale);
     void setCacheDirectory(const std::string& dir);
+    std::string cacheDirectory() const;
+    void setCacheLimit(int megabytes);
+    std::int64_t cacheBytes() const;
     void setOffline(bool offline);
+    void networkChanged();
     void setMemoryBudget(int megabytes);
     void setElevation(const std::vector<ElevationLayer>& layers);
     void setTerrainEnabled(bool enabled);
@@ -211,6 +219,9 @@ public:
     std::int64_t countRegionTiles(int layer, const Region& region, int minZoom, int maxZoom) const;
     DownloadStatus downloadStatus(int id) const;
     void cancelDownload(int id);
+    std::int64_t exportTiles(int layer, const Region& region, int minZoom, int maxZoom, const std::string& path,
+                             std::string* error = nullptr) const;
+    std::int64_t importTiles(int layer, const std::string& path, std::string* error = nullptr);
 
     void frame(const sg_swapchain& swapchain);
     void frameOffscreen(const sg_attachments& attachments, int width, int height);
@@ -227,6 +238,7 @@ ImageryLayer polarFillLayer();
 std::vector<ElevationLayer> defaultElevation();
 std::vector<ImageryLayer> loadMobac(const std::string& xmlOrPath);
 void configureGfx(sg_desc& desc);
+std::string defaultCacheDirectory();
 void setAndroidJavaVm(void* vm);
 bool gdalAvailable();
 double geoidOffset(double lat, double lon);

@@ -16,6 +16,7 @@ add_library(opentakengine STATIC
     raster/tile_loader.cpp
     raster/tile_matrix.cpp
     raster/tile_cache.cpp
+    raster/tile_package.cpp
     raster/tile_provider.cpp
     raster/mobac.cpp
     raster/vector_tile.cpp

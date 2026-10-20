@@ -28,6 +28,7 @@
 #endif
 
 #include "feature/grid.hpp"
+#include "net/http.hpp"
 
 #include "globe.glsl.h"
 #include "mip.glsl.h"
@@ -333,10 +334,13 @@ void GlobeRenderer::shutdown() {
     ready_ = false;
 }
 
+bool GlobeRenderer::reachabilityChanged() const { return net::reachabilityEpoch() != netEpoch_; }
+
 void GlobeRenderer::setCacheDirectory(const std::string& dir) {
     std::string path = dir;
     if (!path.empty() && path.back() != '/' && path.back() != '\\') path += '/';
     path += "tiles.sqlite";
+    cacheDir_ = dir;
     if (cache_.open(path)) {
         loader_.setCache(&cache_);
         if (!layers_.empty()) setLayers(std::vector<ImageryLayer>(layers_));
@@ -426,12 +430,16 @@ void GlobeRenderer::setOffline(bool offline) {
     bool reconnect = offline_ && !offline;
     offline_ = offline;
     loader_.setOffline(offline);
-    if (reconnect) {
-        failed_.clear();
-        for (auto& [k, s] : surface_)
-            if (!s.complete) s.missing.clear();
-        busy_ = true;
-    }
+    if (reconnect) retryUnavailable();
+}
+
+void GlobeRenderer::retryUnavailable() {
+    failed_.clear();
+    failCount_.clear();
+    for (auto& [k, s] : surface_)
+        if (!s.complete) s.missing.clear();
+    elevation_.clearFailures();
+    busy_ = true;
 }
 
 void GlobeRenderer::setLayers(const std::vector<ImageryLayer>& layers) {
@@ -1557,6 +1565,10 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     if (!trace_)
         if (const char* path = std::getenv("OTE_TRACE")) trace_ = std::fopen(path, "w");
     ++frame_;
+    if (std::uint64_t epoch = net::reachabilityEpoch(); epoch != netEpoch_) {
+        netEpoch_ = epoch;
+        retryUnavailable();
+    }
     requests_.clear();
     needs_.clear();
     prefetch_.clear();
@@ -2300,6 +2312,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     stats_.terrainBuilds = builds;
     stats_.imageryTextures = static_cast<int>(imagery_.size());
     stats_.imageryPending = loader_.pending();
+    stats_.staleTiles = loader_.staleServed();
+    stats_.unreachableHosts = net::hostsDown();
     stats_.elevationPending = elevation_.pending();
     stats_.pendingRequests = stats_.imageryPending + stats_.elevationPending;
     stats_.maxLevel = maxLevel;

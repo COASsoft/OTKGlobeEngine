@@ -78,6 +78,9 @@ public:
     int startDownload(int layer, const Region& region, int minZoom, int maxZoom);
     DownloadStatus downloadStatus(int id) const;
     void cancelDownload(int id);
+    std::int64_t exportTiles(int layer, const Region& region, int minZoom, int maxZoom, const std::string& path, std::string& error);
+    std::int64_t importTiles(int layer, const std::string& path, std::string& error);
+    std::int64_t staleServed() const { return staleServed_.load(); }
 
 private:
     struct Download {
@@ -87,12 +90,14 @@ private:
         size_t range = 0;
         std::int64_t index = 0;
         std::int64_t inflight = 0;
+        std::deque<std::pair<TileId, int>> retry;
+        double retryAt = 0;
         DownloadStatus status;
     };
 
     void runLocal();
     void runNetwork();
-    bool nextDownload(int& id, TileId& tile);
+    bool nextDownload(int& id, TileId& tile, int& attempt, bool& blocked);
     void finish(const TileId& id, int generation, const std::shared_ptr<TileProvider>& provider, FetchResult& res);
 
     mutable std::mutex mutex_;
@@ -118,6 +123,11 @@ private:
     std::unordered_map<int, int> netLayerBusy_;
     int netLayerCap_ = 2;
     std::map<int, Download> downloads_;
+    std::deque<TileId> refresh_;
+    std::unordered_set<TileId, TileIdHash> refreshSet_;
+    int refreshBusy_ = 0;
+    std::atomic<std::int64_t> staleServed_{0};
+    std::atomic<bool> probing_{false};
     int nextDownloadId_ = 1;
     TileCache* cache_ = nullptr;
     std::atomic<bool> offline_{false};

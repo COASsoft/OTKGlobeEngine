@@ -8,6 +8,7 @@
 #include "raster/tile_cache.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <mutex>
 
@@ -16,6 +17,7 @@ namespace ote {
 namespace {
 
 constexpr std::int64_t kMinExpirySeconds = 7 * 24 * 3600;
+constexpr std::int64_t kNeverExpires = std::int64_t(1) << 50;
 
 void replaceAll(std::string& s, const std::string& from, const std::string& to) {
     for (size_t pos = s.find(from); pos != std::string::npos; pos = s.find(from, pos + to.size()))
@@ -47,46 +49,48 @@ public:
         matrix_ = layer.srid == 4326 && layer.level0Resolution > 0 ? TileMatrix::geographicCustom(layer.minZoom, layer.maxZoom, layer.tileSize, layer.level0Resolution)
                  : layer.srid == 4326 ? TileMatrix::geographic(layer.minZoom, layer.maxZoom, layer.tileSize)
                                      : TileMatrix::webMercator(layer.minZoom, layer.maxZoom, layer.tileSize);
-        key_ = layer.url + "|" + layer.wmsLayers + "|" + layer.wmsStyles + "|" + std::to_string(layer.srid) + "|" +
-               (layer.tms ? "tms" : "xyz");
+        key_ = layerCacheKey(layer);
         ua_ = layer.userAgent.empty() ? std::string("OpenTAKEngine/0.1") : layer.userAgent;
+        expiry_ = layer.expirySeconds < 0 ? kNeverExpires : layer.expirySeconds > 0 ? layer.expirySeconds : kMinExpirySeconds;
+        local_ = layer.url.rfind("file://", 0) == 0;
     }
 
-    bool remote() const override { return true; }
+    bool remote() const override { return !local_; }
     bool vector() const override { return layer_.type == SourceType::Mvt; }
-    bool cached(int z, int x, int y) override { return cache_ && layer_.cache && cache_->has(key_, z, x, y); }
+    std::string cacheKey() const override { return useCache() ? key_ : std::string(); }
+    bool cached(int z, int x, int y) override { return useCache() && cache_->has(key_, z, x, y); }
     void invalidate(int z, int x, int y) override {
-        if (cache_ && cache_->isOpen() && layer_.cache) cache_->remove(key_, z, x, y);
+        if (useCache()) cache_->remove(key_, z, x, y);
     }
-
-    void resolveTileJson() {
-        std::lock_guard lock(resolveMutex_);
-        if (resolved_) return;
-        resolved_ = true;
-        if (layer_.type != SourceType::Mvt || layer_.url.find("{z}") != std::string::npos) return;
-        net::Response res = net::get(layer_.url, ua_);
-        if (res.status != 200) return;
-        nlohmann::json j = nlohmann::json::parse(res.body.begin(), res.body.end(), nullptr, false);
-        if (j.is_discarded() || !j.contains("tiles") || !j["tiles"].is_array() || j["tiles"].empty()) return;
-        layer_.url = j["tiles"][0].get<std::string>();
+    bool available(int z, int x, int y) const override {
+        if (local_) return true;
+        if (offline_ && offline_->load()) return false;
+        return net::hostAvailable(tileUrl(layer_, matrix_, z, x, y));
     }
 
     bool fetchLocal(int z, int x, int y, FetchResult& out) override {
-        bool offline = offline_ && offline_->load();
-        if (!cache_ || !cache_->isOpen() || !layer_.cache) {
-            if (offline) out.status = -2;
-            return offline;
-        }
-        std::int64_t expires = 0;
-        std::vector<std::uint8_t> data;
-        if (cache_->get(key_, z, x, y, data, expires) && (expires > TileCache::now() || offline)) {
-            out.status = 200;
-            out.data = std::move(data);
-            out.fromCache = true;
+        if (local_) {
+            out = readFile(z, x, y);
             return true;
+        }
+        bool offline = offline_ && offline_->load();
+        if (useCache()) {
+            std::int64_t expires = 0;
+            std::vector<std::uint8_t> data;
+            if (cache_->get(key_, z, x, y, data, expires)) {
+                out.status = 200;
+                out.data = std::move(data);
+                out.fromCache = true;
+                out.stale = expires <= TileCache::now();
+                return true;
+            }
         }
         if (offline) {
             out.status = -2;
+            return true;
+        }
+        if (!net::hostAvailable(tileUrl(layer_, matrix_, z, x, y))) {
+            out.status = -3;
             return true;
         }
         return false;
@@ -94,11 +98,10 @@ public:
 
     FetchResult fetch(int z, int x, int y) override {
         FetchResult r;
-        if (!resolved_) resolveTileJson();
+        if (local_) return readFile(z, x, y);
         std::vector<std::uint8_t> data;
         std::int64_t expires = 0;
-        bool useCache = cache_ && cache_->isOpen() && layer_.cache;
-        bool have = useCache && cache_->get(key_, z, x, y, data, expires);
+        bool have = useCache() && cache_->get(key_, z, x, y, data, expires);
         bool offline = offline_ && offline_->load();
         if (have && (expires > TileCache::now() || offline)) {
             r.status = 200;
@@ -110,49 +113,110 @@ public:
             r.status = -2;
             return r;
         }
-        std::string url = tileUrl(layer_, matrix_, z, x, y);
-        net::Response res;
-        if (url.rfind("file://", 0) == 0) {
-            std::string path = url.substr(7);
-            if (path.size() > 2 && path[0] == '/' && path[2] == ':') path = path.substr(1);
-            FILE* f = std::fopen(path.c_str(), "rb");
-            if (f) {
-                std::fseek(f, 0, SEEK_END);
-                long n = std::ftell(f);
-                std::fseek(f, 0, SEEK_SET);
-                res.body.resize(n > 0 ? static_cast<size_t>(n) : 0);
-                res.status = std::fread(res.body.data(), 1, res.body.size(), f) == res.body.size() ? 200 : 500;
-                std::fclose(f);
-            } else {
-                res.status = 404;
-            }
-            r.status = res.status;
-            r.data = std::move(res.body);
-            return r;
-        }
-        res = net::get(url, ua_);
-        if (res.status == 200 && !res.body.empty()) {
-            if (useCache) cache_->put(key_, z, x, y, res.body, TileCache::now() + kMinExpirySeconds);
+        int status = 0;
+        std::vector<std::uint8_t> body = network(z, x, y, false, status);
+        if (status == 200) {
             r.status = 200;
-            r.data = std::move(res.body);
+            r.data = std::move(body);
             return r;
         }
         if (have) {
             r.status = 200;
             r.data = std::move(data);
             r.fromCache = true;
+            r.stale = true;
             return r;
         }
-        r.status = res.status;
+        r.status = status;
         return r;
     }
 
+    bool refresh(int z, int x, int y) override {
+        if (local_ || (offline_ && offline_->load()) || !useCache()) return false;
+        int status = 0;
+        network(z, x, y, false, status);
+        return status == 200;
+    }
+
+    int download(int z, int x, int y) override {
+        if (local_) return readFile(z, x, y).status;
+        if (useCache() && cache_->has(key_, z, x, y)) {
+            cache_->pin(key_, z, x, y);
+            return 200;
+        }
+        if (offline_ && offline_->load()) return -2;
+        int status = 0;
+        network(z, x, y, true, status);
+        return status;
+    }
+
 private:
+    bool useCache() const { return cache_ && cache_->isOpen() && layer_.cache; }
+
+    FetchResult readFile(int z, int x, int y) {
+        FetchResult r;
+        std::string path = tileUrl(layer_, matrix_, z, x, y).substr(7);
+        if (path.size() > 2 && path[0] == '/' && path[2] == ':') path = path.substr(1);
+        FILE* f = std::fopen(path.c_str(), "rb");
+        if (!f) {
+            r.status = 404;
+            return r;
+        }
+        std::fseek(f, 0, SEEK_END);
+        long n = std::ftell(f);
+        std::fseek(f, 0, SEEK_SET);
+        r.data.resize(n > 0 ? static_cast<size_t>(n) : 0);
+        r.status = std::fread(r.data.data(), 1, r.data.size(), f) == r.data.size() ? 200 : 500;
+        std::fclose(f);
+        return r;
+    }
+
+    std::vector<std::uint8_t> network(int z, int x, int y, bool pin, int& status) {
+        if (!resolved_) resolveTileJson();
+        std::string url = tileUrl(layer_, matrix_, z, x, y);
+        net::Response res = net::get(url, ua_);
+        if (res.status == 200 && !res.body.empty()) {
+            if (useCache()) cache_->put(key_, z, x, y, res.body, TileCache::now() + expiry_, pin);
+            status = 200;
+            return std::move(res.body);
+        }
+        status = res.status == 200 ? 204 : res.status;
+        if (status <= 0 && !net::hostAvailable(url)) status = -3;
+        return {};
+    }
+
+    void resolveTileJson() {
+        std::lock_guard lock(resolveMutex_);
+        if (resolved_) return;
+        if (layer_.type != SourceType::Mvt || layer_.url.find("{z}") != std::string::npos) {
+            resolved_ = true;
+            return;
+        }
+        std::vector<std::uint8_t> body;
+        net::Response res = net::get(layer_.url, ua_);
+        if (res.status == 200 && !res.body.empty()) {
+            body = std::move(res.body);
+            if (useCache()) cache_->put(key_, -1, 0, 0, body, kNeverExpires, true);
+        } else {
+            std::int64_t expires = 0;
+            if (!useCache() || !cache_->get(key_, -1, 0, 0, body, expires)) {
+                if (res.status > 0) resolved_ = true;
+                return;
+            }
+        }
+        resolved_ = true;
+        nlohmann::json j = nlohmann::json::parse(body.begin(), body.end(), nullptr, false);
+        if (j.is_discarded() || !j.contains("tiles") || !j["tiles"].is_array() || j["tiles"].empty()) return;
+        layer_.url = j["tiles"][0].get<std::string>();
+    }
+
     ImageryLayer layer_;
     TileCache* cache_;
     std::atomic<bool>* offline_;
     std::string key_;
     std::string ua_;
+    std::int64_t expiry_ = kMinExpirySeconds;
+    bool local_ = false;
     std::mutex resolveMutex_;
     std::atomic<bool> resolved_{false};
 };
@@ -295,6 +359,33 @@ private:
     db::Statement tile_;
 };
 
+}
+
+std::string stripCredentials(const std::string& url) {
+    size_t q = url.find('?');
+    if (q == std::string::npos) return url;
+    static const char* const secret[] = {"key", "apikey", "api_key", "api-key", "access_token", "accesstoken", "token",
+                                         "subscription-key", "x-api-key", "client_secret", "signature", "sig"};
+    std::string out = url.substr(0, q);
+    std::string kept;
+    size_t pos = q + 1;
+    while (pos <= url.size()) {
+        size_t amp = url.find('&', pos);
+        if (amp == std::string::npos) amp = url.size();
+        std::string part = url.substr(pos, amp - pos);
+        std::string name = part.substr(0, part.find('='));
+        std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        bool drop = part.empty();
+        for (const char* k : secret) drop = drop || name == k;
+        if (!drop) kept += (kept.empty() ? "" : "&") + part;
+        pos = amp + 1;
+    }
+    return kept.empty() ? out : out + "?" + kept;
+}
+
+std::string layerCacheKey(const ImageryLayer& layer) {
+    return stripCredentials(layer.url) + "|" + layer.wmsLayers + "|" + layer.wmsStyles + "|" + std::to_string(layer.srid) + "|" +
+           (layer.tms ? "tms" : "xyz");
 }
 
 std::string tileUrl(const ImageryLayer& layer, const TileMatrix& m, int z, int x, int y) {

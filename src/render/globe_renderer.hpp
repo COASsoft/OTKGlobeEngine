@@ -47,7 +47,11 @@ public:
     const std::vector<ImageryLayer>& layers() const { return layers_; }
     const std::vector<TileMatrix>& matrices() const { return matrices_; }
     void setCacheDirectory(const std::string& dir);
+    const std::string& cacheDirectory() const { return cacheDir_; }
+    TileCache& cache() { return cache_; }
+    bool reachabilityChanged() const;
     void setOffline(bool offline);
+    void retryUnavailable();
     void setMemoryBudget(int megabytes);
     void fitPools();
     size_t imageryLimit() const;
@@ -215,6 +219,8 @@ private:
     std::unordered_map<std::uint64_t, std::unique_ptr<Tileset3D>> tilesets_;
     std::uint64_t nextTileset_ = 1;
     std::atomic<bool> offline_{false};
+    std::uint64_t netEpoch_ = 0;
+    std::string cacheDir_;
     std::vector<ImageryLayer> layers_;
     std::vector<TileMatrix> matrices_;
     std::vector<bool> vectorLayers_;

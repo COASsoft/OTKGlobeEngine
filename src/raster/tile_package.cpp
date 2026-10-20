@@ -5,6 +5,7 @@
 #include <stb_image.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
@@ -94,7 +95,12 @@ TilePackageWriter::~TilePackageWriter() { close(); }
 bool TilePackageWriter::open(const std::string& path, const TileMatrix& matrix, const std::string& name, std::string& error) {
     Impl& d = *impl_;
     d.matrix = matrix;
-    d.name = name.empty() ? std::filesystem::u8path(path).stem().u8string() : name;
+    d.name = name;
+    if (d.name.empty()) {
+        size_t slash = path.find_last_of("/\\");
+        d.name = path.substr(slash == std::string::npos ? 0 : slash + 1);
+        d.name = d.name.substr(0, d.name.find_last_of('.'));
+    }
     d.mbtiles = endsWith(path, ".mbtiles");
     if (!d.mbtiles && !endsWith(path, ".gpkg")) {
         error = "unsupported package extension (use .mbtiles or .gpkg)";
@@ -176,7 +182,11 @@ bool TilePackageWriter::open(const std::string& path, const TileMatrix& matrix, 
             auto c = d.db.prepare("INSERT INTO gpkg_contents (table_name, data_type, identifier, min_x, min_y, max_x, max_y, srs_id) "
                                   "VALUES ('imagery', 'tiles', ?, ?, ?, ?, ?, ?)");
             c.bind(1, d.name);
-            sqlite3_bind_double(nullptr, 0, 0);
+            c.bind(2, minX);
+            c.bind(3, minY);
+            c.bind(4, maxX);
+            c.bind(5, maxY);
+            c.bind(6, matrix.srid);
             c.exec();
             auto lv = d.db.prepare("INSERT INTO gpkg_tile_matrix VALUES ('imagery', ?, ?, ?, ?, ?, ?, ?)");
             for (int z = 0; z < static_cast<int>(matrix.levels.size()); ++z) {
@@ -188,16 +198,10 @@ bool TilePackageWriter::open(const std::string& path, const TileMatrix& matrix, 
                 lv.bind(3, l.matrixHeight);
                 lv.bind(4, l.tileWidth);
                 lv.bind(5, l.tileHeight);
-                sqlite3_bind_double(lv.handle(), 6, l.resolutionX);
-                sqlite3_bind_double(lv.handle(), 7, l.resolutionY);
+                lv.bind(6, l.resolutionX);
+                lv.bind(7, l.resolutionY);
                 lv.exec();
             }
-            auto ext = d.db.prepare("UPDATE gpkg_contents SET min_x=?, min_y=?, max_x=?, max_y=? WHERE table_name='imagery'");
-            sqlite3_bind_double(ext.handle(), 1, minX);
-            sqlite3_bind_double(ext.handle(), 2, minY);
-            sqlite3_bind_double(ext.handle(), 3, maxX);
-            sqlite3_bind_double(ext.handle(), 4, maxY);
-            ext.exec();
         }
         d.insert = d.db.prepare("INSERT OR REPLACE INTO imagery (zoom_level, tile_column, tile_row, tile_data) VALUES (?,?,?,?)");
     }
@@ -353,8 +357,6 @@ bool readTilePackage(const std::string& path, TileMatrix& matrix, const TileVisi
             return false;
         }
         probe = {};
-        int maxZ = 0;
-        std::vector<std::pair<std::int64_t, std::vector<std::uint8_t>>> none;
         matrix = TileMatrix::webMercator(0, 22, 256);
         auto rows = db.prepare("SELECT key, tile FROM tiles");
         while (rows.valid() && rows.step()) {
@@ -363,7 +365,6 @@ bool readTilePackage(const std::string& path, TileMatrix& matrix, const TileVisi
             while (z < 29 && (static_cast<std::int64_t>(z + 1) << (2 * (z + 1))) <= key) ++z;
             std::int64_t rest = key - (static_cast<std::int64_t>(z) << (2 * z));
             int x = static_cast<int>(rest >> z), y = static_cast<int>(rest & ((std::int64_t(1) << z) - 1));
-            maxZ = std::max(maxZ, z);
             if (!visit(z, x, y, rows.blob(1))) break;
         }
         return true;

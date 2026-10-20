@@ -54,6 +54,7 @@ public:
     void submit();
     bool processResults(size_t max);
     int pending() const;
+    void clearFailures();
 
 private:
     struct Key {
@@ -81,6 +82,7 @@ private:
     std::unordered_map<Key, std::shared_ptr<HeightGrid>, KeyHash> grids_;
     std::unordered_map<Key, std::uint64_t, KeyHash> used_;
     std::unordered_set<Key, KeyHash> failed_;
+    std::unordered_map<Key, std::pair<double, int>, KeyHash> retry_;
     std::vector<std::pair<Key, double>> requests_;
     std::uint64_t tick_ = 0;
     int version_ = 0;

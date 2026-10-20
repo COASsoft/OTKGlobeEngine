@@ -36,6 +36,7 @@ public:
     }
     void bind(int i, std::int64_t v) { sqlite3_bind_int64(stmt_, i, v); }
     void bind(int i, int v) { sqlite3_bind_int(stmt_, i, v); }
+    void bind(int i, double v) { sqlite3_bind_double(stmt_, i, v); }
     void bind(int i, const std::string& v) { sqlite3_bind_text(stmt_, i, v.data(), static_cast<int>(v.size()), SQLITE_TRANSIENT); }
     void bind(int i, const std::vector<std::uint8_t>& v) {
         sqlite3_bind_blob(stmt_, i, v.data(), static_cast<int>(v.size()), SQLITE_TRANSIENT);

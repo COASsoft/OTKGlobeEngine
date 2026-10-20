@@ -20,6 +20,7 @@ bool hostAvailable(const std::string& url);
 bool admit(const std::string& url);
 void report(const std::string& url, int status);
 std::uint64_t reachabilityEpoch();
+void probeDueHosts(const std::string& userAgent);
 int hostsDown();
 void resetReachability();
 
