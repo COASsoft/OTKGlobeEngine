@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <cmath>
 #include <chrono>
+#include <cstdlib>
+#include <filesystem>
 #include <unordered_map>
 
 #include "core/camera.hpp"
@@ -296,6 +298,14 @@ Engine::~Engine() { shutdown(); }
 bool Engine::init() {
     impl_->camera.groundHeight = [this](double lat, double lon) { return impl_->globe.elevationAt(lat, lon); };
     impl_->camera.update();
+    if (impl_->globe.cacheDirectory().empty()) {
+        std::string dir = defaultCacheDirectory();
+        std::error_code ec;
+        if (!dir.empty()) {
+            std::filesystem::create_directories(std::filesystem::u8path(dir), ec);
+            if (std::filesystem::is_directory(std::filesystem::u8path(dir), ec)) impl_->globe.setCacheDirectory(dir);
+        }
+    }
     return impl_->globe.init();
 }
 
@@ -322,6 +332,18 @@ std::vector<ImageryLayer> Engine::layers() const { return impl_->globe.layers();
 
 void Engine::setCacheDirectory(const std::string& dir) {
     impl_->globe.setCacheDirectory(dir);
+    impl_->dirty = true;
+}
+
+std::string Engine::cacheDirectory() const { return impl_->globe.cacheDirectory(); }
+
+void Engine::setCacheLimit(int megabytes) { impl_->globe.cache().setLimit(static_cast<std::int64_t>(std::max(megabytes, 0)) << 20); }
+
+std::int64_t Engine::cacheBytes() const { return impl_->globe.cache().bytes(); }
+
+void Engine::networkChanged() {
+    net::resetReachability();
+    impl_->globe.retryUnavailable();
     impl_->dirty = true;
 }
 
@@ -560,6 +582,25 @@ std::int64_t Engine::countRegionTiles(int layer, const Region& region, int minZo
 DownloadStatus Engine::downloadStatus(int id) const { return impl_->globe.loader().downloadStatus(id); }
 
 void Engine::cancelDownload(int id) { impl_->globe.loader().cancelDownload(id); }
+
+std::int64_t Engine::exportTiles(int layer, const Region& region, int minZoom, int maxZoom, const std::string& path,
+                                 std::string* error) const {
+    std::string e;
+    std::int64_t n = impl_->globe.loader().exportTiles(layer, region, minZoom, maxZoom, path, e);
+    if (error) *error = e;
+    return n;
+}
+
+std::int64_t Engine::importTiles(int layer, const std::string& path, std::string* error) {
+    std::string e;
+    std::int64_t n = impl_->globe.loader().importTiles(layer, path, e);
+    if (error) *error = e;
+    if (n > 0) {
+        impl_->globe.retryUnavailable();
+        impl_->dirty = true;
+    }
+    return n;
+}
 
 void Engine::setElevation(const std::vector<ElevationLayer>& layers) {
     impl_->globe.setElevation(layers);
@@ -841,13 +882,29 @@ void Engine::frameOffscreen(const sg_attachments& attachments, int width, int he
     impl_->dirty = false;
 }
 
-bool Engine::needsRedraw() const { return impl_->dirty || impl_->flying || impl_->globe.busy() || impl_->input->active(); }
+bool Engine::needsRedraw() const {
+    return impl_->dirty || impl_->flying || impl_->globe.busy() || impl_->input->active() || impl_->globe.reachabilityChanged();
+}
 
 Stats Engine::stats() const { return impl_->globe.stats(); }
 
 void setAndroidJavaVm(void* vm) { net::setJavaVm(vm); }
 
 double geoidOffset(double lat, double lon) { return geoidHeight(lat, lon); }
+
+std::string defaultCacheDirectory() {
+#if defined(_WIN32)
+    if (const char* la = std::getenv("LOCALAPPDATA"); la && *la) return std::string(la) + "/OpenTAKEngine";
+#elif defined(__ANDROID__)
+    return {};
+#elif defined(__APPLE__)
+    if (const char* home = std::getenv("HOME"); home && *home) return std::string(home) + "/Library/Application Support/OpenTAKEngine";
+#else
+    if (const char* xdg = std::getenv("XDG_CACHE_HOME"); xdg && *xdg) return std::string(xdg) + "/OpenTAKEngine";
+    if (const char* home = std::getenv("HOME"); home && *home) return std::string(home) + "/.cache/OpenTAKEngine";
+#endif
+    return {};
+}
 
 void configureGfx(sg_desc& desc) {
 #if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
