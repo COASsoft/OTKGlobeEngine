@@ -284,6 +284,21 @@ bool PointCloudLayer::remove(std::uint64_t id) {
     return true;
 }
 
+void PointCloudLayer::drawBuffer(const Camera& cam, sg_buffer points, int count, const Mat4& modelRelEye, float size, double dpi) {
+    if (!ready_ || count <= 0) return;
+    sg_apply_pipeline(pipeline_);
+    points_params_t p{};
+    toFloat(cam.viewProjRel() * modelRelEye, p.mvp);
+    p.size[0] = static_cast<float>(size * dpi / cam.width);
+    p.size[1] = static_cast<float>(size * dpi / cam.height);
+    sg_bindings b{};
+    b.vertex_buffers[0] = corners_;
+    b.vertex_buffers[1] = points;
+    sg_apply_bindings(&b);
+    sg_apply_uniforms(UB_points_params, SG_RANGE(p));
+    sg_draw(0, 6, count);
+}
+
 void PointCloudLayer::draw(const Camera& cam, double dpi) {
     if (!ready_ || clouds_.empty()) return;
     sg_apply_pipeline(pipeline_);

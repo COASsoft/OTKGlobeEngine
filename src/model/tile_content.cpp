@@ -251,14 +251,7 @@ bool parsePnts(const std::uint8_t* data, size_t size, std::vector<CpuModel>& out
         if (!decodeDracoPoints(ft.bin + off, len, props, fpos, rgba)) return false;
         pos.assign(fpos.begin(), fpos.end());
         n = pos.size() / 3;
-        double offset[3], scale[3];
-        if (props.count("POSITION") && ft.vec3("QUANTIZED_VOLUME_OFFSET", offset) && ft.vec3("QUANTIZED_VOLUME_SCALE", scale) && !ft.property("POSITION", 12, n)) {
-            bool normalized = true;
-            for (double v : pos) normalized = normalized && v >= -1e-6 && v <= 1.0 + 1e-6;
-            if (normalized)
-                for (size_t i = 0; i < n; ++i)
-                    for (int k = 0; k < 3; ++k) pos[i * 3 + k] = offset[k] + pos[i * 3 + k] * scale[k];
-        }
+        if (n == 0) return false;
     } else if (!positions(ft, n, pos)) {
         return false;
     }

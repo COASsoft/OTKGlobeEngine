@@ -101,6 +101,12 @@ struct Stats {
     long long staleTiles = 0;
     int tilesetTiles = 0;
     int tilesetFailed = 0;
+    double frameMsP50 = 0;
+    double frameMsP95 = 0;
+    double frameMsP99 = 0;
+    double renderMsP95 = 0;
+    double renderMsP99 = 0;
+    int drawCalls = 0;
     double cpuMs = 0;
 };
 

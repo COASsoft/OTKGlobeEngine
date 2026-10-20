@@ -29,8 +29,7 @@ if(OTE_WITH_DRACO)
         ${_draco}/mesh/*.cc
         ${_draco}/metadata/*.cc
         ${_draco}/point_cloud/*.cc)
-    list(FILTER _draco_sources EXCLUDE REGEX "(_test|test_utils|encode|encoder|_enc|expert|options)\\.cc$")
-    list(FILTER _draco_sources EXCLUDE REGEX "/(mesh_cleanup|mesh_features|mesh_indices|mesh_misc_functions|mesh_utils|mesh_splitter|mesh_connected_components|mesh_stripifier|triangle_soup_mesh_builder|corner_table_iterators|point_cloud_builder|valence_cache)\\.cc$")
+    list(FILTER _draco_sources EXCLUDE REGEX "(_test|test_utils|encode|encoder|encoders_controller|draco_compression_options)\\.cc$")
     file(CONFIGURE OUTPUT ${CMAKE_BINARY_DIR}/draco_generated/draco/draco_features.h CONTENT
 "#ifndef DRACO_FEATURES_H_
 #define DRACO_FEATURES_H_
@@ -81,7 +80,7 @@ if(OTE_WITH_KTX2)
     add_library(ote_basisu STATIC ${_basisu_dir}/transcoder/basisu_transcoder.cpp ${_basisu_dir}/zstd/zstddeclib.c)
     target_include_directories(ote_basisu PUBLIC ${_basisu_dir}/transcoder)
     target_compile_definitions(ote_basisu PUBLIC BASISD_SUPPORT_KTX2=1 BASISD_SUPPORT_KTX2_ZSTD=1
-        PRIVATE BASISD_SUPPORT_PVRTC1=0 BASISD_SUPPORT_PVRTC2=0 BASISD_SUPPORT_ATC=0 BASISD_SUPPORT_FXT1=0)
+        BASISD_SUPPORT_PVRTC1=0 BASISD_SUPPORT_PVRTC2=0 BASISD_SUPPORT_ATC=0 BASISD_SUPPORT_FXT1=0)
     if(MSVC)
         target_compile_options(ote_basisu PRIVATE /w /bigobj)
     else()

@@ -27,6 +27,7 @@ public:
     std::uint64_t add(const std::string& path, std::size_t maxPoints, float pointSize, PointCloudInfo* info);
     bool remove(std::uint64_t id);
     void draw(const Camera& cam, double dpi);
+    void drawBuffer(const Camera& cam, sg_buffer points, int count, const Mat4& modelRelEye, float size, double dpi);
     bool empty() const { return clouds_.empty(); }
 
 private:

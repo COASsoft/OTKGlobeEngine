@@ -67,7 +67,7 @@ Round trips through GeoJSON, KML, GML, CSV, CoT and TAK data packages are covere
 | Cesium quantized-mesh (.terrain) | `quantized-mesh` | Elevation | yes | no | no | ElevationLayer type QuantizedMesh |  |
 | Terrarium RGB elevation tiles (.png) | `terrarium` | Elevation | yes | no | no | ElevationLayer type Terrarium | Default online terrain |
 | glTF 2.0 / GLB (.gltf .glb) | `gltf` | 3D model | yes | no | no | addModel | PBR base colour, textures, node transforms |
-| OGC 3D Tiles 1.0/1.1 (.json .b3dm .glb .3tz) | `3dtiles` | 3D model | yes | no | no | addTileset | tileset.json, b3dm, glb content, external tilesets, .3tz archives |
+| OGC 3D Tiles 1.0/1.1 (.json .b3dm .i3dm .pnts .cmpt .glb .gltf .subtree .3tz) | `3dtiles` | 3D model | yes | no | no | addTileset | tileset.json, external tilesets, implicit tiling (quadtree/octree, region or box, binary or JSON subtrees), b3dm, i3dm, pnts (incl. Draco point compression), cmpt, glb/glTF content with `EXT_mesh_gpu_instancing`, `KHR_draco_mesh_compression`, `EXT_meshopt_compression`, `KHR_texture_basisu` (KTX2), `KHR_mesh_quantization`, `KHR_texture_transform`; .3tz archives |
 | Wavefront OBJ (.obj) | `obj` | 3D model | no | no | no | - | Planned adapter |
 | COLLADA (.dae) | `collada` | 3D model | no | no | no | - | Planned adapter (KMZ models use COLLADA) |
 | Autodesk FBX (.fbx) | `fbx` | 3D model | no | no | no | - | Proprietary; convert to glTF |
@@ -84,7 +84,7 @@ Round trips through GeoJSON, KML, GML, CSV, CoT and TAK data packages are covere
 
 ## Licensing
 
-GDAL (MIT/X11), pugixml (MIT), nlohmann/json (MIT), miniz (MIT), stb (public domain/MIT) and SQLite (public domain) are linked. LAZ would need LASzip (LGPL) as an optional module; ECW and MrSID need their vendors' SDKs through GDAL. No ATAK (GPLv3) code is used.
+Linked libraries and their licenses are listed in [THIRD_PARTY.md](THIRD_PARTY.md). LAZ would need LASzip (LGPL) as an optional module; ECW and MrSID need their vendors' SDKs through GDAL. No ATAK (GPLv3) code is used.
 
 ## Planned adapters
 

@@ -114,6 +114,7 @@ bool GlobeRenderer::init() {
 #endif
     }
     fitPools();
+    sg_enable_stats();
     sg_backend backend = sg_query_backend();
     holeMarker_ = std::getenv("OTE_HOLES") != nullptr;
     if (const char* v = std::getenv("OTE_LOD_BLEND")) lodBlend_ = std::atoi(v) != 0;
@@ -1627,6 +1628,7 @@ void GlobeRenderer::profileMark(int section) {
 void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_attachments* attachments, int width,
                            int height) {
     if (!ready_) return;
+    lastFrameStart_ = frameStart_;
     frameStart_ = std::chrono::steady_clock::now();
     profileStart_ = frameStart_;
     profileLast_ = 0;
@@ -2133,7 +2135,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         points_.draw(cam, dpiScale_);
         for (auto& [id, t] : tilesets_) {
             t->update(cam, frustum_, frame_);
-            t->draw(cam, models_);
+            t->draw(cam, models_, points_, dpiScale_);
             tilesBusy = tilesBusy || t->busy();
             stats_.tilesetTiles += t->drawnTiles();
             stats_.tilesetFailed += t->failedTiles();
@@ -2408,6 +2410,31 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     stats_.terrainMeshes = static_cast<int>(terrain_.size());
     stats_.gpuMegabytes = (surface_.size() + freeSurfaces_.size()) * (kSurfaceSize * kSurfaceSize * 4.0 * 4.0 / 3.0) / 1048576.0 +
                           imagery_.size() * (256.0 * 256.0 * 4.0) / 1048576.0 + terrain_.size() * (kVertexCount * kStride * 4.0) / 1048576.0;
+    {
+        const size_t slot = timingCount_ % frameSamples_.size();
+        frameSamples_[slot] = timingCount_ > 0 ? static_cast<float>(std::chrono::duration<double, std::milli>(frameStart_ - lastFrameStart_).count()) : 0.0f;
+        renderSamples_[slot] = static_cast<float>(elapsedMs());
+        ++timingCount_;
+        const size_t n = std::min(timingCount_, frameSamples_.size());
+        auto percentile = [n](const std::array<float, 240>& ring, double q, size_t skip) {
+            if (n <= skip) return 0.0;
+            std::vector<float> v(ring.begin(), ring.begin() + n);
+            if (skip) v.erase(v.begin());
+            size_t k = std::min(v.size() - 1, static_cast<size_t>(q * (v.size() - 1) + 0.5));
+            std::nth_element(v.begin(), v.begin() + k, v.end());
+            return static_cast<double>(v[k]);
+        };
+        const size_t skipFirst = timingCount_ <= frameSamples_.size() ? 1 : 0;
+        stats_.frameMsP50 = percentile(frameSamples_, 0.50, skipFirst);
+        stats_.frameMsP95 = percentile(frameSamples_, 0.95, skipFirst);
+        stats_.frameMsP99 = percentile(frameSamples_, 0.99, skipFirst);
+        stats_.renderMsP95 = percentile(renderSamples_, 0.95, 0);
+        stats_.renderMsP99 = percentile(renderSamples_, 0.99, 0);
+        if (sg_stats_enabled()) {
+            sg_stats gs = sg_query_stats();
+            stats_.drawCalls = static_cast<int>(gs.prev_frame.num_draw + gs.prev_frame.num_draw_ex);
+        }
+    }
     viewComplete_ = incomplete == 0;
     busy_ = pending || fading || tilesBusy || stats_.pendingRequests > 0 || renders > 0 || builds > 0 || elevationChanged;
     if (trace_) {

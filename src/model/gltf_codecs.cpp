@@ -1,5 +1,6 @@
 #include "model/gltf_codecs.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <cstring>
 #include <mutex>
@@ -26,10 +27,11 @@ constexpr int kEtc2 = 4;
 
 #if defined(OTE_WITH_DRACO)
 template <typename T>
-bool readAttribute(const draco::PointCloud& pc, int id, int components, std::vector<T>& out) {
+bool readAttribute(const draco::PointCloud& pc, int id, int components, std::vector<T>& out, int* stored = nullptr) {
     if (id < 0) return false;
     const draco::PointAttribute* a = pc.GetAttributeByUniqueId(static_cast<std::uint32_t>(id));
     if (!a) return false;
+    if (stored) *stored = a->num_components();
     const std::uint32_t n = pc.num_points();
     out.assign(static_cast<size_t>(n) * components, T(0));
     for (std::uint32_t i = 0; i < n; ++i)
@@ -128,7 +130,10 @@ bool decodeDracoPrimitive(const cgltf_data* data, const cgltf_primitive& prim, s
     if (!readAttribute(*mesh, pos, 3, positions)) return false;
     if (!readAttribute(*mesh, nrm, 3, normals)) normals.clear();
     if (!readAttribute(*mesh, tex, 2, texcoords)) texcoords.clear();
-    if (!readAttribute(*mesh, col, 4, colors)) colors.clear();
+    int colorComponents = 4;
+    if (!readAttribute(*mesh, col, 4, colors, &colorComponents)) colors.clear();
+    if (colorComponents == 3)
+        for (size_t i = 3; i < colors.size(); i += 4) colors[i] = 1.0f;
     indices.resize(static_cast<size_t>(mesh->num_faces()) * 3);
     for (std::uint32_t f = 0; f < mesh->num_faces(); ++f) {
         const draco::Mesh::Face& face = mesh->face(draco::FaceIndex(f));
@@ -198,9 +203,9 @@ bool transcodeKtx2(const std::uint8_t* data, std::size_t size, CpuImage& out) {
     const std::uint32_t w = t.get_width(), h = t.get_height();
     if (w == 0 || h == 0) return false;
     struct Target {
-        basist::transcoder_texture_format fmt;
-        int pixel;
-        bool block;
+        basist::transcoder_texture_format fmt = basist::transcoder_texture_format::cTFRGBA32;
+        int pixel = SG_PIXELFORMAT_RGBA8;
+        bool block = false;
     };
     std::vector<Target> targets;
     int support = gTextureSupport.load();

@@ -505,8 +505,8 @@ DbfTable readDbf(const std::filesystem::path& path) {
     std::uint16_t header = static_cast<std::uint16_t>(b[8] | (b[9] << 8)), record = static_cast<std::uint16_t>(b[10] | (b[11] << 8));
     struct Field {
         std::string name;
-        int offset;
-        int length;
+        int offset = 0;
+        int length = 0;
     };
     std::vector<Field> fields;
     int cursor = 1;

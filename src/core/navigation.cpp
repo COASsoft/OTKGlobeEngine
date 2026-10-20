@@ -656,7 +656,7 @@ std::vector<Feature> contourLines(const std::vector<float>& h, int cols, int row
         double level = k * step;
         bool major = majorEvery > 0 && k % majorEvery == 0;
         struct Seg {
-            long long a, b;
+            long long a = 0, b = 0;
             Coord pa, pb;
         };
         std::vector<Seg> segs;

@@ -168,7 +168,7 @@ private:
     };
     struct VectorDraw {
         const ImageryTexture* tile = nullptr;
-        float xform[4];
+        float xform[4] = {};
     };
     struct SurfaceJob {
         QuadKey key;
@@ -218,6 +218,10 @@ private:
     void markDirty(const GeoRect& rect);
     double now() const;
     std::chrono::steady_clock::time_point frameStart_;
+    std::chrono::steady_clock::time_point lastFrameStart_;
+    std::array<float, 240> frameSamples_{};
+    std::array<float, 240> renderSamples_{};
+    size_t timingCount_ = 0;
     double elapsedMs() const { return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - frameStart_).count(); }
 
     TileCache cache_;

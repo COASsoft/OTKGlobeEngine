@@ -425,6 +425,8 @@ void frame() {
             if (FILE* f = std::fopen(logPath.c_str(), "w")) {
                 std::fprintf(f, "resources invalid=%d terrain=%d surfaces=%d free=%d imagery=%d gpu_mb=%.0f\n", s.invalidResources, s.terrainMeshes, s.surfaces,
                              s.freeSurfaces, s.imageryTextures, s.gpuMegabytes);
+                std::fprintf(f, "timing frame_p50=%.2f frame_p95=%.2f frame_p99=%.2f render_p95=%.2f render_p99=%.2f draws=%d\n", s.frameMsP50,
+                             s.frameMsP95, s.frameMsP99, s.renderMsP95, s.renderMsP99, s.drawCalls);
                 std::fprintf(f, "tilesets drawn=%d failed=%d\n", s.tilesetTiles, s.tilesetFailed);
                 if (state->scriptFrames > 0)
                     std::fprintf(f, "script frames=%lld incomplete_frames=%lld coarse_frames=%lld max_depth=%lld imagery_loads=%lld\n", state->scriptFrames,

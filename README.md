@@ -42,7 +42,7 @@ ATAK reference captures are in `screenshots/atak`.
 - KML/KMZ (styles, style maps, icons, MultiGeometry, gx:Track), GeoJSON (simplestyle), GPX, Shapefile, plus any OGR format via GDAL
 - Ground-clamped lines and polygons draped into the terrain texture, 3D lines, icons, SDF labels with decluttering, hit testing
 - MGRS/UTM conversions and a draped MGRS grid
-- glTF/GLB models, Cesium 3D Tiles (tileset.json, .3tz, URLs, b3dm/glb, external tilesets), LAS point clouds (WGS84 and UTM natively, any CRS through the GDAL module)
+- glTF/GLB models, OGC 3D Tiles 1.0/1.1 (tileset.json, .3tz, URLs, external and implicit tilesets, b3dm, i3dm, pnts, cmpt, glb/glTF; Draco, meshopt and KTX2 compression; GPU instancing), LAS point clouds (WGS84 and UTM natively, any CRS through the GDAL module)
 
 **Military**
 - MIL-STD-2525C and 2525D point symbols drawn by the engine: affiliation frames and colours for space, air, ground, sea surface, subsurface and SOF; planned and assumed friend/suspect/pending dashed frames; echelon, headquarters staff, task force, feint/dummy and installation amplifiers; joker/faker/exercise markers; common unit, equipment, air, sea and subsurface icons. CoT `a-` types (and `Style::sidc`) become 2525 icons automatically ([sheet](screenshots/opentakengine/22_mil_std_2525_symbols.png)).
@@ -112,4 +112,10 @@ ote_viewer [--view lat,lon,gsd,tilt,azimuth] [--preset 0..3] [--size WxH]
 
 ## License
 
-OpenTAKEngine is written independently. The upstream TAK engine (GPLv3) was studied for behaviour and architecture only; no upstream code is included. Noto Sans is under the SIL Open Font License (`assets/fonts/OFL.txt`).
+Apache License 2.0 ([LICENSE](LICENSE)): use, copy, modify and sell OpenTAKEngine for any purpose, in open or closed products, without having to share your changes. Copies you distribute keep the license text and mark the files you changed. Every contributor grants a patent license for their contributions, and contributions are accepted under the same license.
+
+Bundled libraries and data keep their own licenses, listed with what each asks for in [docs/THIRD_PARTY.md](docs/THIRD_PARTY.md). OpenTAKEngine is written independently. The upstream TAK engine (GPLv3) was studied for behaviour and architecture only; no upstream code is included.
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for how to report a vulnerability.

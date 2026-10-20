@@ -709,7 +709,7 @@ void ModelLayer::draw(const Camera& cam, const GroundFn& ground) {
     if (!ready_ || instances_.empty()) return;
     const Mat4 yUp = yUpToZUp();
     struct Placed {
-        const GpuMesh* mesh;
+        const GpuMesh* mesh = nullptr;
         Mat4 base;
         Mat4 orient;
         Vec3 light;

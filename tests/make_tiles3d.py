@@ -235,7 +235,7 @@ def points(out):
 
 
 def composite(out):
-    positions, colors = point_grid(60, 25, lambda u, v: (0, 255, 255))
+    positions, colors = point_grid(20, 75, lambda u, v: (0, 255, 255))
     positions = [[p[0], p[1], 30.0] for p in positions]
     write(os.path.join(out, 'mixed.cmpt'), cmpt([b3dm(quad_glb(-800, -800, 800, 800, [0, 0.6, 0, 1])), pnts(positions, colors)]))
     tileset(out, {'transform': TRANSFORM, 'boundingVolume': sphere(1500), 'geometricError': 0, 'content': {'uri': 'mixed.cmpt'}})
@@ -310,6 +310,7 @@ def draco_mesh(out, encoder):
     drc = os.path.join(out, 'grid.drc')
     subprocess.run([encoder, '-i', obj, '-o', drc, '-qp', '16'], check=True, capture_output=True)
     data = open(drc, 'rb').read()
+    os.remove(drc)
     g = Gltf()
     view = g.view(data)
     vcount = (N + 1) ** 2

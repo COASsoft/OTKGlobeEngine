@@ -30,6 +30,8 @@ add_library(opentakengine STATIC
     feature/grid.cpp
     feature/milsym.cpp
     model/model_layer.cpp
+    model/gltf_codecs.cpp
+    model/tile_content.cpp
     model/pointcloud.cpp
     tiles3d/tileset.cpp
     render/globe_renderer.cpp
@@ -69,6 +71,20 @@ target_include_directories(opentakengine
         ${cgltf_SOURCE_DIR})
 target_compile_definitions(opentakengine PUBLIC ${OTE_GFX_BACKEND})
 target_link_libraries(opentakengine PRIVATE ote_sqlite pugixml::pugixml ote_miniz)
+foreach(_codec DRACO MESHOPT KTX2)
+    if(OTE_WITH_${_codec})
+        target_compile_definitions(opentakengine PRIVATE OTE_WITH_${_codec})
+    endif()
+endforeach()
+if(OTE_WITH_DRACO)
+    target_link_libraries(opentakengine PRIVATE ote_draco)
+endif()
+if(OTE_WITH_MESHOPT)
+    target_link_libraries(opentakengine PRIVATE ote_meshopt)
+endif()
+if(OTE_WITH_KTX2)
+    target_link_libraries(opentakengine PRIVATE ote_basisu)
+endif()
 if(OTE_WITH_GDAL)
     find_package(GDAL CONFIG)
     if(NOT GDAL_FOUND)

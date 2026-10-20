@@ -440,9 +440,9 @@ void FeatureLayer::drawOverlay(const Camera& cam, const GroundFn& ground, double
 
     struct Label {
         std::string text;
-        double x, y, offset, priority;
-        float color[4];
-        float size;
+        double x = 0, y = 0, offset = 0, priority = 0;
+        float color[4] = {};
+        float size = 0;
         double margin = 0;
     };
     std::vector<Label> labels;

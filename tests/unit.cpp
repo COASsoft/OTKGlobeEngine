@@ -16,6 +16,13 @@
 #include "raster/tile_provider.hpp"
 #include "raster/vector_tile.hpp"
 #include "formats/adapters.hpp"
+#include "model/gltf_codecs.hpp"
+#include "model/model_layer.hpp"
+
+#if defined(OTE_WITH_MESHOPT)
+#include <meshoptimizer.h>
+#endif
+#include <json.hpp>
 
 #include <cmath>
 #include <cstdio>
@@ -483,6 +490,128 @@ int main() {
         unit.geometries.push_back({GeometryType::Point, {{47, -122.9, 0}}, {}});
         applySymbol(unit);
         check(unit.style.sidc == "SFGPUCI--------" && unit.style.iconImage && unit.style.iconColor == 0xFFFFFFFF, "CoT units get 2525 icons");
+    }
+    {
+        auto readAll = [](const std::string& p) {
+            std::ifstream f(p, std::ios::binary);
+            return std::vector<std::uint8_t>(std::istreambuf_iterator<char>(f), {});
+        };
+        ResourceReader none;
+        auto content = [&](const char* name, std::vector<CpuModel>& out) {
+            out.clear();
+            std::vector<std::uint8_t> b = readAll(data(name));
+            return !b.empty() && parseTileContent(b.data(), b.size(), name, none, Mat4::identity(), out);
+        };
+        std::vector<CpuModel> m;
+#if defined(OTE_WITH_DRACO)
+        bool mesh = content("tiles3d/draco.glb", m) && m.size() == 1 && m[0].primitives.size() == 1 &&
+                    m[0].primitives[0].vertices.size() == 441 * 8 && m[0].primitives[0].indices.size() == 2400;
+        if (mesh)
+            for (size_t i = 0; i < m[0].primitives[0].vertices.size(); i += 8)
+                mesh = mesh && std::abs(m[0].primitives[0].vertices[i]) <= 800.5f && std::abs(m[0].primitives[0].vertices[i + 1]) <= 20.5f;
+        check(mesh, "draco mesh decodes");
+        bool cloud = content("tiles3d/draco_points.pnts", m) && m.size() == 1 && m[0].points.size() == 6400 * 16;
+        if (cloud)
+            for (size_t i = 0; i < 6400; ++i) cloud = cloud && std::abs(m[0].points[i * 16 + 12] - 40) <= 2 && m[0].points[i * 16 + 14] >= 250;
+        check(cloud, "draco point cloud decodes with colours");
+#endif
+#if defined(OTE_WITH_KTX2)
+        setCompressedTextureSupport(true, false, false);
+        check(content("tiles3d/etc1s.glb", m) && m.size() == 1 && m[0].images.size() == 1 && m[0].images[0].format == SG_PIXELFORMAT_BC7_RGBA &&
+                  m[0].images[0].levels.size() == 7 && m[0].images[0].levels[0].size() == 16 * 16 * 16,
+              "ktx2 etc1s transcodes to bc7 with mips");
+        setCompressedTextureSupport(false, false, false);
+        bool rgba = content("tiles3d/uastc.glb", m) && m.size() == 1 && m[0].images.size() == 1 && m[0].images[0].format == SG_PIXELFORMAT_RGBA8 &&
+                    m[0].images[0].width == 64 && m[0].images[0].levels[0].size() == 64 * 64 * 4;
+        if (rgba) {
+            const auto& px = m[0].images[0].levels[0];
+            rgba = std::abs(px[0] - 200) < 24 && px[1] < 64 && px[2] < 64 && px[8 * 4] > 220 && px[8 * 4 + 1] > 220;
+        }
+        check(rgba, "ktx2 uastc transcodes to rgba");
+        setCompressedTextureSupport(true, true, true);
+#endif
+        bool i3dm = content("tiles3d/boxes.i3dm", m) && m.size() == 1 && m[0].instances.size() == 1 && !m[0].instances[0].local &&
+                    m[0].instances[0].matrices.size() == 16 * 16 && !m[0].primitives.empty() && m[0].primitives[0].instances == 0;
+        auto column = [&](size_t i) {
+            const float* c = &m[0].instances[0].matrices[i * 16];
+            return std::sqrt(c[0] * c[0] + c[1] * c[1] + c[2] * c[2]);
+        };
+        check(i3dm && std::abs(m[0].instances[0].matrices[12] + 600.0f) < 1e-3f && std::abs(column(0) - 1.0f) < 1e-4f && std::abs(column(1) - 1.25f) < 1e-4f,
+              "i3dm instances with positions and scale");
+        check(content("tiles3d/gpu_instancing.glb", m) && m.size() == 1 && m[0].instances.size() == 1 && m[0].instances[0].local &&
+                  m[0].instances[0].matrices.size() == 16 * 16,
+              "EXT_mesh_gpu_instancing");
+        check(content("tiles3d/mixed.cmpt", m) && m.size() == 2 && !m[0].primitives.empty() && m[1].points.size() == 400 * 16, "cmpt with b3dm and pnts");
+
+        CpuModel merged;
+        CpuPrimitive a;
+        a.vertices = {0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0};
+        a.indices = {0, 1, 2};
+        a.matrix = Mat4::identity().m;
+        CpuPrimitive b = a;
+        b.matrix = translation({10, 0, 0}).m;
+        merged.primitives = {a, b};
+        mergePrimitives(merged);
+        check(merged.primitives.size() == 1 && merged.primitives[0].vertices.size() == 48 && std::abs(merged.primitives[0].vertices[24] - 10.0f) < 1e-5f &&
+                  merged.primitives[0].indices.size() == 6 && merged.primitives[0].indices[3] == 3,
+              "primitives sharing a material merge into one draw");
+
+#if defined(OTE_WITH_MESHOPT)
+        const std::vector<float> pos = {0, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1};
+        const std::vector<unsigned> idx = {0, 1, 2, 0, 2, 3};
+        std::vector<unsigned char> vb(meshopt_encodeVertexBufferBound(4, 12));
+        vb.resize(meshopt_encodeVertexBuffer(vb.data(), vb.size(), pos.data(), 4, 12));
+        std::vector<unsigned char> ib(meshopt_encodeIndexBufferBound(6, 4));
+        ib.resize(meshopt_encodeIndexBuffer(ib.data(), ib.size(), idx.data(), 6));
+        std::vector<unsigned char> bin = vb;
+        bin.resize((bin.size() + 3) / 4 * 4);
+        const size_t ibOffset = bin.size();
+        bin.insert(bin.end(), ib.begin(), ib.end());
+        bin.resize((bin.size() + 3) / 4 * 4);
+        nlohmann::json doc = {
+            {"asset", {{"version", "2.0"}}},
+            {"extensionsUsed", {"EXT_meshopt_compression"}},
+            {"extensionsRequired", {"EXT_meshopt_compression"}},
+            {"buffers", {{{"byteLength", bin.size()}}, {{"byteLength", 72}, {"extensions", {{"EXT_meshopt_compression", {{"fallback", true}}}}}}}},
+            {"bufferViews",
+             {{{"buffer", 1}, {"byteOffset", 0}, {"byteLength", 48}, {"byteStride", 12},
+               {"extensions",
+                {{"EXT_meshopt_compression",
+                  {{"buffer", 0}, {"byteOffset", 0}, {"byteLength", vb.size()}, {"byteStride", 12}, {"count", 4}, {"mode", "ATTRIBUTES"}}}}}},
+              {{"buffer", 1}, {"byteOffset", 48}, {"byteLength", 24},
+               {"extensions",
+                {{"EXT_meshopt_compression",
+                  {{"buffer", 0}, {"byteOffset", ibOffset}, {"byteLength", ib.size()}, {"byteStride", 4}, {"count", 6}, {"mode", "TRIANGLES"}}}}}}}},
+            {"accessors",
+             {{{"bufferView", 0}, {"componentType", 5126}, {"count", 4}, {"type", "VEC3"}, {"min", {0, 0, 0}}, {"max", {1, 0, 1}}},
+              {{"bufferView", 1}, {"componentType", 5125}, {"count", 6}, {"type", "SCALAR"}}}},
+            {"meshes", {{{"primitives", {{{"attributes", {{"POSITION", 0}}}, {"indices", 1}}}}}}},
+            {"nodes", {{{"mesh", 0}}}},
+            {"scenes", {{{"nodes", {0}}}}},
+            {"scene", 0}};
+        std::string js = doc.dump();
+        js.resize((js.size() + 3) / 4 * 4, ' ');
+        std::vector<std::uint8_t> glb;
+        auto u32 = [&glb](std::uint32_t v) {
+            for (int k = 0; k < 4; ++k) glb.push_back(static_cast<std::uint8_t>(v >> (8 * k)));
+        };
+        glb.insert(glb.end(), {'g', 'l', 'T', 'F'});
+        u32(2);
+        u32(static_cast<std::uint32_t>(12 + 8 + js.size() + 8 + bin.size()));
+        u32(static_cast<std::uint32_t>(js.size()));
+        glb.insert(glb.end(), {'J', 'S', 'O', 'N'});
+        glb.insert(glb.end(), js.begin(), js.end());
+        u32(static_cast<std::uint32_t>(bin.size()));
+        glb.insert(glb.end(), {'B', 'I', 'N', 0});
+        glb.insert(glb.end(), bin.begin(), bin.end());
+        CpuModel opt;
+        bool decoded = parseGltf(glb.data(), glb.size(), "", none, opt) && opt.primitives.size() == 1 && opt.primitives[0].indices.size() == 6 &&
+                       opt.primitives[0].vertices.size() == 32;
+        for (size_t i = 0; decoded && i < 4; ++i)
+            for (int k = 0; k < 3; ++k) decoded = decoded && opt.primitives[0].vertices[i * 8 + k] == pos[i * 3 + k];
+        for (size_t i = 0; decoded && i < 6; ++i) decoded = opt.primitives[0].indices[i] == idx[i];
+        check(decoded, "meshopt-compressed glTF decodes");
+#endif
     }
     std::printf("%d failure(s)\n", failures);
     return failures == 0 ? 0 : 1;

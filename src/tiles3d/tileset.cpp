@@ -146,6 +146,8 @@ public:
         file_ = openFile(path);
         ok_ = file_ && mz_zip_reader_init_cfile(&zip_, file_, 0, 0);
     }
+    ZipSource(const ZipSource&) = delete;
+    ZipSource& operator=(const ZipSource&) = delete;
     ~ZipSource() override {
         if (ok_) mz_zip_reader_end(&zip_);
         if (file_) std::fclose(file_);
@@ -314,9 +316,9 @@ bool parseSubtree(const std::vector<std::uint8_t>& bytes, const std::string& pat
                 buffers.emplace_back(bin, bin + binLen);
             }
         }
-    auto bits = [&](const nlohmann::json& a, Tileset3D::Subtree::Bits& out) {
+    auto bits = [&](const nlohmann::json& a, Tileset3D::Subtree::Bits& dst) {
         if (a.contains("constant")) {
-            out.constant = a["constant"].get<int>();
+            dst.constant = a["constant"].get<int>();
             return true;
         }
         int view = a.contains("bitstream") ? a["bitstream"].get<int>() : a.value("bufferView", -1);
@@ -324,7 +326,7 @@ bool parseSubtree(const std::vector<std::uint8_t>& bytes, const std::string& pat
         const auto& bv = j["bufferViews"][view];
         size_t buffer = bv.value("buffer", size_t(0)), off = bv.value("byteOffset", size_t(0)), len = bv.value("byteLength", size_t(0));
         if (buffer >= buffers.size() || off + len > buffers[buffer].size()) return false;
-        out.bits.assign(buffers[buffer].begin() + off, buffers[buffer].begin() + off + len);
+        dst.bits.assign(buffers[buffer].begin() + off, buffers[buffer].begin() + off + len);
         return true;
     };
     if (!j.contains("tileAvailability") || !bits(j["tileAvailability"], out.tiles)) return false;
