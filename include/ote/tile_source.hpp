@@ -25,9 +25,9 @@ struct FetchOptions {
 
 using UrlFetch = std::function<int(const std::string& url, std::vector<std::uint8_t>& body, const FetchOptions& options)>;
 
-class TileSource {
+class HostTileSource {
 public:
-    virtual ~TileSource() = default;
+    virtual ~HostTileSource() = default;
     virtual int tile(int z, int x, int y, TileData& out, const UrlFetch& fetch) = 0;
     virtual bool remote() const { return true; }
     virtual bool vector() const { return false; }

@@ -2,7 +2,7 @@
 
 #include "db/sqlite.hpp"
 
-#include <stb_image.h>
+#include "ote/image.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -337,8 +337,8 @@ bool readTilePackage(const std::string& path, TileMatrix& matrix, const TileVisi
             auto first = db.prepare("SELECT tile_data FROM tiles LIMIT 1");
             if (first.valid() && first.step()) {
                 std::vector<std::uint8_t> b = first.blob(0);
-                int w = 0, h = 0, n = 0;
-                if (!b.empty() && stbi_info_from_memory(b.data(), static_cast<int>(b.size()), &w, &h, &n) && w == h && w > 0) size = w;
+                int w = 0, h = 0;
+                if (!b.empty() && imageSize(b.data(), b.size(), w, h) && w == h && w > 0) size = w;
             }
         }
         matrix = TileMatrix::webMercator(minZ, maxZ, size);

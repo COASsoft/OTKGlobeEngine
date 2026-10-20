@@ -3,7 +3,7 @@
 #include "gdal/gdal_sources.hpp"
 
 #include <json.hpp>
-#include <stb_image.h>
+#include "ote/image.hpp"
 #include <miniz.h>
 #include <pugixml.hpp>
 
@@ -197,19 +197,17 @@ void kmlGroundOverlays(const pugi::xml_document& doc, const Resolver& resolve, s
         if (!box || href.empty() || !resolve) continue;
         std::vector<std::uint8_t> bytes = resolve(href);
         if (bytes.empty()) continue;
-        int w = 0, h = 0, c = 0;
-        unsigned char* px = stbi_load_from_memory(bytes.data(), static_cast<int>(bytes.size()), &w, &h, &c, 4);
-        if (!px) continue;
+        Image img;
+        if (!decodeImage(bytes.data(), bytes.size(), img)) continue;
         GroundOverlay o;
         o.name = g.child_value("name");
         o.north = box.child("north").text().as_double();
         o.south = box.child("south").text().as_double();
         o.east = box.child("east").text().as_double();
         o.west = box.child("west").text().as_double();
-        o.width = w;
-        o.height = h;
-        o.rgba.assign(px, px + static_cast<size_t>(w) * h * 4);
-        stbi_image_free(px);
+        o.width = img.width;
+        o.height = img.height;
+        o.rgba = std::move(img.rgba);
         std::string color = g.child_value("color");
         if (color.size() == 8) o.opacity = static_cast<float>(std::stoul(color.substr(0, 2), nullptr, 16)) / 255.0f;
         if (o.north > o.south && o.east > o.west) out.push_back(std::move(o));
@@ -231,16 +229,8 @@ std::vector<Feature> parseKmlText(const char* text, size_t size, const Resolver&
         std::shared_ptr<const Image> img;
         if (resolve) {
             std::vector<std::uint8_t> bytes = resolve(href);
-            int w = 0, h = 0, c = 0;
-            unsigned char* px = bytes.empty() ? nullptr : stbi_load_from_memory(bytes.data(), static_cast<int>(bytes.size()), &w, &h, &c, 4);
-            if (px) {
-                auto im = std::make_shared<Image>();
-                im->width = w;
-                im->height = h;
-                im->rgba.assign(px, px + static_cast<size_t>(w) * h * 4);
-                stbi_image_free(px);
-                img = im;
-            }
+            auto im = std::make_shared<Image>();
+            if (decodeImage(bytes.data(), bytes.size(), *im)) img = im;
         }
         iconCache[href] = img;
         return img;

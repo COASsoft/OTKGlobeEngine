@@ -11,6 +11,7 @@ add_library(opentakengine STATIC
     formats/klv.cpp
     capi.cpp
     core/geo.cpp
+    core/image.cpp
     core/camera.cpp
     core/mgrs.cpp
     core/navigation.cpp
@@ -23,6 +24,7 @@ add_library(opentakengine STATIC
     raster/tile_package.cpp
     raster/tile_provider.cpp
     raster/mobac.cpp
+    raster/pmtiles.cpp
     raster/vector_tile.cpp
     elevation/elevation.cpp
     elevation/quantized_mesh.cpp
@@ -73,11 +75,14 @@ target_include_directories(opentakengine
         ${cgltf_SOURCE_DIR})
 target_compile_definitions(opentakengine PUBLIC ${OTE_GFX_BACKEND})
 target_link_libraries(opentakengine PRIVATE ote_sqlite pugixml::pugixml ote_miniz)
-foreach(_codec DRACO MESHOPT KTX2)
+foreach(_codec DRACO MESHOPT KTX2 WEBP)
     if(OTE_WITH_${_codec})
         target_compile_definitions(opentakengine PRIVATE OTE_WITH_${_codec})
     endif()
 endforeach()
+if(OTE_WITH_WEBP)
+    target_link_libraries(opentakengine PRIVATE ote_webp)
+endif()
 if(OTE_WITH_DRACO)
     target_link_libraries(opentakengine PRIVATE ote_draco)
 endif()

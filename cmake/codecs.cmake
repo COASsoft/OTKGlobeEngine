@@ -87,3 +87,27 @@ if(OTE_WITH_KTX2)
         target_compile_options(ote_basisu PRIVATE -w)
     endif()
 endif()
+
+option(OTE_WITH_WEBP "Decode WebP imagery, elevation and textures" ON)
+
+if(OTE_WITH_WEBP)
+    FetchContent_Declare(libwebp
+        URL https://github.com/webmproject/libwebp/archive/refs/tags/v1.5.0.tar.gz
+        URL_HASH SHA256=668c9aba45565e24c27e17f7aaf7060a399f7f31dba6c97a044e1feacb930f37
+        SOURCE_SUBDIR none)
+    FetchContent_MakeAvailable(libwebp)
+    set(_webp ${libwebp_SOURCE_DIR}/src)
+    file(GLOB _webp_sources ${_webp}/dec/*.c ${_webp}/dsp/*.c ${_webp}/utils/*.c)
+    list(FILTER _webp_sources EXCLUDE REGEX "/(enc|cost|ssim|lossless_enc)[^/]*\.c$")
+    list(FILTER _webp_sources EXCLUDE REGEX "/(bit_writer_utils|huffman_encode_utils|quant_levels_utils)\.c$")
+    add_library(ote_webp STATIC ${_webp_sources})
+    target_include_directories(ote_webp PUBLIC ${libwebp_SOURCE_DIR} ${libwebp_SOURCE_DIR}/src)
+    if(MSVC)
+        target_compile_options(ote_webp PRIVATE /w)
+        target_compile_definitions(ote_webp PRIVATE _CRT_SECURE_NO_WARNINGS)
+    else()
+        target_compile_options(ote_webp PRIVATE -w)
+        find_package(Threads REQUIRED)
+        target_link_libraries(ote_webp PRIVATE Threads::Threads)
+    endif()
+endif()

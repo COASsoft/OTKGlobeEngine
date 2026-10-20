@@ -8,7 +8,7 @@
 #include "raster/tile_package.hpp"
 #include "net/http.hpp"
 
-#include <stb_image.h>
+#include "ote/image.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -67,9 +67,18 @@ TileLoader::~TileLoader() {
     for (auto& t : workers_) t.join();
 }
 
-void TileLoader::setLayers(const std::vector<ImageryLayer>& layers) {
+void TileLoader::setLayers(const std::vector<ImageryLayer>& layers, const std::vector<int>& reuse) {
+    std::vector<std::shared_ptr<TileProvider>> old;
+    {
+        std::lock_guard lock(mutex_);
+        old = providers_;
+    }
     std::vector<std::shared_ptr<TileProvider>> providers;
-    for (const auto& l : layers) providers.push_back(makeProvider(l, cache_, &offline_));
+    for (size_t i = 0; i < layers.size(); ++i) {
+        int from = i < reuse.size() ? reuse[i] : -1;
+        if (from >= 0 && from < static_cast<int>(old.size())) providers.push_back(old[from]);
+        else providers.push_back(makeProvider(layers[i], cache_, &offline_));
+    }
     std::lock_guard lock(mutex_);
     layers_ = layers;
     providers_ = std::move(providers);
@@ -361,7 +370,7 @@ void TileLoader::finish(const TileId& id, int gen, const std::shared_ptr<TilePro
         tile.height = res.height;
         tile.rgba = std::move(res.data);
     } else if (res.status == 200 && !res.data.empty()) {
-        if (id.z >= 9) {
+        if (id.z >= 9 && provider->placeholderCheck()) {
             std::uint64_t hash = 1469598103934665603ull;
             for (unsigned char c : res.data) hash = (hash ^ c) * 1099511628211ull;
             hash ^= static_cast<std::uint64_t>(id.layer) << 56;
@@ -404,14 +413,12 @@ void TileLoader::finish(const TileId& id, int gen, const std::shared_ptr<TilePro
                 return;
             }
         }
-        int w = 0, h = 0, n = 0;
-        unsigned char* px = stbi_load_from_memory(res.data.data(), static_cast<int>(res.data.size()), &w, &h, &n, 4);
-        if (px) {
+        Image img;
+        if (decodeImage(res.data.data(), res.data.size(), img)) {
             tile.ok = true;
-            tile.width = w;
-            tile.height = h;
-            tile.rgba.assign(px, px + static_cast<size_t>(w) * h * 4);
-            stbi_image_free(px);
+            tile.width = img.width;
+            tile.height = img.height;
+            tile.rgba = std::move(img.rgba);
         } else {
             undecodable();
         }

@@ -66,7 +66,14 @@ bool codecSupported(const char* extension) {
         return false;
 #endif
     }
-    for (const char* missing : {"KHR_meshopt_compression", "EXT_texture_webp", "EXT_texture_avif"})
+    if (std::strcmp(extension, "EXT_texture_webp") == 0) {
+#if defined(OTE_WITH_WEBP)
+        return true;
+#else
+        return false;
+#endif
+    }
+    for (const char* missing : {"KHR_meshopt_compression", "EXT_texture_avif"})
         if (std::strcmp(extension, missing) == 0) return false;
     return true;
 }

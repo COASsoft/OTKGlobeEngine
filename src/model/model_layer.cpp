@@ -7,7 +7,7 @@
 #define CGLTF_IMPLEMENTATION
 #include <cgltf.h>
 #include <json.hpp>
-#include <stb_image.h>
+#include "ote/image.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -155,14 +155,12 @@ void buildMips(CpuImage& img) {
 bool decodeRaster(const std::vector<std::uint8_t>& bytes, CpuImage& img) {
     if (bytes.empty()) return false;
     if (bytes.size() >= 12 && std::memcmp(bytes.data(), "\xABKTX 20\xBB\r\n\x1A\n", 12) == 0) return transcodeKtx2(bytes.data(), bytes.size(), img);
-    int w = 0, h = 0, c = 0;
-    unsigned char* px = stbi_load_from_memory(bytes.data(), static_cast<int>(bytes.size()), &w, &h, &c, 4);
-    if (!px) return false;
-    img.width = w;
-    img.height = h;
+    Image decoded;
+    if (!decodeImage(bytes.data(), bytes.size(), decoded)) return false;
+    img.width = decoded.width;
+    img.height = decoded.height;
     img.format = SG_PIXELFORMAT_RGBA8;
-    img.levels.assign(1, std::vector<std::uint8_t>(px, px + static_cast<size_t>(w) * h * 4));
-    stbi_image_free(px);
+    img.levels.assign(1, std::move(decoded.rgba));
     buildMips(img);
     return true;
 }
@@ -170,7 +168,7 @@ bool decodeRaster(const std::vector<std::uint8_t>& bytes, CpuImage& img) {
 int decodeTexture(const cgltf_texture* tex, const cgltf_options& options, const std::string& path, const ResourceReader& read, CpuModel& out,
                   std::map<const cgltf_image*, int>& cache) {
     if (!tex) return -1;
-    for (const cgltf_image* img : {tex->has_basisu ? tex->basisu_image : nullptr, tex->image}) {
+    for (const cgltf_image* img : {tex->has_basisu ? tex->basisu_image : nullptr, tex->has_webp ? tex->webp_image : nullptr, tex->image}) {
         if (!img) continue;
         auto it = cache.find(img);
         if (it != cache.end()) {

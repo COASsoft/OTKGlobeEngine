@@ -33,6 +33,7 @@ public:
         return true;
     }
     virtual bool remote() const { return false; }
+    virtual bool placeholderCheck() const { return remote(); }
     virtual bool cached(int, int, int) { return false; }
     virtual void invalidate(int, int, int) {}
     virtual bool vector() const { return false; }
@@ -49,5 +50,8 @@ std::shared_ptr<TileProvider> makeProvider(const ImageryLayer& layer, TileCache*
 std::string tileUrl(const ImageryLayer& layer, const TileMatrix& m, int z, int x, int y);
 std::string stripCredentials(const std::string& url);
 std::string layerCacheKey(const ImageryLayer& layer);
+std::string layerIdentity(const ImageryLayer& layer);
+int fetchUrl(const std::string& url, std::vector<std::uint8_t>& body, const FetchOptions& options, TileCache* cache,
+             std::atomic<bool>* offline, const std::string& userAgent);
 
 }

@@ -16,6 +16,7 @@
 #include "render/globe_renderer.hpp"
 
 #include "core/geoid.hpp"
+#include "ote/mgrs.hpp"
 #include "net/http.hpp"
 
 #include <sokol_gfx.h>
@@ -333,6 +334,22 @@ void Engine::setLayers(const std::vector<ImageryLayer>& layers) {
 
 std::vector<ImageryLayer> Engine::layers() const { return impl_->globe.layers(); }
 
+void Engine::setLayerOpacity(int index, float opacity) {
+    std::vector<ImageryLayer> l = impl_->globe.layers();
+    if (index < 0 || index >= static_cast<int>(l.size())) return;
+    opacity = std::clamp(opacity, 0.0f, 1.0f);
+    if (l[index].opacity == opacity) return;
+    l[index].opacity = opacity;
+    setLayers(l);
+}
+
+void Engine::setLayerVisible(int index, bool visible) {
+    std::vector<ImageryLayer> l = impl_->globe.layers();
+    if (index < 0 || index >= static_cast<int>(l.size()) || l[index].visible == visible) return;
+    l[index].visible = visible;
+    setLayers(l);
+}
+
 void Engine::setCacheDirectory(const std::string& dir) {
     impl_->globe.setCacheDirectory(dir);
     impl_->dirty = true;
@@ -508,6 +525,160 @@ void Engine::setGridType(GridType type) {
     impl_->globe.setGridType(static_cast<int>(type));
     impl_->dirty = true;
 }
+
+void Engine::setGridEnabled(GridType type, bool enabled) {
+    impl_->globe.setGridLayer(static_cast<int>(type), enabled);
+    impl_->dirty = true;
+}
+
+bool Engine::gridEnabled(GridType type) const { return impl_->globe.gridOn(static_cast<int>(type)); }
+
+std::vector<GridLabel> Engine::gridLabels() const {
+    std::vector<GridLabel> out;
+    const Camera& c = impl_->camera;
+    if (c.firstPerson) return out;
+    const double W = c.width, H = c.height;
+    auto inside = [&](double x, double y) { return x >= 0 && y >= 0 && x <= W && y <= H; };
+    auto place = [&](GridLabel label, const std::vector<std::pair<double, double>>& line) {
+        bool have = false, prevOk = false;
+        double bx = 0, by = 0, px = 0, py = 0;
+        auto consider = [&](double x, double y) {
+            if (!have || (label.vertical ? y < by : x < bx)) {
+                bx = x;
+                by = y;
+                have = true;
+            }
+        };
+        for (const auto& [lat, lon] : line) {
+            double sx, sy;
+            double h = impl_->globe.elevationAt(lat, lon);
+            if (!std::isfinite(h)) h = 0;
+            if (!project(lat, lon, h, sx, sy)) {
+                prevOk = false;
+                continue;
+            }
+            bool in = inside(sx, sy);
+            if (prevOk && in != inside(px, py)) {
+                double ix = in ? sx : px, iy = in ? sy : py, ax = in ? px : sx, ay = in ? py : sy;
+                double t = 1.0;
+                auto clip = [&](double from, double to, double edge) {
+                    if ((to < edge) != (from < edge) && to != from) t = std::min(t, (edge - from) / (to - from));
+                };
+                clip(ix, ax, 0.0);
+                clip(ix, ax, W);
+                clip(iy, ay, 0.0);
+                clip(iy, ay, H);
+                consider(ix + (ax - ix) * t, iy + (ay - iy) * t);
+            }
+            if (in) consider(sx, sy);
+            px = sx;
+            py = sy;
+            prevOk = true;
+        }
+        if (!have) return;
+        label.x = bx;
+        label.y = by;
+        out.push_back(label);
+    };
+    Region r = viewRegion();
+    double south = std::max(r.south, -85.0), north = std::min(r.north, 85.0);
+    if (impl_->globe.gridOn(1)) {
+        double sp = impl_->globe.gridStep(c, 1);
+        if (sp > 0 && (r.east - r.west) / sp <= 120 && (north - south) / sp <= 120) {
+            const int n = 64;
+            for (double m = std::ceil(r.west / sp) * sp; m <= r.east + 1e-9; m += sp) {
+                std::vector<std::pair<double, double>> line;
+                for (int i = 0; i <= n; ++i) line.emplace_back(south + (north - south) * i / n, m);
+                GridLabel l;
+                l.grid = GridType::LatLon;
+                l.vertical = true;
+                l.value = std::remainder(m, 360.0);
+                l.spacing = sp;
+                place(l, line);
+            }
+            for (double p = std::ceil(south / sp) * sp; p <= north + 1e-9; p += sp) {
+                std::vector<std::pair<double, double>> line;
+                for (int i = 0; i <= n; ++i) line.emplace_back(p, r.west + (r.east - r.west) * i / n);
+                GridLabel l;
+                l.grid = GridType::LatLon;
+                l.vertical = false;
+                l.value = p;
+                l.spacing = sp;
+                place(l, line);
+            }
+        }
+    }
+    if (impl_->globe.gridOn(0) && std::abs(c.focus.lat) < 84.0) {
+        double sp = impl_->globe.gridStep(c, 0);
+        if (sp > 0) {
+            int z0 = std::max(1, static_cast<int>(std::floor((r.west + 180.0) / 6.0)) + 1);
+            int z1 = std::min(60, static_cast<int>(std::floor((r.east + 180.0 - 1e-9) / 6.0)) + 1);
+            bool hemiNorth = c.focus.lat >= 0;
+            for (int zone = z0; zone <= z1; ++zone) {
+                double zw = -180.0 + (zone - 1) * 6.0, ze = zw + 6.0;
+                double w = std::max(r.west, zw), e = std::min(r.east, ze);
+                if (w >= e) continue;
+                double minE = 1e18, maxE = -1e18, minN = 1e18, maxN = -1e18;
+                for (double la : {south, 0.5 * (south + north), north})
+                    for (double lo : {w, 0.5 * (w + e), e}) {
+                        Utm u = toUtm(la, lo, zone);
+                        double nn = u.northing + (u.north == hemiNorth ? 0.0 : (hemiNorth ? -10000000.0 : 10000000.0));
+                        minE = std::min(minE, u.easting);
+                        maxE = std::max(maxE, u.easting);
+                        minN = std::min(minN, nn);
+                        maxN = std::max(maxN, nn);
+                    }
+                minE = std::floor(minE / sp) * sp;
+                maxE = std::ceil(maxE / sp) * sp;
+                minN = std::floor(minN / sp) * sp;
+                maxN = std::ceil(maxN / sp) * sp;
+                if ((maxE - minE) / sp > 80 || (maxN - minN) / sp > 80) continue;
+                auto at = [&](double easting, double northing, double& lat, double& lon) {
+                    Utm u;
+                    u.zone = zone;
+                    u.north = hemiNorth;
+                    u.easting = easting;
+                    u.northing = northing;
+                    fromUtm(u, lat, lon);
+                    return lon >= zw - 1e-9 && lon <= ze + 1e-9;
+                };
+                const int n = 48;
+                for (double ee = minE; ee <= maxE + 1e-6; ee += sp) {
+                    std::vector<std::pair<double, double>> line;
+                    for (int i = 0; i <= n; ++i) {
+                        double lat, lon;
+                        if (at(ee, minN + (maxN - minN) * i / n, lat, lon)) line.emplace_back(lat, lon);
+                    }
+                    GridLabel l;
+                    l.grid = GridType::Mgrs;
+                    l.vertical = true;
+                    l.value = ee;
+                    l.spacing = sp;
+                    l.zone = zone;
+                    l.north = hemiNorth;
+                    if (line.size() >= 2) place(l, line);
+                }
+                for (double nn = minN; nn <= maxN + 1e-6; nn += sp) {
+                    std::vector<std::pair<double, double>> line;
+                    for (int i = 0; i <= n; ++i) {
+                        double lat, lon;
+                        if (at(minE + (maxE - minE) * i / n, nn, lat, lon)) line.emplace_back(lat, lon);
+                    }
+                    GridLabel l;
+                    l.grid = GridType::Mgrs;
+                    l.vertical = false;
+                    l.value = nn;
+                    l.spacing = sp;
+                    l.zone = zone;
+                    l.north = hemiNorth;
+                    if (line.size() >= 2) place(l, line);
+                }
+            }
+        }
+    }
+    return out;
+}
+
 
 void Engine::setTerrainSlope(bool enabled, float opacity, double maxSlopeDegrees) {
     impl_->globe.setSlope(enabled, opacity, maxSlopeDegrees);
@@ -711,6 +882,13 @@ void Engine::setDiagnostics(bool enabled) { impl_->globe.setDiagnostics(enabled)
 
 double Engine::elevationAt(double lat, double lon) const { return impl_->globe.elevationAt(lat, lon); }
 
+std::vector<double> Engine::queryElevation(const std::vector<Coord>& points, double resolutionMeters) const {
+    std::vector<std::pair<double, double>> ll;
+    ll.reserve(points.size());
+    for (const Coord& c : points) ll.emplace_back(c.lat, c.lon);
+    return impl_->globe.queryElevation(ll, resolutionMeters);
+}
+
 void Engine::setImageryScale(double scale) {
     impl_->globe.setImageryScale(scale);
     impl_->dirty = true;
@@ -739,12 +917,54 @@ void Engine::setView(const View& v) {
 }
 
 bool Engine::pick(double sx, double sy, double& lat, double& lon) const {
+    double alt = 0;
+    return pick(sx, sy, lat, lon, alt);
+}
+
+bool Engine::pick(double sx, double sy, double& lat, double& lon, double& alt) const {
     Vec3 p;
     if (!impl_->pickGround(sx, sy, p)) return false;
     GeoPoint g = ecefToGeodetic(p);
     lat = g.lat;
     lon = g.lon;
+    alt = g.alt;
     return true;
+}
+
+bool Engine::project(double lat, double lon, double alt, double& sx, double& sy) const {
+    const Camera& c = impl_->camera;
+    Vec3 p = geodeticToEcef(lat, lon, alt);
+    Vec3 eye = c.eye();
+    if (!c.firstPerson && dot(normalize(p), normalize(eye - p)) < -0.05) return false;
+    return c.ecefToScreen(p, sx, sy);
+}
+
+void Engine::setFieldOfView(double degrees) {
+    Camera& c = impl_->camera;
+    double range = c.range();
+    c.fovY = std::clamp(degrees, 5.0, 120.0) * kDegToRad;
+    c.setRange(range);
+    c.update();
+    impl_->dirty = true;
+}
+
+double Engine::fieldOfView() const { return impl_->camera.fovY * kRadToDeg; }
+
+double Engine::range() const { return impl_->camera.range(); }
+
+void Engine::setSkyVisible(bool visible) {
+    impl_->globe.setSkyVisible(visible);
+    impl_->dirty = true;
+}
+
+void Engine::setBackgroundColor(std::uint32_t argb) {
+    impl_->globe.setBackground(((argb >> 16) & 0xFF) / 255.0f, ((argb >> 8) & 0xFF) / 255.0f, (argb & 0xFF) / 255.0f);
+    impl_->dirty = true;
+}
+
+void Engine::setGroundColor(std::uint32_t argb) {
+    impl_->globe.setGroundColor(((argb >> 16) & 0xFF) / 255.0f, ((argb >> 8) & 0xFF) / 255.0f, (argb & 0xFF) / 255.0f);
+    impl_->dirty = true;
 }
 
 void Engine::setFirstPerson(bool enabled, double height) {

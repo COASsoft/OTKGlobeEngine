@@ -64,7 +64,7 @@ public:
 
     void setCache(TileCache* cache) { cache_ = cache; }
     void setOffline(bool offline) { offline_ = offline; }
-    void setLayers(const std::vector<ImageryLayer>& layers);
+    void setLayers(const std::vector<ImageryLayer>& layers, const std::vector<int>& reuse = {});
     std::vector<TileMatrix> matrices() const;
     std::vector<bool> vectorLayers() const;
     int generation() const { return generation_; }

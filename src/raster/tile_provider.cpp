@@ -389,6 +389,15 @@ std::string layerCacheKey(const ImageryLayer& layer) {
            (layer.tms ? "tms" : "xyz");
 }
 
+std::string layerIdentity(const ImageryLayer& l) {
+    std::string id = std::to_string(static_cast<int>(l.type)) + "|" + l.url + "|" + l.path + "|" + l.table + "|";
+    for (const auto& s : l.servers) id += s + ",";
+    char buf[160];
+    std::snprintf(buf, sizeof(buf), "|%d|%d|%d|%d|%.17g|%d|%d|%d|%d|%p", l.minZoom, l.maxZoom, l.srid, l.tileSize, l.level0Resolution,
+                  l.tms ? 1 : 0, l.cache ? 1 : 0, l.expirySeconds, l.polarFill ? 1 : 0, static_cast<const void*>(l.source.get()));
+    return id + buf + "|" + l.wmsLayers + "|" + l.wmsStyles + "|" + l.wmsFormat + "|" + l.wmsVersion + "|" + l.wmsExtra + "|" + l.userAgent;
+}
+
 std::string tileUrl(const ImageryLayer& layer, const TileMatrix& m, int z, int x, int y) {
     std::string url = layer.url;
     std::string server = layer.servers.empty() ? std::string() : layer.servers[(x + y) % layer.servers.size()];
@@ -496,7 +505,7 @@ public:
     }
 
 private:
-    std::shared_ptr<TileSource> source_;
+    std::shared_ptr<HostTileSource> source_;
     TileCache* cache_;
     std::atomic<bool>* offline_;
     std::string ua_;

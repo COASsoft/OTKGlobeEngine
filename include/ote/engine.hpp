@@ -2,6 +2,7 @@
 
 #include "ote/formats.hpp"
 #include "ote/input.hpp"
+#include "ote/tile_source.hpp"
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -17,7 +18,7 @@ struct sg_desc;
 
 namespace ote {
 
-enum class SourceType { Url, Wms, Wmts, MBTiles, GeoPackage, Osmdroid, Gdal, Mvt };
+enum class SourceType { Url, Wms, Wmts, MBTiles, GeoPackage, Osmdroid, Gdal, Mvt, PMTiles, Host };
 
 struct ImageryLayer {
     std::string name;
@@ -44,18 +45,25 @@ struct ImageryLayer {
     std::string wmsVersion = "1.1.1";
     std::string wmsExtra;
     std::string userAgent;
+    bool visible = true;
+    std::shared_ptr<HostTileSource> source;
 };
 
 enum class GridType { Mgrs, LatLon, Gars };
 
-enum class ElevationType { Terrarium, Directory, Gdal, QuantizedMesh };
+enum class ElevationType { Terrarium, Directory, Gdal, QuantizedMesh, PMTiles, MBTiles };
+
+enum class HeightEncoding { Terrarium, MapboxRgb };
 
 struct ElevationLayer {
     std::string name;
     ElevationType type = ElevationType::Terrarium;
     std::string url;
     std::string path;
+    int minZoom = 0;
     int maxZoom = 15;
+    int tileSize = 256;
+    HeightEncoding encoding = HeightEncoding::Terrarium;
     bool cache = true;
     bool bathymetry = false;
 };
@@ -180,6 +188,17 @@ struct Region {
     double north = 0;
 };
 
+struct GridLabel {
+    GridType grid = GridType::LatLon;
+    bool vertical = false;
+    double value = 0;
+    double spacing = 0;
+    int zone = 0;
+    bool north = true;
+    double x = 0;
+    double y = 0;
+};
+
 class Engine {
 public:
     Engine();
@@ -193,6 +212,8 @@ public:
     void setViewport(int width, int height, float dpiScale);
     void setLayers(const std::vector<ImageryLayer>& layers);
     std::vector<ImageryLayer> layers() const;
+    void setLayerOpacity(int index, float opacity);
+    void setLayerVisible(int index, bool visible);
     void setImageryScale(double scale);
     void setCacheDirectory(const std::string& dir);
     std::string cacheDirectory() const;
@@ -211,11 +232,20 @@ public:
     void setElevationHeatmap(bool enabled, double minHeight = 0, double maxHeight = 4500, float opacity = 0.55f);
     std::vector<ProfileSample> elevationProfile(const std::vector<Coord>& path, int samples) const;
     double elevationAt(double lat, double lon) const;
+    std::vector<double> queryElevation(const std::vector<Coord>& points, double resolutionMeters = 0.0) const;
 
     View view() const;
     void setView(const View& v);
 
     bool pick(double sx, double sy, double& lat, double& lon) const;
+    bool pick(double sx, double sy, double& lat, double& lon, double& alt) const;
+    bool project(double lat, double lon, double alt, double& sx, double& sy) const;
+    void setFieldOfView(double degrees);
+    double fieldOfView() const;
+    double range() const;
+    void setSkyVisible(bool visible);
+    void setBackgroundColor(std::uint32_t argb);
+    void setGroundColor(std::uint32_t argb);
     void pan(double x0, double y0, double x1, double y1);
     void zoomAt(double sx, double sy, double factor);
     void rotate(double degrees);
@@ -256,6 +286,9 @@ public:
 
     void setGridEnabled(bool enabled);
     void setGridType(GridType type);
+    void setGridEnabled(GridType type, bool enabled);
+    bool gridEnabled(GridType type) const;
+    std::vector<GridLabel> gridLabels() const;
     void setTerrainSlope(bool enabled, float opacity = 0.6f, double maxSlopeDegrees = 45.0);
     Region viewRegion() const;
     double terrainHeightMsl(double lat, double lon) const;

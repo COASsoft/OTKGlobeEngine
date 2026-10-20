@@ -506,23 +506,68 @@ void GlobeRenderer::retryUnavailable() {
 }
 
 void GlobeRenderer::setLayers(const std::vector<ImageryLayer>& layers) {
+    std::vector<int> from(layers.size(), -1);
+    std::vector<bool> taken(layers_.size(), false);
+    std::vector<std::string> oldIds;
+    for (const auto& l : layers_) oldIds.push_back(layerIdentity(l));
+    bool same = layers.size() == layers_.size();
+    for (size_t i = 0; i < layers.size(); ++i) {
+        std::string id = layerIdentity(layers[i]);
+        for (size_t j = 0; j < layers_.size(); ++j)
+            if (!taken[j] && oldIds[j] == id) {
+                from[i] = static_cast<int>(j);
+                taken[j] = true;
+                break;
+            }
+        same = same && from[i] == static_cast<int>(i);
+    }
     layers_ = layers;
-    loader_.setLayers(layers);
-    matrices_ = loader_.matrices();
-    vectorLayers_ = loader_.vectorLayers();
-    for (auto& [k, t] : imagery_) dropImagery(t);
-    imagery_.clear();
-    failed_.clear();
+    if (!same) {
+        loader_.setLayers(layers, from);
+        matrices_ = loader_.matrices();
+        vectorLayers_ = loader_.vectorLayers();
+        std::vector<int> to(taken.size(), -1);
+        for (size_t i = 0; i < from.size(); ++i)
+            if (from[i] >= 0) to[from[i]] = static_cast<int>(i);
+        std::unordered_map<TileId, ImageryTexture, TileIdHash> kept;
+        for (auto& [k, t] : imagery_) {
+            int n = k.layer >= 0 && k.layer < static_cast<int>(to.size()) ? to[k.layer] : -1;
+            if (n < 0) {
+                dropImagery(t);
+                continue;
+            }
+            TileId id = k;
+            id.layer = n;
+            kept.emplace(id, std::move(t));
+        }
+        imagery_ = std::move(kept);
+        std::unordered_map<TileId, double, TileIdHash> failed;
+        for (auto& [k, v] : failed_) {
+            int n = k.layer >= 0 && k.layer < static_cast<int>(to.size()) ? to[k.layer] : -1;
+            if (n < 0) continue;
+            TileId id = k;
+            id.layer = n;
+            failed.emplace(id, v);
+        }
+        failed_ = std::move(failed);
+        failCount_.clear();
+    }
     for (auto& [k, s] : surface_) {
         s.complete = false;
         s.missing.clear();
     }
+    baseLayer_ = -1;
+    for (int l = 0; l < static_cast<int>(layers_.size()); ++l)
+        if (shown(l) && !layers_[l].polarFill) {
+            baseLayer_ = l;
+            break;
+        }
     usefulLevel_ = kMaxLevel;
     int best = -1;
     bool vectorOnly = true;
     for (size_t l = 0; l < matrices_.size() && l < layers_.size(); ++l) {
         const TileMatrix& m = matrices_[l];
-        if (m.levels.empty()) continue;
+        if (m.levels.empty() || !shown(static_cast<int>(l))) continue;
         if (l < vectorLayers_.size() && vectorLayers_[l]) continue;
         vectorOnly = false;
         double deg = m.levels.back().resolutionX / m.unitsPerDegree();
@@ -534,8 +579,14 @@ void GlobeRenderer::setLayers(const std::vector<ImageryLayer>& layers) {
     busy_ = true;
 }
 
+double GlobeRenderer::gridStep(const Camera& cam, int type) const {
+    double s = cam.gsd * 70.0 * dpiScale_;
+    if (type == 0) return s <= 1000.0 ? 1000.0 : s <= 10000.0 ? 10000.0 : s <= 100000.0 ? 100000.0 : 0.0;
+    return graticuleStep(s / 111320.0, type == 2);
+}
+
 int GlobeRenderer::maxRefine() const {
-    bool needsDetail = !features_.empty() || grid_ || !overlays_.empty();
+    bool needsDetail = !features_.empty() || anyGrid() || !overlays_.empty();
     return needsDetail ? kMaxLevel : usefulLevel_;
 }
 
@@ -568,16 +619,27 @@ void GlobeRenderer::markDirty(const GeoRect& rect) {
 }
 
 void GlobeRenderer::setGrid(bool enabled) {
-    if (grid_ == enabled) return;
-    grid_ = enabled;
-    markDirty({-180, -90, 180, 90});
+    std::array<bool, 3> next{};
+    if (enabled) next[std::clamp(gridType_, 0, 2)] = true;
+    setGrids(next);
 }
 
 void GlobeRenderer::setGridType(int type) {
-    if (gridType_ == type) return;
-    gridType_ = type;
-    gridSpacing_ = -1;
-    if (grid_) markDirty({-180, -90, 180, 90});
+    gridType_ = std::clamp(type, 0, 2);
+    if (anyGrid()) setGrid(true);
+}
+
+void GlobeRenderer::setGridLayer(int type, bool enabled) {
+    std::array<bool, 3> next = gridOn_;
+    next[std::clamp(type, 0, 2)] = enabled;
+    setGrids(next);
+}
+
+void GlobeRenderer::setGrids(const std::array<bool, 3>& on) {
+    if (on == gridOn_) return;
+    gridOn_ = on;
+    gridSpacing_ = {-1, -1, -1};
+    markDirty({-180, -90, 180, 90});
 }
 
 double GlobeRenderer::terrainHeight(double lat, double lon) const { return elevation_.sample(lat, lon); }
@@ -1000,7 +1062,7 @@ double GlobeRenderer::seamSkirt(const QuadKey& k, const TerrainTile& t,
 
 int GlobeRenderer::idealImageryZ(const QuadKey& k) const {
     for (size_t l = 0; l < matrices_.size() && l < layers_.size(); ++l) {
-        if (layers_[l].polarFill || (l < vectorLayers_.size() && vectorLayers_[l])) continue;
+        if (!shown(static_cast<int>(l)) || layers_[l].polarFill || (l < vectorLayers_.size() && vectorLayers_[l])) continue;
         const TileMatrix& m = matrices_[l];
         if (m.levels.empty()) return -1;
         double target = spanDeg(k.level) / kSurfaceSize * m.unitsPerDegree();
@@ -1275,6 +1337,7 @@ void GlobeRenderer::want(const TileId& id, double priority) { requests_.emplace_
 void GlobeRenderer::requestBase() {
     double t = now();
     for (int l = 0; l < static_cast<int>(matrices_.size()); ++l) {
+        if (l < static_cast<int>(layers_.size()) && !shown(l)) continue;
         const TileMatrix& m = matrices_[l];
         const int top = std::min(kBaseZoom, static_cast<int>(m.levels.size()) - 1);
         for (int z = 0; z <= top; ++z) {
@@ -1370,11 +1433,12 @@ bool GlobeRenderer::buildSurfaceJob(const QuadKey& k, double priority, SurfaceJo
     bool anyCover = false;
     bool unavailable = false;
     for (int l = 0; l < static_cast<int>(matrices_.size()) && l < static_cast<int>(layers_.size()); ++l)
-        if (!layers_[l].polarFill) {
+        if (!layers_[l].polarFill && shown(l)) {
             coverLat = std::max(coverLat, maxLatitude(matrices_[l].srid));
             anyCover = true;
         }
     for (int l = 0; l < static_cast<int>(matrices_.size()) && l < static_cast<int>(layers_.size()); ++l) {
+      if (!shown(l)) continue;
       const TileMatrix& m = matrices_[l];
       double maxLat = maxLatitude(m.srid);
       double bandS[2], bandN[2];
@@ -1421,12 +1485,12 @@ bool GlobeRenderer::buildSurfaceJob(const QuadKey& k, double priority, SurfaceJo
                 if (job && !missing && src.z < id.z) job->degraded = true;
                 tex->used = frame_;
                 if (!job) continue;
-                if (l == 0) {
+                if (l == baseLayer_) {
                     job->imageryZ = z;
                     job->sourceZ = std::min(job->sourceZ, src.z);
                 }
                 if (tex->vector) {
-                    if (l == 0) job->background = true;
+                    if (l == baseLayer_) job->background = true;
                     VectorDraw vd;
                     vd.tile = tex;
                     vd.xform[0] = static_cast<float>(2.0 / span);
@@ -1699,12 +1763,17 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             v.cam->groundHeight = cam.groundHeight;
             v.cam->update();
         }
-    if (grid_) {
-        double s = cam.gsd * 70.0 * dpiScale_;
-        double spacing = s <= 1000.0 ? 1000.0 : s <= 10000.0 ? 10000.0 : s <= 100000.0 ? 100000.0 : 0.0;
-        if (gridType_ != 0) spacing = graticuleStep(s / 111320.0, gridType_ == 2);
-        if (spacing != gridSpacing_) {
-            gridSpacing_ = spacing;
+    if (anyGrid()) {
+        bool changed = false;
+        for (int g = 0; g < 3; ++g) {
+            if (!gridOn_[g]) continue;
+            double spacing = gridStep(cam, g);
+            if (spacing != gridSpacing_[g]) {
+                gridSpacing_[g] = spacing;
+                changed = true;
+            }
+        }
+        if (changed) {
             markDirty({-180, -90, 180, 90});
         }
     }
@@ -1928,7 +1997,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     });
     int rasterLayers = 0;
     for (size_t l = 0; l < matrices_.size() && l < layers_.size(); ++l)
-        if (!(l < vectorLayers_.size() && vectorLayers_[l])) ++rasterLayers;
+        if (shown(static_cast<int>(l)) && !(l < vectorLayers_.size() && vectorLayers_[l])) ++rasterLayers;
     const int maxTouched = std::clamp(static_cast<int>(imageryLimit() * 0.8 / (2.5 * std::max(rasterLayers, 1))), 16, 128);
     int touched = 0;
     int hollowSkipped = 0;
@@ -1970,12 +2039,13 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         job.featureFirst = static_cast<int>(vectorStart / 6);
         job.featureCount = 0;
         jobTexel[job.key] = texelDeg;
-        if ((!features_.empty() || grid_) && fverts.size() * sizeof(float) < kSurfaceBufferBytes / 2) {
+        if ((!features_.empty() || anyGrid()) && fverts.size() * sizeof(float) < kSurfaceBufferBytes / 2) {
             Bounds b = jb;
             size_t before = vectorStart;
             features_.buildSurface({b.west, b.south, b.east, b.north}, texelDeg, dpiScale_, fverts);
-            if (grid_ && gridType_ == 0) buildGrid({b.west, b.south, b.east, b.north}, texelDeg, dpiScale_, gridSpacing_, fverts);
-            if (grid_ && gridType_ != 0) buildGraticule({b.west, b.south, b.east, b.north}, texelDeg, dpiScale_, gridSpacing_, gridType_ == 2, fverts);
+            if (gridOn_[1]) buildGraticule({b.west, b.south, b.east, b.north}, texelDeg, dpiScale_, gridSpacing_[1], false, fverts);
+            if (gridOn_[2]) buildGraticule({b.west, b.south, b.east, b.north}, texelDeg, dpiScale_, gridSpacing_[2], true, fverts);
+            if (gridOn_[0]) buildGrid({b.west, b.south, b.east, b.north}, texelDeg, dpiScale_, gridSpacing_[0], fverts);
             job.featureFirst = static_cast<int>(before / 6);
             job.featureCount = static_cast<int>((fverts.size() - before) / 6);
         }
@@ -2031,7 +2101,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         sg_pass pass{};
         pass.action.colors[0].load_action = SG_LOADACTION_CLEAR;
         if (job.background) pass.action.colors[0].clear_value = {242 / 255.0f, 239 / 255.0f, 233 / 255.0f, 1.0f};
-        else pass.action.colors[0].clear_value = {10 / 255.0f, 30 / 255.0f, 62 / 255.0f, 1.0f};
+        else pass.action.colors[0].clear_value = {ground_[0], ground_[1], ground_[2], 1.0f};
         pass.attachments.colors[0] = glMips_ ? s->levels[0] : scratchAttachment_;
         sg_begin_pass(&pass);
         if (!job.draws.empty()) {
@@ -2133,7 +2203,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     auto ground = [this](double lat, double lon) { return elevationAt(lat, lon); };
     sg_pass main{};
     main.action.colors[0].load_action = SG_LOADACTION_CLEAR;
-    main.action.colors[0].clear_value = {0, 0, 0, 1};
+    main.action.colors[0].clear_value = {clear_[0], clear_[1], clear_[2], 1.0f};
     main.action.depth.load_action = SG_LOADACTION_CLEAR;
     main.action.depth.clear_value = 1.0f;
     const sg_swapchain* mainSwapchain = firstView ? firstView->swapchain : swapchain;
@@ -2161,7 +2231,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         sg_apply_uniforms(UB_sky_fs_params, SG_RANGE(sky));
         sg_draw(0, 3, 1);
     };
-    drawSky(dc);
+    if (skyVisible_) drawSky(dc);
 
     bool xray = terrainAlpha_ < 0.999f;
     bool tilesBusy = false;
@@ -2427,14 +2497,14 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             const Camera& vc = *v.cam;
             sg_pass pass{};
             pass.action.colors[0].load_action = v.clear ? SG_LOADACTION_CLEAR : SG_LOADACTION_LOAD;
-            pass.action.colors[0].clear_value = {0, 0, 0, 1};
+            pass.action.colors[0].clear_value = {clear_[0], clear_[1], clear_[2], 1.0f};
             pass.action.depth.load_action = v.clear ? SG_LOADACTION_CLEAR : SG_LOADACTION_LOAD;
             pass.action.depth.clear_value = 1.0f;
             if (v.swapchain) pass.swapchain = *v.swapchain;
             if (v.attachments) pass.attachments = *v.attachments;
             sg_begin_pass(&pass);
             if (v.width > 0) sg_apply_viewport(v.x, v.y, v.width, v.height, true);
-            drawSky(vc);
+            if (skyVisible_) drawSky(vc);
             auto objects = [&]() {
                 models_.draw(vc, ground, true);
                 points_.draw(vc, dpiScale_);

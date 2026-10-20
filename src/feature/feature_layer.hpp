@@ -61,12 +61,16 @@ private:
     };
 
     void prepare(Item& it);
+    const std::vector<std::uint64_t>& ordered();
     double altitude(const Item& it, double lat, double lon, double alt, const GroundFn& ground) const;
     void uploadText();
     void uploadIcons();
     bool iconRect(const Image* img, float rect[4]);
 
     std::unordered_map<std::uint64_t, Item> items_;
+    std::vector<std::uint64_t> sorted_;
+    bool sortDirty_ = true;
+    bool atlasFull_ = false;
     std::uint64_t nextId_ = 1;
     std::vector<GeoRect> dirty_;
     GlyphAtlas atlas_;

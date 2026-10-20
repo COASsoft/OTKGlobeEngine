@@ -32,6 +32,15 @@ struct Image {
     std::vector<std::uint8_t> rgba;
 };
 
+struct IconStep {
+    double minZoom = 0;
+    std::shared_ptr<const Image> image;
+    float width = 0;
+    float height = 0;
+    float anchorX = 0.5f;
+    float anchorY = 0.5f;
+};
+
 struct Style {
     std::uint32_t strokeColor = 0xFFFFFFFF;
     float strokeWidth = 2.0f;
@@ -44,6 +53,16 @@ struct Style {
     float labelScale = 1.0f;
     bool showLabel = true;
     std::string sidc;
+    float iconWidth = 0;
+    float iconHeight = 0;
+    float iconAnchorX = 0.5f;
+    float iconAnchorY = 0.5f;
+    float iconRotation = 0;
+    bool iconCollide = false;
+    std::vector<std::pair<double, double>> iconZoomScale;
+    std::vector<IconStep> iconSteps;
+    float dash = 0;
+    float dashGap = 0;
 };
 
 struct Feature {
@@ -61,6 +80,7 @@ struct Feature {
     AltitudeMode altitudeMode = AltitudeMode::ClampToGround;
     bool extrude = false;
     bool visible = true;
+    int order = 0;
 };
 
 struct ModelPlacement {

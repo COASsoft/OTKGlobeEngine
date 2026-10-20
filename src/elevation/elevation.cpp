@@ -1,12 +1,13 @@
 #include "elevation/elevation.hpp"
 
 #include "core/geoid.hpp"
+#include "core/math.hpp"
 #include "elevation/quantized_mesh.hpp"
 #include "gdal/gdal_sources.hpp"
 #include "raster/vector_tile.hpp"
 #include "raster/tile_provider.hpp"
 
-#include <stb_image.h>
+#include "ote/image.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -72,28 +73,38 @@ public:
         ImageryLayer l;
         l.name = layer.name;
         l.url = layer.url;
+        l.path = layer.path;
+        l.minZoom = layer.minZoom;
         l.maxZoom = layer.maxZoom;
+        l.tileSize = layer.tileSize;
         l.cache = layer.cache;
+        if (layer.type == ElevationType::PMTiles) l.type = SourceType::PMTiles;
+        if (layer.type == ElevationType::MBTiles) l.type = SourceType::MBTiles;
         inner_ = makeProvider(l, cache, offline);
         bathymetry_ = layer.bathymetry;
-        matrix_ = TileMatrix::webMercator(0, layer.maxZoom, 256);
+        mapbox_ = layer.encoding == HeightEncoding::MapboxRgb;
+        matrix_ = layer.type == ElevationType::Terrarium ? TileMatrix::webMercator(layer.minZoom, layer.maxZoom, layer.tileSize) : inner_->matrix();
+        if (layer.type == ElevationType::MBTiles) matrix_ = TileMatrix::webMercator(inner_->matrix().minZoom, inner_->matrix().maxZoom, layer.tileSize);
     }
 
     int fetch(int z, int x, int y, HeightGrid& out) override {
         FetchResult r = inner_->fetch(z, x, y);
         if (r.status != 200 || r.data.empty()) return r.status;
-        int w = 0, h = 0, n = 0;
-        unsigned char* px = stbi_load_from_memory(r.data.data(), static_cast<int>(r.data.size()), &w, &h, &n, 3);
-        if (!px) return 404;
-        out.width = w;
-        out.height = h;
-        out.values.resize(static_cast<size_t>(w) * h);
+        Image img;
+        if (!decodeImage(r.data.data(), r.data.size(), img)) return 404;
+        out.width = img.width;
+        out.height = img.height;
+        out.values.resize(static_cast<size_t>(img.width) * img.height);
         for (size_t i = 0; i < out.values.size(); ++i) {
-            const unsigned char* p = px + i * 3;
-            float v = static_cast<float>(p[0] * 256.0 + p[1] + p[2] / 256.0 - 32768.0);
+            const unsigned char* p = img.rgba.data() + i * 4;
+            if (p[3] == 0) {
+                out.values[i] = kNaN;
+                continue;
+            }
+            float v = mapbox_ ? static_cast<float>(-10000.0 + (p[0] * 65536.0 + p[1] * 256.0 + p[2]) * 0.1)
+                              : static_cast<float>(p[0] * 256.0 + p[1] + p[2] / 256.0 - 32768.0);
             out.values[i] = bathymetry_ ? v : std::max(v, 0.0f);
         }
-        stbi_image_free(px);
         matrix_.tileBounds(z, x, y, out.minX, out.minY, out.maxX, out.maxY);
         applyGeoid(out, 3857);
         return 200;
@@ -102,6 +113,7 @@ public:
 private:
     std::shared_ptr<TileProvider> inner_;
     bool bathymetry_ = false;
+    bool mapbox_ = false;
 };
 
 struct Cell {
@@ -360,9 +372,18 @@ void ElevationManager::setSources(const std::vector<ElevationLayer>& layers, Til
             providers.push_back(std::make_shared<TerrariumProvider>(l, cache, offline));
         }
     }
+    std::vector<double> finest;
+    for (const auto& pr : providers) {
+        const TileMatrix& m = pr->matrix();
+        double f = 1e12;
+        if (!m.levels.empty() && m.maxZoom >= 0 && m.maxZoom < static_cast<int>(m.levels.size()) && m.unitsPerDegree() > 0)
+            f = m.levels[m.maxZoom].resolutionX / m.unitsPerDegree() * 111319.49;
+        finest.push_back(f);
+    }
     std::lock_guard lock(mutex_);
     layers_ = layers;
     providers_ = std::move(providers);
+    finest_ = std::move(finest);
     queue_.clear();
     done_.clear();
     doneKeys_.clear();
@@ -392,13 +413,30 @@ const HeightGrid* ElevationManager::best(int source, int z, double px, double py
     return nullptr;
 }
 
+double ElevationManager::finestMeters(int source) const {
+    return source >= 0 && source < static_cast<int>(finest_.size()) ? finest_[source] : 1e12;
+}
+
+bool ElevationManager::yields(int source, double targetMeters) const {
+    double mine = finestMeters(source);
+    if (!(targetMeters < mine * 0.999)) return false;
+    for (int t = source + 1; t < static_cast<int>(finest_.size()); ++t)
+        if (finest_[t] < mine * 0.999) return true;
+    return false;
+}
+
 bool ElevationManager::gridFor(double west, double south, double east, double north, int posts, double priority,
                                std::vector<float>& heights, bool sampleHeights) {
     heights.assign(sampleHeights ? static_cast<size_t>(posts) * posts : 0, kNaN);
     bool complete = true;
     const double now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
     ++tick_;
-    for (int s = 0; s < static_cast<int>(providers_.size()); ++s) {
+    const double targetMeters = (east - west) / std::max(posts - 1, 1) * 111319.49 * std::cos(0.5 * (south + north) * kDegToRad);
+    std::vector<int> order;
+    std::vector<int> deferred;
+    for (int s = 0; s < static_cast<int>(providers_.size()); ++s) (yields(s, targetMeters) ? deferred : order).push_back(s);
+    order.insert(order.end(), deferred.begin(), deferred.end());
+    for (int s : order) {
         const TileMatrix& m = providers_[s]->matrix();
         double maxLat = maxLatitude(m.srid);
         double so = std::max(south, -maxLat), no = std::min(north, maxLat);
@@ -553,6 +591,109 @@ void ElevationManager::run() {
         inflight_.erase(k);
         if (doneKeys_.insert(k).second) done_.push_back(std::move(r));
     }
+}
+
+std::shared_ptr<const HeightGrid> ElevationManager::queryTile(const std::shared_ptr<ElevationProvider>& provider, int source, int z, int x, int y,
+                                                              int& status) const {
+    Key k{source, z, x, y};
+    {
+        std::lock_guard lock(queryMutex_);
+        auto it = queryTiles_.find(k);
+        if (it != queryTiles_.end()) {
+            it->second.second = ++queryTick_;
+            status = 200;
+            return it->second.first;
+        }
+        auto miss = queryMissing_.find(k);
+        if (miss != queryMissing_.end()) {
+            status = miss->second;
+            return nullptr;
+        }
+    }
+    auto grid = std::make_shared<HeightGrid>();
+    status = provider->fetch(z, x, y, *grid);
+    std::lock_guard lock(queryMutex_);
+    if (status != 200) {
+        if (status == 404 || status == 204 || status == 400) {
+            if (queryMissing_.size() > 20000) queryMissing_.clear();
+            queryMissing_[k] = status;
+        }
+        return nullptr;
+    }
+    queryTiles_[k] = {grid, ++queryTick_};
+    if (queryTiles_.size() > 256) {
+        auto oldest = queryTiles_.begin();
+        for (auto it = queryTiles_.begin(); it != queryTiles_.end(); ++it)
+            if (it->second.second < oldest->second.second) oldest = it;
+        queryTiles_.erase(oldest);
+    }
+    return grid;
+}
+
+std::vector<double> ElevationManager::query(const std::vector<std::pair<double, double>>& latLon, double resolutionMeters) const {
+    std::vector<double> out(latLon.size(), std::numeric_limits<double>::quiet_NaN());
+    std::vector<std::shared_ptr<ElevationProvider>> providers;
+    int generation = 0;
+    {
+        std::lock_guard lock(mutex_);
+        providers = providers_;
+        generation = generation_;
+    }
+    {
+        std::lock_guard lock(queryMutex_);
+        if (queryGeneration_ != generation) {
+            queryTiles_.clear();
+            queryMissing_.clear();
+            queryGeneration_ = generation;
+        }
+    }
+    if (providers.empty()) return out;
+    for (int pass = 0; pass < 2; ++pass) {
+        bool missing = false;
+        for (int s = 0; s < static_cast<int>(providers.size()); ++s) {
+            const TileMatrix& m = providers[s]->matrix();
+            if (m.levels.empty()) continue;
+            double maxLat = maxLatitude(m.srid) * 0.9999999;
+            std::shared_ptr<const HeightGrid> last;
+            for (size_t i = 0; i < latLon.size(); ++i) {
+                if (!std::isnan(out[i])) continue;
+                double lat = latLon[i].first, lon = latLon[i].second;
+                if (std::abs(lat) > maxLat) continue;
+                double coslat = std::max(std::cos(lat * kDegToRad), 0.01);
+                double target = resolutionMeters > 0 ? resolutionMeters : 0.0;
+                if (pass == 0 && yields(s, target > 0 ? target : 0.0)) continue;
+                double px = projectX(m.srid, lon), py = projectY(m.srid, lat);
+                if (last && px >= last->minX && px <= last->maxX && py >= last->minY && py <= last->maxY) {
+                    float v = last->sample(px, py);
+                    if (!std::isnan(v)) {
+                        out[i] = v;
+                        continue;
+                    }
+                }
+                int z = m.maxZoom;
+                if (target > 0) {
+                    double units = m.srid == 4326 ? target / 111319.49 : target / coslat;
+                    z = std::clamp(m.bestLevel(units), m.minZoom, m.maxZoom);
+                }
+                for (int zz = z; zz >= m.minZoom && zz >= 0; --zz) {
+                    if (!m.hasLevel(zz)) continue;
+                    int tx = static_cast<int>(std::floor((px - m.originX) / m.spanX(zz)));
+                    int ty = static_cast<int>(std::floor((m.originY - py) / m.spanY(zz)));
+                    if (tx < 0 || ty < 0 || tx >= m.levels[zz].matrixWidth || ty >= m.levels[zz].matrixHeight) continue;
+                    int status = 0;
+                    auto g = queryTile(providers[s], s, zz, tx, ty, status);
+                    if (!g) continue;
+                    last = g;
+                    float v = g->sample(px, py);
+                    if (!std::isnan(v)) out[i] = v;
+                    break;
+                }
+            }
+        }
+        for (double v : out) missing = missing || std::isnan(v);
+        if (!missing) break;
+    }
+    return out;
 }
 
 }

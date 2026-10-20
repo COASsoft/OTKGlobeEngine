@@ -50,6 +50,7 @@ public:
     bool gridFor(double west, double south, double east, double north, int posts, double priority,
                  std::vector<float>& heights, bool sampleHeights = true);
     double sample(double lat, double lon) const;
+    std::vector<double> query(const std::vector<std::pair<double, double>>& latLon, double resolutionMeters) const;
     void beginFrame() { requests_.clear(); }
     void submit();
     bool processResults(size_t max);
@@ -74,6 +75,9 @@ private:
     };
 
     const HeightGrid* find(int source, int z, int x, int y) const;
+    double finestMeters(int source) const;
+    bool yields(int source, double targetMeters) const;
+    std::shared_ptr<const HeightGrid> queryTile(const std::shared_ptr<ElevationProvider>& provider, int source, int z, int x, int y, int& status) const;
     const HeightGrid* best(int source, int z, double px, double py, bool& exact) const;
     void run();
 
@@ -96,6 +100,13 @@ private:
     std::unordered_set<Key, KeyHash> doneKeys_;
     int generation_ = 0;
     bool stop_ = false;
+    std::vector<double> finest_;
+
+    mutable std::mutex queryMutex_;
+    mutable std::unordered_map<Key, std::pair<std::shared_ptr<const HeightGrid>, std::uint64_t>, KeyHash> queryTiles_;
+    mutable std::unordered_map<Key, int, KeyHash> queryMissing_;
+    mutable std::uint64_t queryTick_ = 0;
+    mutable int queryGeneration_ = -1;
 };
 
 }

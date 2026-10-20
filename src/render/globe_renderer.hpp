@@ -15,6 +15,7 @@
 #include <TargetConditionals.h>
 #endif
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdio>
 #include <unordered_map>
@@ -52,6 +53,7 @@ public:
     bool init();
     void shutdown();
     void setLayers(const std::vector<ImageryLayer>& layers);
+    bool shown(int l) const { return l >= 0 && l < static_cast<int>(layers_.size()) && layers_[l].visible && layers_[l].opacity > 0.0f; }
     const std::vector<ImageryLayer>& layers() const { return layers_; }
     const std::vector<TileMatrix>& matrices() const { return matrices_; }
     void setCacheDirectory(const std::string& dir);
@@ -82,6 +84,23 @@ public:
     }
     void setGrid(bool enabled);
     void setGridType(int type);
+    void setGridLayer(int type, bool enabled);
+    void setGrids(const std::array<bool, 3>& on);
+    bool anyGrid() const { return gridOn_[0] || gridOn_[1] || gridOn_[2]; }
+    bool gridOn(int type) const { return gridOn_[std::clamp(type, 0, 2)]; }
+    double gridStep(const Camera& cam, int type) const;
+    void setSkyVisible(bool visible) { skyVisible_ = visible; }
+    void setGroundColor(float r, float g, float b) {
+        ground_[0] = r;
+        ground_[1] = g;
+        ground_[2] = b;
+        markDirty({-180, -90, 180, 90});
+    }
+    void setBackground(float r, float g, float b) {
+        clear_[0] = r;
+        clear_[1] = g;
+        clear_[2] = b;
+    }
     void setSlope(bool enabled, float opacity, double maxDegrees) {
         slope_ = enabled;
         slopeOpacity_ = opacity;
@@ -91,6 +110,9 @@ public:
     std::uint64_t addOverlay(const GeoRect& rect, int width, int height, const std::vector<std::uint8_t>& rgba, float opacity);
     bool removeOverlay(std::uint64_t id);
     double elevationAt(double lat, double lon) const;
+    std::vector<double> queryElevation(const std::vector<std::pair<double, double>>& latLon, double resolutionMeters) const {
+        return elevation_.query(latLon, resolutionMeters);
+    }
     void explain(const Camera& cam, double lat, double lon, const char* tag) const;
     TileLoader& loader() { return loader_; }
     FeatureLayer& features() { return features_; }
@@ -246,6 +268,7 @@ private:
     std::atomic<bool> offline_{false};
     std::uint64_t netEpoch_ = 0;
     int gridType_ = 0;
+    int baseLayer_ = 0;
     bool slope_ = false;
     float slopeOpacity_ = 0.6f;
     double slopeMax_ = 45.0;
@@ -311,8 +334,11 @@ private:
     };
     std::unordered_map<std::uint64_t, Overlay> overlays_;
     std::uint64_t nextOverlay_ = 1;
-    bool grid_ = false;
-    double gridSpacing_ = 0;
+    std::array<bool, 3> gridOn_{};
+    std::array<double, 3> gridSpacing_{0, 0, 0};
+    bool skyVisible_ = true;
+    float clear_[3] = {0.0f, 0.0f, 0.0f};
+    float ground_[3] = {10 / 255.0f, 30 / 255.0f, 62 / 255.0f};
 
     sg_buffer indexBuffer_{};
     sg_buffer skyBuffer_{};

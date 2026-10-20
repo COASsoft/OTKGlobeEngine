@@ -189,13 +189,17 @@ bool FeatureLayer::iconRect(const Image* img, float rect[4]) {
         return true;
     }
     if (!img || img->width <= 0 || img->height <= 0) return false;
-    int w = std::min(img->width, 96), h = std::min(img->height, 96);
+    double shrink = std::min({1.0, 512.0 / img->width, 256.0 / img->height});
+    int w = std::max(1, static_cast<int>(img->width * shrink)), h = std::max(1, static_cast<int>(img->height * shrink));
     if (atlasX_ + w + 1 > kAtlasSize) {
         atlasX_ = 0;
         atlasY_ += atlasRow_ + 1;
         atlasRow_ = 0;
     }
-    if (atlasY_ + h + 1 > kAtlasSize) return false;
+    if (atlasY_ + h + 1 > kAtlasSize) {
+        atlasFull_ = true;
+        return false;
+    }
     for (int y = 0; y < h; ++y)
         for (int x = 0; x < w; ++x) {
             int sx = x * img->width / w, sy = y * img->height / h;
@@ -299,6 +303,7 @@ std::uint64_t FeatureLayer::add(const Feature& f) {
     it.feature.id = id;
     prepare(it);
     dirty_.push_back(it.bounds);
+    sortDirty_ = true;
     return id;
 }
 
@@ -306,6 +311,7 @@ bool FeatureLayer::update(std::uint64_t id, const Feature& f) {
     auto it = items_.find(id);
     if (it == items_.end()) return false;
     dirty_.push_back(it->second.bounds);
+    if (it->second.feature.order != f.order) sortDirty_ = true;
     it->second.feature = f;
     it->second.feature.id = id;
     prepare(it->second);
@@ -318,12 +324,27 @@ bool FeatureLayer::remove(std::uint64_t id) {
     if (it == items_.end()) return false;
     dirty_.push_back(it->second.bounds);
     items_.erase(it);
+    sortDirty_ = true;
     return true;
 }
 
 void FeatureLayer::clear() {
     for (auto& [k, v] : items_) dirty_.push_back(v.bounds);
     items_.clear();
+    sortDirty_ = true;
+}
+
+const std::vector<std::uint64_t>& FeatureLayer::ordered() {
+    if (!sortDirty_) return sorted_;
+    sorted_.clear();
+    sorted_.reserve(items_.size());
+    for (const auto& [id, it] : items_) sorted_.push_back(id);
+    std::sort(sorted_.begin(), sorted_.end(), [this](std::uint64_t a, std::uint64_t b) {
+        int oa = items_.at(a).feature.order, ob = items_.at(b).feature.order;
+        return oa != ob ? oa < ob : a < b;
+    });
+    sortDirty_ = false;
+    return sorted_;
 }
 
 bool FeatureLayer::get(std::uint64_t id, Feature& out) const {
@@ -358,7 +379,8 @@ void FeatureLayer::buildSurface(const GeoRect& tile, double texelDeg, double dpi
         ndc(lon, lat, p);
         verts.insert(verts.end(), {p[0], p[1], c[0], c[1], c[2], c[3]});
     };
-    for (auto& [id, it] : items_) {
+    for (std::uint64_t id : ordered()) {
+        Item& it = items_.at(id);
         const Feature& f = it.feature;
         if (!f.visible || f.altitudeMode != AltitudeMode::ClampToGround) continue;
         double half = f.style.strokeWidth * dpi * texelDeg * 0.5;
@@ -380,22 +402,57 @@ void FeatureLayer::buildSurface(const GeoRect& tile, double texelDeg, double dpi
         if ((f.style.strokeColor >> 24) == 0 || f.style.strokeWidth <= 0) continue;
         float c[4];
         color4(f.style.strokeColor, c);
-        for (const auto& line : it.lines)
+        const double dashOn = f.style.dash > 0 ? f.style.dash * dpi * texelDeg : 0.0;
+        const double dashOff = f.style.dash > 0 ? (f.style.dashGap > 0 ? f.style.dashGap : f.style.dash) * dpi * texelDeg : 0.0;
+        const double period = dashOn + dashOff;
+        auto quad = [&](double ax, double ay, double bx, double by, bool capStart, bool capEnd) {
+            double dx = bx - ax, dy = by - ay, len = std::sqrt(dx * dx + dy * dy);
+            if (len <= 0) return;
+            double nx = -dy / len * half, ny = dx / len * half;
+            double ex = dx / len * half, ey = dy / len * half;
+            double sx0 = capStart ? ex : 0.0, sy0 = capStart ? ey : 0.0, sx1 = capEnd ? ex : 0.0, sy1 = capEnd ? ey : 0.0;
+            double q[4][2] = {{ax + nx - sx0, ay + ny - sy0}, {bx + nx + sx1, by + ny + sy1}, {bx - nx + sx1, by - ny + sy1},
+                              {ax - nx - sx0, ay - ny - sy0}};
+            int order[6] = {0, 1, 2, 0, 2, 3};
+            for (int k : order) push(q[k][0] / coslat, q[k][1], c);
+        };
+        for (const auto& line : it.lines) {
+            double along = 0;
             for (size_t i = 0; i + 1 < line.size(); ++i) {
                 const auto& a = line[i];
                 const auto& b = line[i + 1];
+                double mid = std::max(std::cos((a[1] + b[1]) * 0.5 * kDegToRad), 0.05);
+                double metric = std::hypot((b[0] - a[0]) * mid, b[1] - a[1]);
                 GeoRect sb{std::min(a[0], b[0]), std::min(a[1], b[1]), std::max(a[0], b[0]), std::max(a[1], b[1])};
-                if (!sb.intersects(grown)) continue;
+                if (!sb.intersects(grown)) {
+                    along += metric;
+                    continue;
+                }
                 double ax = a[0] * coslat, ay = a[1], bx = b[0] * coslat, by = b[1];
-                double dx = bx - ax, dy = by - ay, len = std::sqrt(dx * dx + dy * dy);
-                if (len <= 0) continue;
-                double nx = -dy / len * half, ny = dx / len * half;
-                double ex = dx / len * half, ey = dy / len * half;
-                double q[4][2] = {{ax + nx - ex, ay + ny - ey}, {bx + nx + ex, by + ny + ey}, {bx - nx + ex, by - ny + ey},
-                                  {ax - nx - ex, ay - ny - ey}};
-                int order[6] = {0, 1, 2, 0, 2, 3};
-                for (int k : order) push(q[k][0] / coslat, q[k][1], c);
+                if (period <= 0 || metric <= 0) {
+                    quad(ax, ay, bx, by, true, true);
+                    along += metric;
+                    continue;
+                }
+                double pos = std::fmod(along, period), s = 0;
+                int guard = 0;
+                while (s < metric && guard++ < 4096) {
+                    if (pos < dashOn) {
+                        double run = std::min(dashOn - pos, metric - s);
+                        double t0 = s / metric, t1 = (s + run) / metric;
+                        quad(ax + (bx - ax) * t0, ay + (by - ay) * t0, ax + (bx - ax) * t1, ay + (by - ay) * t1, false, false);
+                        s += run;
+                        pos += run;
+                    } else {
+                        double run = std::min(period - pos, metric - s);
+                        s += run;
+                        pos += run;
+                    }
+                    if (pos >= period) pos -= period;
+                }
+                along += metric;
             }
+        }
     }
 }
 
@@ -435,8 +492,24 @@ void FeatureLayer::drawOverlay(const Camera& cam, const GroundFn& ground, double
     auto nx = [&](double x) { return static_cast<float>(x / W * 2.0 - 1.0); };
     auto ny = [&](double y) { return static_cast<float>(1.0 - y / H * 2.0); };
 
+    if (atlasFull_) {
+        atlasRects_.clear();
+        atlasRefs_.clear();
+        std::fill(iconPixels_.begin(), iconPixels_.end(), std::uint8_t(0));
+        atlasX_ = atlasY_ = atlasRow_ = 0;
+        atlasDirty_ = true;
+        atlasFull_ = false;
+    }
     std::vector<float> lines, icons, text, images;
     Writer lw{lines}, iw{icons}, tw{text}, mw{images};
+    struct Quad {
+        int order = 0;
+        bool collide = false;
+        double x[4] = {}, y[4] = {};
+        float rect[4] = {};
+        float c[4] = {};
+    };
+    std::vector<Quad> quads;
 
     struct Label {
         std::string text;
@@ -448,7 +521,8 @@ void FeatureLayer::drawOverlay(const Camera& cam, const GroundFn& ground, double
     std::vector<Label> labels;
     const double nowSeconds = std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();
 
-    for (auto& [id, it] : items_) {
+    for (std::uint64_t id : ordered()) {
+        Item& it = items_.at(id);
         const Feature& f = it.feature;
         if (!f.visible) continue;
         const float fade = f.stale > 0 && f.stale < nowSeconds ? 0.45f : 1.0f;
@@ -488,23 +562,72 @@ void FeatureLayer::drawOverlay(const Camera& cam, const GroundFn& ground, double
             double s = 22.0 * f.style.iconScale * dpi;
             double offset = 0;
             float rect[4];
-            if (f.style.iconImage && iconRect(f.style.iconImage.get(), rect)) {
-                if (std::find(atlasRefs_.begin(), atlasRefs_.end(), f.style.iconImage) == atlasRefs_.end())
-                    atlasRefs_.push_back(f.style.iconImage);
-                float c[4];
-                color4(f.style.iconColor, c);
-                c[3] *= fade;
-                double aspect = static_cast<double>(f.style.iconImage->width) / std::max(f.style.iconImage->height, 1);
-                double hh = s * 1.4, ww = hh * aspect;
-                float x0 = nx(sx - ww * 0.5), x1 = nx(sx + ww * 0.5), y0 = ny(sy - hh * 0.5), y1 = ny(sy + hh * 0.5);
-                mw.vertex(x0, y0, 0, rect[0], rect[1], c);
-                mw.vertex(x1, y0, 0, rect[2], rect[1], c);
-                mw.vertex(x1, y1, 0, rect[2], rect[3], c);
-                mw.vertex(x0, y0, 0, rect[0], rect[1], c);
-                mw.vertex(x1, y1, 0, rect[2], rect[3], c);
-                mw.vertex(x0, y1, 0, rect[0], rect[3], c);
-                offset = hh * 0.5 + 2;
-            } else if (f.style.icon != IconShape::Hidden) {
+            std::shared_ptr<const Image> image = f.style.iconImage;
+            double iw0 = f.style.iconWidth, ih0 = f.style.iconHeight, ax = f.style.iconAnchorX, ay = f.style.iconAnchorY;
+            double zoom = 0;
+            if (!f.style.iconSteps.empty() || !f.style.iconZoomScale.empty()) {
+                double mpp = cam.pixelSizeAt(length(e - eye)) * dpi;
+                zoom = std::log2(156543.03392 * std::max(std::cos(p[1] * kDegToRad), 1e-6) / std::max(mpp, 1e-9));
+            }
+            for (const IconStep& st : f.style.iconSteps)
+                if (zoom >= st.minZoom && st.image) {
+                    image = st.image;
+                    iw0 = st.width;
+                    ih0 = st.height;
+                    ax = st.anchorX;
+                    ay = st.anchorY;
+                }
+            double zs = 1.0;
+            const auto& stops = f.style.iconZoomScale;
+            if (!stops.empty()) {
+                zs = stops.front().second;
+                if (zoom >= stops.back().first) {
+                    zs = stops.back().second;
+                } else {
+                    for (size_t k = 1; k < stops.size(); ++k)
+                        if (zoom <= stops[k].first) {
+                            double t = (zoom - stops[k - 1].first) / std::max(stops[k].first - stops[k - 1].first, 1e-9);
+                            zs = zoom <= stops[k - 1].first ? stops[k - 1].second : stops[k - 1].second + (stops[k].second - stops[k - 1].second) * t;
+                            break;
+                        }
+                }
+            }
+            if (image && iconRect(image.get(), rect)) {
+                if (std::find(atlasRefs_.begin(), atlasRefs_.end(), image) == atlasRefs_.end()) atlasRefs_.push_back(image);
+                Quad q;
+                q.order = f.order;
+                q.collide = f.style.iconCollide;
+                color4(f.style.iconColor, q.c);
+                q.c[3] *= fade;
+                for (int k = 0; k < 4; ++k) q.rect[k] = rect[k];
+                double ww, hh;
+                if (iw0 > 0 && ih0 > 0) {
+                    ww = iw0 * zs * f.style.iconScale * dpi;
+                    hh = ih0 * zs * f.style.iconScale * dpi;
+                } else {
+                    double aspect = static_cast<double>(image->width) / std::max(image->height, 1);
+                    hh = s * 1.4 * zs;
+                    ww = hh * aspect;
+                    ax = ay = 0.5;
+                }
+                double angle = 0;
+                if (f.style.iconRotation != 0.0f) {
+                    double nxp, nyp, nzp;
+                    Vec3 up = geodeticToEcef(std::min(p[1] + 0.0005, 89.9), p[0], altitude(it, p[1], p[0], p[2], ground));
+                    double north = 0;
+                    if (project(up, nxp, nyp, nzp) && std::hypot(nxp - sx, nyp - sy) > 1e-6) north = std::atan2(nxp - sx, -(nyp - sy));
+                    angle = north + f.style.iconRotation * kDegToRad;
+                }
+                double ca = std::cos(angle), sa = std::sin(angle);
+                double cx[4] = {-ax * ww, (1 - ax) * ww, (1 - ax) * ww, -ax * ww};
+                double cy[4] = {-ay * hh, -ay * hh, (1 - ay) * hh, (1 - ay) * hh};
+                for (int k = 0; k < 4; ++k) {
+                    q.x[k] = sx + cx[k] * ca - cy[k] * sa;
+                    q.y[k] = sy + cx[k] * sa + cy[k] * ca;
+                }
+                quads.push_back(q);
+                offset = (1 - ay) * hh + 2;
+            } else if (f.style.icon != IconShape::Hidden && !image) {
                 int shape = f.style.icon == IconShape::Circle ? 0 : f.style.icon == IconShape::Pin ? 1 : f.style.icon == IconShape::Square ? 2 : 3;
                 double cx = sx, cy = f.style.icon == IconShape::Pin ? sy - s * 0.5 : sy;
                 float c[4];
@@ -561,6 +684,34 @@ void FeatureLayer::drawOverlay(const Camera& cam, const GroundFn& ground, double
             double size = l.size * dpi;
             labels.push_back({l.text, sx, sy, -size * 0.6, 1e12 + l.priority * 1e9 + length(e - eye), {c[0], c[1], c[2], c[3]},
                               static_cast<float>(size), 28.0 * dpi});
+        }
+    }
+    {
+        std::vector<size_t> collide;
+        for (size_t i = 0; i < quads.size(); ++i)
+            if (quads[i].collide) collide.push_back(i);
+        std::stable_sort(collide.begin(), collide.end(), [&](size_t a, size_t b) { return quads[a].order > quads[b].order; });
+        std::vector<bool> drop(quads.size(), false);
+        std::vector<std::array<double, 4>> taken;
+        for (size_t i : collide) {
+            const Quad& q = quads[i];
+            std::array<double, 4> box{std::min({q.x[0], q.x[1], q.x[2], q.x[3]}), std::min({q.y[0], q.y[1], q.y[2], q.y[3]}),
+                                      std::max({q.x[0], q.x[1], q.x[2], q.x[3]}), std::max({q.y[0], q.y[1], q.y[2], q.y[3]})};
+            bool hit = false;
+            for (const auto& t : taken)
+                if (box[0] < t[2] && t[0] < box[2] && box[1] < t[3] && t[1] < box[3]) {
+                    hit = true;
+                    break;
+                }
+            if (hit) drop[i] = true;
+            else taken.push_back(box);
+        }
+        for (size_t i = 0; i < quads.size(); ++i) {
+            if (drop[i]) continue;
+            const Quad& q = quads[i];
+            float u[4] = {q.rect[0], q.rect[2], q.rect[2], q.rect[0]};
+            float v[4] = {q.rect[1], q.rect[1], q.rect[3], q.rect[3]};
+            for (int k : {0, 1, 2, 0, 2, 3}) mw.vertex(nx(q.x[k]), ny(q.y[k]), 0, u[k], v[k], q.c);
         }
     }
     std::sort(labels.begin(), labels.end(), [](const Label& a, const Label& b) { return a.priority < b.priority; });
