@@ -57,6 +57,12 @@ struct ViewerState {
     ote::Region download;
     int downloadMin = 0, downloadMax = 0;
     int downloadId = 0;
+    std::vector<std::string> imports;
+    bool hasExport = false;
+    ote::Region exportRegion;
+    int exportMin = 0, exportMax = 0;
+    std::string exportPath;
+    int cacheLimit = 0;
     std::vector<std::string> featureFiles;
     std::vector<std::string> tilesets;
     std::vector<std::string> pointClouds;
@@ -240,6 +246,12 @@ void init() {
     for (const auto& [path, placement] : state->models) state->engine.addModel(path, placement);
     for (const auto& t : state->tilesets) state->engine.addTileset(t);
     for (const auto& p : state->pointClouds) state->engine.addPointCloud(p);
+    if (state->cacheLimit > 0) state->engine.setCacheLimit(state->cacheLimit);
+    for (const auto& path : state->imports) {
+        std::string err;
+        long long n = state->engine.importTiles(0, path, &err);
+        std::printf("import %s: %lld tiles%s%s\n", path.c_str(), n, err.empty() ? "" : " ", err.c_str());
+    }
     if (state->hasDownload)
         state->downloadId = state->engine.downloadRegion(0, state->download, state->downloadMin, state->downloadMax);
     state->engine.setView(state->startView);
@@ -430,6 +442,16 @@ void frame() {
                     std::fprintf(f, "download total=%lld done=%lld failed=%lld finished=%d\n",
                                  static_cast<long long>(d.total), static_cast<long long>(d.done),
                                  static_cast<long long>(d.failed), d.finished ? 1 : 0);
+                }
+                if (state->hasExport) {
+                    std::string err;
+                    long long n = state->engine.exportTiles(0, state->exportRegion, state->exportMin, state->exportMax, state->exportPath, &err);
+                    std::fprintf(f, "export tiles=%lld %s\n", n, err.c_str());
+                }
+                {
+                    ote::Stats net = state->engine.stats();
+                    std::fprintf(f, "network unreachable_hosts=%d stale_tiles=%lld cache_mb=%.1f\n", net.unreachableHosts, net.staleTiles,
+                                 static_cast<double>(state->engine.cacheBytes()) / 1048576.0);
                 }
                 std::fclose(f);
             }
@@ -727,6 +749,16 @@ void parseArgs(int argc, char** argv) {
             state->gdalDem = argv[++i];
         } else if (a == "--mobac") {
             for (auto& l : ote::loadMobac(argv[++i])) state->customLayers.push_back(l);
+        } else if (a == "--import") {
+            state->imports.push_back(argv[++i]);
+        } else if (a == "--cache-limit") {
+            state->cacheLimit = std::atoi(argv[++i]);
+        } else if (a == "--export") {
+            ote::Region& r = state->exportRegion;
+            char path[1024] = {0};
+            state->hasExport = std::sscanf(argv[++i], "%lf,%lf,%lf,%lf,%d,%d,%1023[^\n]", &r.west, &r.south, &r.east, &r.north,
+                                           &state->exportMin, &state->exportMax, path) == 7;
+            state->exportPath = path;
         } else if (a == "--download") {
             ote::Region& r = state->download;
             state->hasDownload = std::sscanf(argv[++i], "%lf,%lf,%lf,%lf,%d,%d", &r.west, &r.south, &r.east, &r.north,
