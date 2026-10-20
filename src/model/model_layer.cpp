@@ -102,6 +102,15 @@ bool parseGltf(const std::uint8_t* bytes, std::size_t size, const std::string& b
     cgltf_options options{};
     cgltf_data* data = nullptr;
     if (cgltf_parse(&options, bytes, size, &data) != cgltf_result_success) return false;
+    for (cgltf_size i = 0; i < data->extensions_required_count; ++i) {
+        const char* e = data->extensions_required[i];
+        for (const char* missing : {"KHR_draco_mesh_compression", "EXT_meshopt_compression", "KHR_meshopt_compression", "KHR_texture_basisu",
+                                    "EXT_texture_webp", "EXT_texture_avif"})
+            if (e && std::strcmp(e, missing) == 0) {
+                cgltf_free(data);
+                return false;
+            }
+    }
     std::string base = baseDir.empty() ? std::string() : (std::filesystem::u8path(baseDir) / "x").string();
     if (cgltf_load_buffers(&options, data, base.empty() ? nullptr : base.c_str()) != cgltf_result_success) {
         cgltf_free(data);

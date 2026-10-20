@@ -2126,6 +2126,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
 
     bool xray = terrainAlpha_ < 0.999f;
     bool tilesBusy = false;
+    stats_.tilesetTiles = 0;
+    stats_.tilesetFailed = 0;
     auto drawObjects = [&]() {
         models_.draw(cam, [this](double lat, double lon) { return elevationAt(lat, lon); });
         points_.draw(cam, dpiScale_);
@@ -2133,6 +2135,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             t->update(cam, frustum_, frame_);
             t->draw(cam, models_);
             tilesBusy = tilesBusy || t->busy();
+            stats_.tilesetTiles += t->drawnTiles();
+            stats_.tilesetFailed += t->failedTiles();
         }
     };
     if (xray) drawObjects();

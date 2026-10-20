@@ -29,6 +29,8 @@ public:
     void draw(const Camera& cam, ModelLayer& models);
     bool busy() const;
     std::size_t residentBytes() const { return resident_; }
+    int drawnTiles() const { return static_cast<int>(draw_.size()); }
+    int failedTiles() const { return failed_; }
     Vec3 center() const;
 
 private:
@@ -42,7 +44,10 @@ private:
         std::string base;
         std::vector<std::unique_ptr<Node>> children;
         std::shared_ptr<GpuMesh> mesh;
-        int state = 0;
+        std::atomic<int> state{0};
+        bool permanent = false;
+        double retryAt = 0;
+        std::uint64_t failedEpoch = 0;
         std::uint64_t used = 0;
     };
     struct Job {
@@ -51,16 +56,17 @@ private:
         double priority;
     };
     struct Done {
-        Node* node;
+        Node* node = nullptr;
         std::unique_ptr<CpuModel> model;
-        std::shared_ptr<void> tileset;
-        std::string tilesetBase;
+        std::unique_ptr<Node> subtree;
         bool ok = false;
+        bool transient = false;
     };
 
     std::unique_ptr<Node> parse(const void* json, const Mat4& parent, const std::string& base, bool parentAdd);
     void select(Node* n, const Camera& cam, const std::array<double, 16>& frustum, std::uint64_t frame);
     bool contentReady(const Node* n) const;
+    bool hasFallback(const Node* n) const;
     void request(Node* n, double priority);
     void run();
     void evict(std::uint64_t frame);
@@ -72,6 +78,7 @@ private:
     std::vector<Job> wanted_;
     std::vector<Node*> loaded_;
     std::size_t resident_ = 0;
+    int failed_ = 0;
     std::size_t budget_ = 256u * 1024 * 1024;
 
     mutable std::mutex mutex_;

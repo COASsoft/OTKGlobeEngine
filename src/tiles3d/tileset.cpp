@@ -8,6 +8,7 @@
 #include <miniz.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
@@ -17,7 +18,7 @@ namespace ote {
 class TileSource {
 public:
     virtual ~TileSource() = default;
-    virtual std::vector<std::uint8_t> read(const std::string& path) = 0;
+    virtual std::vector<std::uint8_t> read(const std::string& path, bool& transient) = 0;
     static std::string join(const std::string& base, const std::string& rel) {
         if (rel.find("://") != std::string::npos || (!rel.empty() && rel[0] == '/')) return rel;
         if (base.empty()) return rel;
@@ -40,16 +41,32 @@ public:
 
 namespace {
 
+constexpr int kUnloaded = 0;
+constexpr int kLoading = 1;
+constexpr int kMesh = 2;
+constexpr int kExpanded = 3;
+constexpr int kFailed = 4;
+constexpr int kUploadsPerFrame = 8;
+constexpr double kUploadMs = 3.0;
+constexpr double kRetrySeconds = 30.0;
+
+double seconds() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
+
+FILE* openFile(const std::string& path) {
+    std::filesystem::path p = std::filesystem::u8path(path);
+#if defined(_WIN32)
+    return _wfopen(p.wstring().c_str(), L"rb");
+#else
+    return std::fopen(p.string().c_str(), "rb");
+#endif
+}
+
 class FileSource : public TileSource {
 public:
-    std::vector<std::uint8_t> read(const std::string& path) override {
+    std::vector<std::uint8_t> read(const std::string& path, bool& transient) override {
+        transient = false;
         std::vector<std::uint8_t> out;
-        std::filesystem::path p = std::filesystem::u8path(path);
-#if defined(_WIN32)
-        FILE* f = _wfopen(p.wstring().c_str(), L"rb");
-#else
-        FILE* f = std::fopen(p.string().c_str(), "rb");
-#endif
+        FILE* f = openFile(path);
         if (!f) return out;
         std::fseek(f, 0, SEEK_END);
         long n = std::ftell(f);
@@ -64,15 +81,22 @@ public:
 class HttpSource : public TileSource {
 public:
     HttpSource(TileCache* cache, const std::atomic<bool>* offline) : cache_(cache), offline_(offline) {}
-    std::vector<std::uint8_t> read(const std::string& path) override {
+    std::vector<std::uint8_t> read(const std::string& path, bool& transient) override {
+        transient = false;
         std::string key = "3dtiles|" + stripCredentials(path);
         bool useCache = cache_ && cache_->isOpen();
         std::vector<std::uint8_t> data;
         std::int64_t expires = 0;
         if (useCache && cache_->get(key, -2, 0, 0, data, expires)) return data;
-        if (offline_ && offline_->load()) return {};
+        if (offline_ && offline_->load()) {
+            transient = true;
+            return {};
+        }
         net::Response r = net::get(path, "OpenTAKEngine/0.1");
-        if (r.status != 200 || r.body.empty()) return {};
+        if (r.status != 200 || r.body.empty()) {
+            transient = r.status <= 0 || r.status == 408 || r.status == 429 || r.status >= 500;
+            return {};
+        }
         if (useCache) cache_->put(key, -2, 0, 0, r.body, std::int64_t(1) << 50);
         return std::move(r.body);
     }
@@ -85,14 +109,15 @@ private:
 class ZipSource : public TileSource {
 public:
     explicit ZipSource(const std::string& path) {
-        std::vector<std::uint8_t> bytes = FileSource().read(path);
-        data_ = std::move(bytes);
-        ok_ = !data_.empty() && mz_zip_reader_init_mem(&zip_, data_.data(), data_.size(), 0);
+        file_ = openFile(path);
+        ok_ = file_ && mz_zip_reader_init_cfile(&zip_, file_, 0, 0);
     }
     ~ZipSource() override {
         if (ok_) mz_zip_reader_end(&zip_);
+        if (file_) std::fclose(file_);
     }
-    std::vector<std::uint8_t> read(const std::string& path) override {
+    std::vector<std::uint8_t> read(const std::string& path, bool& transient) override {
+        transient = false;
         std::vector<std::uint8_t> out;
         if (!ok_) return out;
         std::lock_guard lock(mutex_);
@@ -107,7 +132,7 @@ public:
     }
 
 private:
-    std::vector<std::uint8_t> data_;
+    FILE* file_ = nullptr;
     mz_zip_archive zip_{};
     bool ok_ = false;
     std::mutex mutex_;
@@ -136,6 +161,14 @@ std::string lowerExt(const std::string& path) {
     return e;
 }
 
+bool looksLikeJson(const std::vector<std::uint8_t>& bytes) {
+    for (std::uint8_t c : bytes) {
+        if (c == ' ' || c == '\t' || c == '\r' || c == '\n') continue;
+        return c == '{';
+    }
+    return false;
+}
+
 }
 
 Tileset3D::Tileset3D(const std::string& uri, double maxSse, TileCache* cache, const std::atomic<bool>* offline) : maxSse_(maxSse) {
@@ -157,11 +190,14 @@ Tileset3D::Tileset3D(const std::string& uri, double maxSse, TileCache* cache, co
         entry = std::filesystem::is_directory(std::filesystem::u8path(norm), ec) ? TileSource::join(norm, "tileset.json") : norm;
         base = TileSource::dir(entry);
     }
-    std::vector<std::uint8_t> bytes = source_->read(entry);
+    bool transient = false;
+    std::vector<std::uint8_t> bytes = source_->read(entry, transient);
     nlohmann::json j = nlohmann::json::parse(bytes.begin(), bytes.end(), nullptr, false);
     if (j.is_discarded() || !j.contains("root")) return;
     root_ = parse(&j["root"], Mat4::identity(), base, false);
-    for (int i = 0; i < 2; ++i) workers_.emplace_back([this] { run(); });
+    int cores = static_cast<int>(std::thread::hardware_concurrency());
+    int threads = norm.find("://") != std::string::npos ? 6 : std::clamp(cores - 1, 2, 6);
+    for (int i = 0; i < threads; ++i) workers_.emplace_back([this] { run(); });
 }
 
 Tileset3D::~Tileset3D() {
@@ -222,11 +258,22 @@ Vec3 Tileset3D::center() const { return root_ ? root_->center : Vec3{}; }
 
 bool Tileset3D::contentReady(const Node* n) const {
     if (n->content.empty()) return true;
-    return n->state == 2 || n->state == 3;
+    int s = n->state.load();
+    return s == kMesh || s == kExpanded;
 }
 
+bool Tileset3D::hasFallback(const Node* n) const { return n->state.load() == kMesh; }
+
 void Tileset3D::request(Node* n, double priority) {
-    if (n->content.empty() || n->state != 0) return;
+    if (n->content.empty()) return;
+    int s = n->state.load();
+    if (s == kFailed) {
+        if (n->permanent || (seconds() < n->retryAt && net::reachabilityEpoch() == n->failedEpoch)) return;
+        n->state = kUnloaded;
+        --failed_;
+    } else if (s != kUnloaded) {
+        return;
+    }
     wanted_.push_back({n, TileSource::join(n->base, n->content), priority});
 }
 
@@ -258,8 +305,8 @@ void Tileset3D::select(Node* n, const Camera& cam, const std::array<double, 16>&
             request(c.get(), dist * 1.5);
         }
     }
-    if (kidsReady || !contentReady(n)) {
-        if (!contentReady(n) && !n->content.empty()) request(n, dist);
+    if (kidsReady || !hasFallback(n)) {
+        if (!contentReady(n)) request(n, dist);
         for (auto& c : n->children) select(c.get(), cam, frustum, frame);
         return;
     }
@@ -268,23 +315,34 @@ void Tileset3D::select(Node* n, const Camera& cam, const std::array<double, 16>&
 
 void Tileset3D::update(const Camera& cam, const std::array<double, 16>& frustum, std::uint64_t frame) {
     if (!root_) return;
-    {
-        std::lock_guard lock(mutex_);
-        while (!done_.empty()) {
-            Done d = std::move(done_.front());
+    auto start = std::chrono::steady_clock::now();
+    int uploads = 0;
+    for (;;) {
+        Done d;
+        {
+            std::lock_guard lock(mutex_);
+            if (done_.empty()) break;
+            if (uploads > 0 && (uploads >= kUploadsPerFrame ||
+                                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count() > kUploadMs))
+                break;
+            d = std::move(done_.front());
             done_.pop_front();
-            if (d.ok && d.tileset) {
-                const auto& j = *static_cast<const nlohmann::json*>(d.tileset.get());
-                d.node->children.push_back(parse(&j["root"], d.node->transform, d.tilesetBase, d.node->add));
-                d.node->state = 3;
-            } else if (d.ok && d.model) {
-                d.node->mesh = ModelLayer::upload(*d.model);
-                d.node->state = 2;
-                resident_ += d.node->mesh->bytes;
-                loaded_.push_back(d.node);
-            } else {
-                d.node->state = 3;
-            }
+        }
+        if (d.ok && d.subtree) {
+            d.node->children.push_back(std::move(d.subtree));
+            d.node->state = kExpanded;
+        } else if (d.ok && d.model) {
+            d.node->mesh = ModelLayer::upload(*d.model);
+            d.node->state = kMesh;
+            resident_ += d.node->mesh->bytes;
+            loaded_.push_back(d.node);
+            ++uploads;
+        } else {
+            d.node->permanent = !d.transient;
+            d.node->retryAt = seconds() + kRetrySeconds;
+            d.node->failedEpoch = net::reachabilityEpoch();
+            d.node->state = kFailed;
+            ++failed_;
         }
     }
     draw_.clear();
@@ -307,7 +365,7 @@ void Tileset3D::evict(std::uint64_t frame) {
         if (n->used + 2 >= frame) break;
         resident_ -= n->mesh ? n->mesh->bytes : 0;
         n->mesh.reset();
-        n->state = 0;
+        n->state = kUnloaded;
         it = loaded_.erase(it);
     }
 }
@@ -343,18 +401,19 @@ void Tileset3D::run() {
             if (stop_) return;
             job = queue_.back();
             queue_.pop_back();
-            if (job.node->state != 0) continue;
-            job.node->state = 1;
+            int expected = kUnloaded;
+            if (!job.node->state.compare_exchange_strong(expected, kLoading)) continue;
             ++inflight_;
         }
         Done d;
         d.node = job.node;
-        std::vector<std::uint8_t> bytes = source_->read(job.path);
-        if (!bytes.empty() && lowerExt(job.path) == ".json") {
-            auto j = std::make_shared<nlohmann::json>(nlohmann::json::parse(bytes.begin(), bytes.end(), nullptr, false));
-            d.ok = !j->is_discarded() && j->contains("root");
-            d.tileset = j;
-            d.tilesetBase = TileSource::dir(job.path);
+        std::vector<std::uint8_t> bytes = source_->read(job.path, d.transient);
+        if (!bytes.empty() && (lowerExt(job.path) == ".json" || looksLikeJson(bytes))) {
+            nlohmann::json j = nlohmann::json::parse(bytes.begin(), bytes.end(), nullptr, false);
+            if (!j.is_discarded() && j.contains("root")) {
+                d.subtree = parse(&j["root"], job.node->transform, TileSource::dir(job.path), job.node->add);
+                d.ok = true;
+            }
         } else if (!bytes.empty()) {
             auto model = std::make_unique<CpuModel>();
             d.ok = parseB3dm(bytes.data(), bytes.size(), *model);

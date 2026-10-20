@@ -12,6 +12,7 @@ OpenTAKEngine is built to keep showing maps when the network is slow, gone, or w
 | Host comes back | Idle loader threads probe down hosts in the background (backoff 10 s, doubling to 2 min). The first successful response clears every "unavailable" mark, and visible tiles reload without user action. Android, Apple and .NET hosts also call `networkChanged()` on OS connectivity changes, which retries at once. |
 | No imagery at all (empty cache, first start in an airgapped network) | A built-in NASA Blue Marble world image (2048 x 1024, public domain, 350 KB) is drawn wherever imagery is unavailable, including the poles. Disable with `setOfflineBackdrop(false)` or `-DOTE_EMBED_BACKDROP=OFF`. |
 | Elevation unavailable | Terrain tiles complete with whatever elevation is cached (flat where none), so imagery refinement is never blocked by missing terrain. |
+| 3D Tiles content missing or undecodable | The parent tile stays drawn instead of leaving a hole. Network failures are retried after 30 s or as soon as a down host answers again; missing files, HTTP 4xx and unsupported content (Draco, meshopt, KTX2, WebP, AVIF) are not. `Stats::tilesetFailed` counts them. `.3tz` archives are read from disk on demand, not loaded into memory. |
 | `setOffline(true)` | No network requests at all; misses are reported as unavailable until `setOffline(false)`. |
 
 Connect timeouts are 5 s on every platform (WinHTTP, libcurl, Android, NSURLSession request timeout 15 s).

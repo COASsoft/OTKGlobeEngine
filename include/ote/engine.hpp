@@ -99,6 +99,8 @@ struct Stats {
     int uploads = 0;
     int unreachableHosts = 0;
     long long staleTiles = 0;
+    int tilesetTiles = 0;
+    int tilesetFailed = 0;
     double cpuMs = 0;
 };
 
