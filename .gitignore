@@ -12,3 +12,6 @@
 /tests/dotnet/obj/
 /bindings/dotnet/bin/
 /bindings/dotnet/obj/
+/bindings/dotnet/runtimes/
+/dist/
+__pycache__/
