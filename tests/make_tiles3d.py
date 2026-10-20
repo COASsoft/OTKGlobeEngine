@@ -137,7 +137,7 @@ def table(header_size, ft_json, ft_bin=b''):
 
 def b3dm(glb):
     js, fb = table(28, {'BATCH_LENGTH': 0})
-    body = js + fb + glb
+    body = js + fb + pad(glb, 8, b'\0')
     return struct.pack('<4s6I', b'b3dm', 1, 28 + len(body), len(js), len(fb), 0, 0) + body
 
 
@@ -165,7 +165,6 @@ def pnts(positions, colors, draco=None):
 
 
 def cmpt(tiles):
-    tiles = [pad(t, 8, b'\0') for t in tiles]
     body = b''.join(tiles)
     return struct.pack('<4s3I', b'cmpt', 1, 16 + len(body), len(tiles)) + body
 
@@ -343,14 +342,13 @@ def draco_mesh(out, encoder):
 def ktx2_texture(out, basisu, mode):
     os.makedirs(out, exist_ok=True)
     W = 64
-    png = os.path.join(out, 'checker.ppm')
+    png = os.path.join(out, 'checker.png')
+    rows = b''.join(b'\0' + b''.join(bytes((255, 255, 255) if (x // 8 + y // 8) % 2 else (200, 30, 30)) for x in range(W)) for y in range(W))
+    chunk = lambda t, d: struct.pack('>I', len(d)) + t + d + struct.pack('>I', zlib.crc32(t + d) & 0xFFFFFFFF)
     with open(png, 'wb') as f:
-        f.write(f'P6\n{W} {W}\n255\n'.encode())
-        for y in range(W):
-            for x in range(W):
-                f.write(bytes((255, 255, 255) if (x // 8 + y // 8) % 2 else (200, 30, 30)))
+        f.write(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', W, W, 8, 2, 0, 0, 0)) + chunk(b'IDAT', zlib.compress(rows)) + chunk(b'IEND', b''))
     ktx = os.path.join(out, 'checker.ktx2')
-    args = [basisu, '-ktx2', '-mipmap', '-output_file', ktx, png] + (['-uastc'] if mode == 'uastc' else [])
+    args = [basisu, '-uastc' if mode == 'uastc' else '-etc1s', '-mipmap', '-output_file', ktx, png]
     subprocess.run(args, check=True, capture_output=True, cwd=out)
     os.remove(png)
     g = Gltf()
