@@ -32,10 +32,42 @@ jobs:
       - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DOTE_WITH_GDAL=ON
       - run: cmake --build build
       - run: ctest --test-dir build --output-on-failure
+      - name: Pregenerated shaders match the sources
+        run: |
+          cmake --build build --target ote_pregenerate_shaders
+          git diff --exit-code -- src/render/shaders/generated
       - uses: actions/upload-artifact@v4
         with:
           name: opentakengine-linux
           path: build/apps/viewer/ote_viewer
+
+  bsd:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: freebsd
+            version: '15.1'
+          - os: openbsd
+            version: '7.9'
+          - os: netbsd
+            version: '11.0'
+    defaults:
+      run:
+        shell: cpa.sh {0}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start ${{ matrix.os }} ${{ matrix.version }}
+        uses: cross-platform-actions/action@e0b9770014ba65d5e0815f15b74031c3a635f641
+        with:
+          operating_system: ${{ matrix.os }}
+          version: ${{ matrix.version }}
+          architecture: x86-64
+          cpu_count: 4
+          memory: 8G
+      - name: Build and test
+        run: sh scripts/bsd_build.sh
 
   macos:
     runs-on: macos-latest
