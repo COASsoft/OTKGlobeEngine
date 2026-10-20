@@ -143,6 +143,6 @@ if(OTE_BUILD_TESTS AND NOT ANDROID AND NOT IOS)
     target_include_directories(ote_header_macros PRIVATE ${PROJECT_SOURCE_DIR}/include)
 endif()
 
-if(NOT ANDROID AND NOT IOS)
+if(OTE_PACKAGING AND NOT ANDROID AND NOT IOS)
     include(cmake/packaging.cmake)
 endif()
