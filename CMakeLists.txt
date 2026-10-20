@@ -11,9 +11,11 @@ endif()
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-option(OTE_BUILD_VIEWER "Build the demo viewer" ON)
+option(OTE_BUILD_VIEWER "Build the demo viewer" ${PROJECT_IS_TOP_LEVEL})
 option(OTE_WITH_GDAL "Build the optional GDAL raster, elevation and vector module" OFF)
 option(OTE_EMBED_BACKDROP "Embed a low-resolution world image shown wherever no imagery is available offline" ON)
+option(OTE_PACKAGING "Install rules and CPack packages" ${PROJECT_IS_TOP_LEVEL})
+set(OTE_SQLITE_TARGET "" CACHE STRING "An existing SQLite target to link instead of building the bundled amalgamation")
 
 if(APPLE)
     enable_language(OBJC OBJCXX)
