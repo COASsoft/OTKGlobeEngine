@@ -1,0 +1,94 @@
+<html><title>OpenTAKEngine</title>
+
+<table border=0 cellpadding=0 cellspacing=0>
+<tr>
+<td valign=top>
+<b>About</b>
+<ul>
+  <li><a href=index.html>Home</a></li>
+  <li><a href=screenshots.html>Screenshots</a></li>
+</ul>
+<b>Code</b>
+<ul>
+  <li><a href=download.html>Download</a></li>
+  <li><a href=https://github.com/grangedevgroup-code/OpenTAKEngine>Source (GitHub)</a></li>
+  <li><a href=https://gitlab.com/grangedevgroup/OpenTAKEngine>Mirror (GitLab)</a></li>
+  <li><a href=https://github.com/grangedevgroup-code/OpenTAKEngine/blob/main/CHANGELOG.md>Changelog</a></li>
+</ul>
+<b>Docs</b>
+<ul>
+  <li><a href=https://github.com/grangedevgroup-code/OpenTAKEngine/blob/main/README.md>README</a></li>
+  <li><a href=https://github.com/grangedevgroup-code/OpenTAKEngine/blob/main/docs/EMBEDDING.md>Embedding</a></li>
+  <li><a href=https://github.com/grangedevgroup-code/OpenTAKEngine/blob/main/docs/OFFLINE.md>Offline</a></li>
+  <li><a href=https://github.com/grangedevgroup-code/OpenTAKEngine/blob/main/docs/FORMATS.md>Formats</a></li>
+  <li><a href=https://github.com/grangedevgroup-code/OpenTAKEngine/blob/main/docs/PHOTOREALISM.md>3D Tiles</a></li>
+  <li><a href=https://github.com/grangedevgroup-code/OpenTAKEngine/blob/main/docs/XR.md>VR and AR</a></li>
+  <li><a href=https://github.com/grangedevgroup-code/OpenTAKEngine/blob/main/docs/MILITARY.md>Military</a></li>
+</ul>
+<b>Other</b>
+<ul>
+  <li><a href=https://github.com/grangedevgroup-code/OpenTAKEngine/issues>Issues</a></li>
+  <li><a href=https://github.com/grangedevgroup-code/OpenTAKEngine/blob/main/SECURITY.md>Security</a></li>
+  <li><a href=https://github.com/grangedevgroup-code/OpenTAKEngine/blob/main/LICENSE>License</a></li>
+</ul>
+</td>
+<td valign=top>
+
+<p>OpenTAKEngine is a map engine.  It draws a 3D globe with satellite
+imagery, terrain, map features, military symbols and 3D models, and it keeps
+working when the network goes away.</p>
+
+<p>It's written in C++ and runs on Windows, Linux, macOS, iOS, Android,
+FreeBSD, OpenBSD and NetBSD.  Programs use it through a plain C API, so it can
+be called from C, C++, C#, Java, Kotlin or Swift.  The
+<a href=download.html>download page</a> has packages for all of those.</p>
+
+<p>It behaves like the map engine inside the TAK apps (ATAK, WinTAK), but
+it was written from scratch and contains no TAK code.  It is not affiliated
+with, endorsed by, or associated with tak.gov, the TAK Product Center, or the
+makers of any TAK product.</p>
+
+<p>What it does:</p>
+
+<ul>
+<li>Globe and flat map, imagery from tile servers, WMS, WMTS, MBTiles,
+GeoPackage and GDAL; terrain from DTED, SRTM, quantized-mesh and Terrarium.</li>
+<li>KML/KMZ, GeoJSON, GPX, Shapefile, CSV, CoT and TAK data packages, with
+labels and picking.</li>
+<li>MIL-STD-2525 symbols, MGRS/UTM/GARS grids and coordinates, magnetic
+declination, range rings, bullseyes, line of sight, viewshed and contours.</li>
+<li>Sun and moon, twilight times and night illumination for NVG planning;
+drone video footprints from MISB KLV metadata.</li>
+<li>glTF models and 3D Tiles: photogrammetry, Google Photorealistic 3D Tiles,
+Cesium ion, Draco and KTX2 compression.</li>
+<li>Offline and airgapped networks: a cache that serves old tiles when servers
+are unreachable, region downloads, MBTiles/GeoPackage transfer.</li>
+<li>VR and AR headsets through OpenXR, and side-by-side stereo.</li>
+</ul>
+
+<p>The license is the <a href=https://github.com/grangedevgroup-code/OpenTAKEngine/blob/main/LICENSE>Apache License 2.0</a>:
+use it for anything, change it, sell it, in open or closed products, without
+sharing your changes.  Copies you hand on keep the license text.  The libraries it bundles keep their
+own (mostly MIT-style) licenses, listed in
+<a href=https://github.com/grangedevgroup-code/OpenTAKEngine/blob/main/docs/THIRD_PARTY.md>THIRD_PARTY.md</a>.</p>
+
+<p>To build it from source you need CMake and a C++20 compiler:</p>
+
+<blockquote><pre>
+git clone https://github.com/grangedevgroup-code/OpenTAKEngine
+cd OpenTAKEngine
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+build/apps/viewer/ote_viewer
+</pre></blockquote>
+
+<p>Bug reports and patches go to the
+<a href=https://github.com/grangedevgroup-code/OpenTAKEngine/issues>issue tracker</a>.
+Security problems go to the address in
+<a href=https://github.com/grangedevgroup-code/OpenTAKEngine/blob/main/SECURITY.md>SECURITY.md</a>
+instead.</p>
+
+</td>
+</tr>
+</table>
+</html>
