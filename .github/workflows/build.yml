@@ -66,8 +66,8 @@ jobs:
           architecture: x86-64
           cpu_count: 4
           memory: 8G
-      - name: Build and test
-        run: sh scripts/bsd_build.sh
+      - name: Build, test and package
+        run: env OTE_PACKAGE=1 sh scripts/bsd_build.sh
 
   macos:
     runs-on: macos-latest
