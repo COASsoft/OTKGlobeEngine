@@ -1,4 +1,6 @@
 #include "ote/ote.h"
+#include "ote/milsym.hpp"
+#include "ote/navigation.hpp"
 
 #include "ote/engine.hpp"
 #include "ote/formats.hpp"
@@ -418,6 +420,115 @@ uint64_t ote_add_point_cloud(ote_engine* e, const char* path, uint64_t max_point
 
 uint64_t ote_viewshed(ote_engine* e, double lat, double lon, double height, double radius) {
     return e->engine.computeViewshed({lat, lon, 0}, height, radius);
+}
+
+namespace {
+
+int addAll(ote_engine* e, const std::vector<ote::Feature>& features) {
+    for (const ote::Feature& f : features) e->engine.addFeature(f);
+    return static_cast<int>(features.size());
+}
+
+ote::ShapeStyle shapeStyle(uint32_t argb) {
+    ote::ShapeStyle s;
+    if (argb) s.stroke = argb;
+    return s;
+}
+
+}
+
+double ote_geodesic_inverse(double lat1, double lon1, double lat2, double lon2, double* initial_bearing, double* final_bearing) {
+    ote::GeodesicLine g = ote::geodesicInverse(lat1, lon1, lat2, lon2);
+    if (initial_bearing) *initial_bearing = g.initialBearing;
+    if (final_bearing) *final_bearing = g.finalBearing;
+    return g.distance;
+}
+
+void ote_geodesic_direct(double lat, double lon, double bearing, double distance, double* out_lat, double* out_lon) {
+    ote::Coord c = ote::geodesicDirect({lat, lon, 0}, bearing, distance);
+    if (out_lat) *out_lat = c.lat;
+    if (out_lon) *out_lon = c.lon;
+}
+
+double ote_magnetic_declination(double lat, double lon, double altitude_m, double decimal_year) {
+    return ote::magneticDeclination(lat, lon, altitude_m, decimal_year);
+}
+
+double ote_grid_convergence(double lat, double lon) { return ote::gridConvergence(lat, lon); }
+
+double ote_bearing_from_true(double true_bearing, double lat, double lon, ote_north_reference reference) {
+    return ote::bearingFromTrue(true_bearing, lat, lon, static_cast<ote::NorthReference>(reference));
+}
+
+int ote_format_coordinate(double lat, double lon, ote_coordinate_format format, int precision, char* out, int capacity) {
+    return copyOut(ote::formatCoordinate(lat, lon, static_cast<ote::CoordinateFormat>(format), precision), out, capacity);
+}
+
+int ote_parse_coordinate(const char* text, double* lat, double* lon) {
+    double la = 0, lo = 0;
+    if (!text || !ote::parseCoordinate(text, la, lo)) return 0;
+    if (lat) *lat = la;
+    if (lon) *lon = lo;
+    return 1;
+}
+
+uint64_t ote_add_symbol(ote_engine* e, double lat, double lon, double alt, const char* code, const char* name) {
+    ote::Feature f;
+    std::string c = code ? code : "";
+    if (c.rfind("a-", 0) == 0) f.type = c;
+    else f.style.sidc = c;
+    f.name = name ? name : "";
+    f.altitudeMode = alt != 0 ? ote::AltitudeMode::Absolute : ote::AltitudeMode::ClampToGround;
+    f.geometries.push_back({ote::GeometryType::Point, {{lat, lon, alt}}, {}});
+    return e->engine.addFeature(f);
+}
+
+int ote_render_symbol(const char* sidc, int size_px, uint8_t* rgba_out, int capacity) {
+    int needed = size_px * size_px * 4;
+    if (!sidc || size_px <= 0) return 0;
+    if (!rgba_out || capacity < needed) return needed;
+    ote::Image img = ote::renderSymbolImage(sidc, size_px);
+    if (img.width != size_px) return 0;
+    std::memcpy(rgba_out, img.rgba.data(), static_cast<size_t>(needed));
+    return needed;
+}
+
+int ote_add_range_rings(ote_engine* e, double lat, double lon, double spacing_m, int count, int radials, uint32_t argb) {
+    return addAll(e, ote::rangeRings({lat, lon, 0}, spacing_m, count, radials, shapeStyle(argb)));
+}
+
+int ote_add_bullseye(ote_engine* e, double lat, double lon, double radius_m, int rings, double bearing_step, ote_north_reference reference,
+                     ote_angle_unit unit, uint32_t argb) {
+    return addAll(e, ote::bullseye({lat, lon, 0}, radius_m, rings, bearing_step, static_cast<ote::NorthReference>(reference),
+                                   static_cast<ote::AngleUnit>(unit), shapeStyle(argb)));
+}
+
+int ote_add_range_bearing(ote_engine* e, double lat1, double lon1, double lat2, double lon2, ote_north_reference reference, ote_angle_unit unit,
+                          ote_distance_unit distance_unit, uint32_t argb) {
+    return addAll(e, ote::rangeBearingLine({lat1, lon1, 0}, {lat2, lon2, 0}, static_cast<ote::NorthReference>(reference),
+                                           static_cast<ote::AngleUnit>(unit), static_cast<ote::DistanceUnit>(distance_unit), shapeStyle(argb)));
+}
+
+int ote_add_contours(ote_engine* e, double west, double south, double east, double north, double interval, int major_every, uint32_t argb) {
+    return static_cast<int>(e->engine.addContours({west, south, east, north}, interval, major_every, 256, argb ? argb : 0xFFB0703Au).size());
+}
+
+int ote_add_contours_in_view(ote_engine* e, double interval, int major_every, uint32_t argb) {
+    return static_cast<int>(e->engine.addContours(e->engine.viewRegion(), interval, major_every, 256, argb ? argb : 0xFFB0703Au).size());
+}
+
+void ote_set_terrain_slope(ote_engine* e, int enabled, float opacity, double max_slope_degrees) {
+    e->engine.setTerrainSlope(enabled != 0, opacity > 0 ? opacity : 0.6f, max_slope_degrees > 0 ? max_slope_degrees : 45.0);
+}
+
+void ote_set_grid_type(ote_engine* e, ote_grid_type type) { e->engine.setGridType(static_cast<ote::GridType>(type)); }
+
+void ote_view_region(const ote_engine* e, double* west, double* south, double* east, double* north) {
+    ote::Region r = e->engine.viewRegion();
+    if (west) *west = r.west;
+    if (south) *south = r.south;
+    if (east) *east = r.east;
+    if (north) *north = r.north;
 }
 
 int ote_to_mgrs(double lat, double lon, int digits, char* out, int capacity) {

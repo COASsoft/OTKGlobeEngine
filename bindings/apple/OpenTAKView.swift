@@ -114,6 +114,38 @@ public final class OpenTAKView: OTEPlatformView, MTKViewDelegate {
     }
     public func importTiles(layer: Int32 = 0, path: String) -> Int64 { ote_import_tiles(engine, layer, path) }
 
+    @discardableResult
+    public func addSymbol(lat: Double, lon: Double, code: String, name: String = "", altitude: Double = 0) -> UInt64 {
+        ote_add_symbol(engine, lat, lon, altitude, code, name)
+    }
+    @discardableResult
+    public func addBullseye(lat: Double, lon: Double, radius: Double, rings: Int32 = 3, bearingStep: Double = 30,
+                            reference: ote_north_reference = OTE_NORTH_MAGNETIC, unit: ote_angle_unit = OTE_ANGLE_DEGREES) -> Int32 {
+        ote_add_bullseye(engine, lat, lon, radius, rings, bearingStep, reference, unit, 0)
+    }
+    @discardableResult
+    public func addRangeRings(lat: Double, lon: Double, spacing: Double, count: Int32, radials: Int32 = 0) -> Int32 {
+        ote_add_range_rings(engine, lat, lon, spacing, count, radials, 0)
+    }
+    @discardableResult
+    public func addRangeBearing(from: (Double, Double), to: (Double, Double), reference: ote_north_reference = OTE_NORTH_MAGNETIC,
+                                unit: ote_angle_unit = OTE_ANGLE_DEGREES) -> Int32 {
+        ote_add_range_bearing(engine, from.0, from.1, to.0, to.1, reference, unit, OTE_DISTANCE_METRIC, 0)
+    }
+    @discardableResult
+    public func addContoursInView(interval: Double, majorEvery: Int32 = 5) -> Int32 { ote_add_contours_in_view(engine, interval, majorEvery, 0) }
+    public func setTerrainSlope(_ enabled: Bool) { ote_set_terrain_slope(engine, enabled ? 1 : 0, 0.6, 45) }
+    public func setGridType(_ type: ote_grid_type) { ote_set_grid_type(engine, type) }
+    public static func formatCoordinate(lat: Double, lon: Double, format: ote_coordinate_format, precision: Int32 = -1) -> String {
+        var buffer = [CChar](repeating: 0, count: 128)
+        ote_format_coordinate(lat, lon, format, precision, &buffer, Int32(buffer.count))
+        return String(cString: buffer)
+    }
+    public static func parseCoordinate(_ text: String) -> (Double, Double)? {
+        var lat = 0.0, lon = 0.0
+        return ote_parse_coordinate(text, &lat, &lon) != 0 ? (lat, lon) : nil
+    }
+
     public func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
 
     public func draw(in view: MTKView) {

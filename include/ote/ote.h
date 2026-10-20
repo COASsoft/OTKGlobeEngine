@@ -162,6 +162,41 @@ OTE_API uint64_t ote_viewshed(ote_engine* e, double lat, double lon, double heig
 OTE_API int ote_to_mgrs(double lat, double lon, int digits, char* out, int capacity);
 OTE_API int ote_from_mgrs(const char* mgrs, double* lat, double* lon);
 
+typedef enum ote_north_reference { OTE_NORTH_TRUE = 0, OTE_NORTH_MAGNETIC = 1, OTE_NORTH_GRID = 2 } ote_north_reference;
+typedef enum ote_angle_unit { OTE_ANGLE_DEGREES = 0, OTE_ANGLE_MILS = 1 } ote_angle_unit;
+typedef enum ote_distance_unit { OTE_DISTANCE_METRIC = 0, OTE_DISTANCE_IMPERIAL = 1, OTE_DISTANCE_NAUTICAL = 2 } ote_distance_unit;
+typedef enum ote_coordinate_format {
+    OTE_COORD_DECIMAL = 0,
+    OTE_COORD_DM = 1,
+    OTE_COORD_DMS = 2,
+    OTE_COORD_MGRS = 3,
+    OTE_COORD_UTM = 4,
+    OTE_COORD_GARS = 5
+} ote_coordinate_format;
+typedef enum ote_grid_type { OTE_GRID_MGRS = 0, OTE_GRID_LATLON = 1, OTE_GRID_GARS = 2 } ote_grid_type;
+
+OTE_API double ote_geodesic_inverse(double lat1, double lon1, double lat2, double lon2, double* initial_bearing, double* final_bearing);
+OTE_API void ote_geodesic_direct(double lat, double lon, double bearing, double distance, double* out_lat, double* out_lon);
+OTE_API double ote_magnetic_declination(double lat, double lon, double altitude_m, double decimal_year);
+OTE_API double ote_grid_convergence(double lat, double lon);
+OTE_API double ote_bearing_from_true(double true_bearing, double lat, double lon, ote_north_reference reference);
+OTE_API int ote_format_coordinate(double lat, double lon, ote_coordinate_format format, int precision, char* out, int capacity);
+OTE_API int ote_parse_coordinate(const char* text, double* lat, double* lon);
+
+OTE_API uint64_t ote_add_symbol(ote_engine* e, double lat, double lon, double alt, const char* sidc_or_cot_type, const char* name);
+OTE_API int ote_render_symbol(const char* sidc, int size_px, uint8_t* rgba_out, int capacity);
+OTE_API int ote_add_range_rings(ote_engine* e, double lat, double lon, double spacing_m, int count, int radials, uint32_t argb);
+OTE_API int ote_add_bullseye(ote_engine* e, double lat, double lon, double radius_m, int rings, double bearing_step,
+                             ote_north_reference reference, ote_angle_unit unit, uint32_t argb);
+OTE_API int ote_add_range_bearing(ote_engine* e, double lat1, double lon1, double lat2, double lon2, ote_north_reference reference,
+                                  ote_angle_unit unit, ote_distance_unit distance_unit, uint32_t argb);
+OTE_API int ote_add_contours(ote_engine* e, double west, double south, double east, double north, double interval, int major_every,
+                             uint32_t argb);
+OTE_API int ote_add_contours_in_view(ote_engine* e, double interval, int major_every, uint32_t argb);
+OTE_API void ote_set_terrain_slope(ote_engine* e, int enabled, float opacity, double max_slope_degrees);
+OTE_API void ote_set_grid_type(ote_engine* e, ote_grid_type type);
+OTE_API void ote_view_region(const ote_engine* e, double* west, double* south, double* east, double* north);
+
 #ifdef __cplusplus
 }
 #endif

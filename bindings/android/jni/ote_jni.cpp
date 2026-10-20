@@ -101,6 +101,56 @@ JNIEXPORT jlong JNICALL OTE_FN(nativeImportTiles)(JNIEnv* env, jclass, jlong h, 
     return ote_import_tiles(E(h), layer, str(env, path).c_str());
 }
 
+JNIEXPORT jlong JNICALL OTE_FN(nativeAddSymbol)(JNIEnv* env, jclass, jlong h, jdouble lat, jdouble lon, jdouble alt, jstring code, jstring name) {
+    return static_cast<jlong>(ote_add_symbol(E(h), lat, lon, alt, str(env, code).c_str(), str(env, name).c_str()));
+}
+
+JNIEXPORT jint JNICALL OTE_FN(nativeAddRangeRings)(JNIEnv*, jclass, jlong h, jdouble lat, jdouble lon, jdouble spacing, jint count, jint radials,
+                                                   jint argb) {
+    return ote_add_range_rings(E(h), lat, lon, spacing, count, radials, static_cast<uint32_t>(argb));
+}
+
+JNIEXPORT jint JNICALL OTE_FN(nativeAddBullseye)(JNIEnv*, jclass, jlong h, jdouble lat, jdouble lon, jdouble radius, jint rings, jdouble step,
+                                                 jint reference, jint unit, jint argb) {
+    return ote_add_bullseye(E(h), lat, lon, radius, rings, step, static_cast<ote_north_reference>(reference), static_cast<ote_angle_unit>(unit),
+                            static_cast<uint32_t>(argb));
+}
+
+JNIEXPORT jint JNICALL OTE_FN(nativeAddRangeBearing)(JNIEnv*, jclass, jlong h, jdouble lat1, jdouble lon1, jdouble lat2, jdouble lon2,
+                                                     jint reference, jint unit, jint distanceUnit, jint argb) {
+    return ote_add_range_bearing(E(h), lat1, lon1, lat2, lon2, static_cast<ote_north_reference>(reference), static_cast<ote_angle_unit>(unit),
+                                 static_cast<ote_distance_unit>(distanceUnit), static_cast<uint32_t>(argb));
+}
+
+JNIEXPORT jint JNICALL OTE_FN(nativeAddContoursInView)(JNIEnv*, jclass, jlong h, jdouble interval, jint majorEvery, jint argb) {
+    return ote_add_contours_in_view(E(h), interval, majorEvery, static_cast<uint32_t>(argb));
+}
+
+JNIEXPORT void JNICALL OTE_FN(nativeSetTerrainSlope)(JNIEnv*, jclass, jlong h, jboolean enabled, jfloat opacity, jdouble maxSlope) {
+    ote_set_terrain_slope(E(h), enabled ? 1 : 0, opacity, maxSlope);
+}
+
+JNIEXPORT void JNICALL OTE_FN(nativeSetGridType)(JNIEnv*, jclass, jlong h, jint type) { ote_set_grid_type(E(h), static_cast<ote_grid_type>(type)); }
+
+JNIEXPORT jstring JNICALL OTE_FN(nativeFormatCoordinate)(JNIEnv* env, jclass, jdouble lat, jdouble lon, jint format, jint precision) {
+    char buf[128];
+    ote_format_coordinate(lat, lon, static_cast<ote_coordinate_format>(format), precision, buf, sizeof(buf));
+    return env->NewStringUTF(buf);
+}
+
+JNIEXPORT jdoubleArray JNICALL OTE_FN(nativeParseCoordinate)(JNIEnv* env, jclass, jstring text) {
+    double lat = 0, lon = 0;
+    if (!ote_parse_coordinate(str(env, text).c_str(), &lat, &lon)) return nullptr;
+    jdouble values[2] = {lat, lon};
+    jdoubleArray out = env->NewDoubleArray(2);
+    env->SetDoubleArrayRegion(out, 0, 2, values);
+    return out;
+}
+
+JNIEXPORT jdouble JNICALL OTE_FN(nativeMagneticDeclination)(JNIEnv*, jclass, jdouble lat, jdouble lon, jdouble alt, jdouble year) {
+    return ote_magnetic_declination(lat, lon, alt, year);
+}
+
 JNIEXPORT void JNICALL OTE_FN(nativeClearLayers)(JNIEnv*, jclass, jlong h) { ote_clear_layers(E(h)); }
 
 JNIEXPORT jint JNICALL OTE_FN(nativeAddLayer)(JNIEnv* env, jclass, jlong h, jint type, jstring name, jstring url, jint minZ,

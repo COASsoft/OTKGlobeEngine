@@ -203,6 +203,77 @@ public class OpenTakView extends GLSurfaceView implements GLSurfaceView.Renderer
         });
     }
 
+    public void addSymbol(final double lat, final double lon, final String sidcOrCotType, final String name) {
+        run(new Runnable() {
+            @Override
+            public void run() {
+                OpenTakEngine.nativeAddSymbol(engine, lat, lon, 0, sidcOrCotType, name);
+                requestRender();
+            }
+        });
+    }
+
+    public void addBullseye(final double lat, final double lon, final double radiusM, final int rings, final double bearingStep, final int northReference,
+                            final int angleUnit) {
+        run(new Runnable() {
+            @Override
+            public void run() {
+                OpenTakEngine.nativeAddBullseye(engine, lat, lon, radiusM, rings, bearingStep, northReference, angleUnit, 0);
+                requestRender();
+            }
+        });
+    }
+
+    public void addRangeRings(final double lat, final double lon, final double spacingM, final int count, final int radials) {
+        run(new Runnable() {
+            @Override
+            public void run() {
+                OpenTakEngine.nativeAddRangeRings(engine, lat, lon, spacingM, count, radials, 0);
+                requestRender();
+            }
+        });
+    }
+
+    public void addRangeBearing(final double lat1, final double lon1, final double lat2, final double lon2, final int northReference, final int angleUnit) {
+        run(new Runnable() {
+            @Override
+            public void run() {
+                OpenTakEngine.nativeAddRangeBearing(engine, lat1, lon1, lat2, lon2, northReference, angleUnit, 0, 0);
+                requestRender();
+            }
+        });
+    }
+
+    public void addContoursInView(final double interval, final int majorEvery) {
+        run(new Runnable() {
+            @Override
+            public void run() {
+                OpenTakEngine.nativeAddContoursInView(engine, interval, majorEvery, 0);
+                requestRender();
+            }
+        });
+    }
+
+    public void setTerrainSlope(final boolean enabled) {
+        run(new Runnable() {
+            @Override
+            public void run() {
+                OpenTakEngine.nativeSetTerrainSlope(engine, enabled, 0.6f, 45.0);
+                requestRender();
+            }
+        });
+    }
+
+    public void setGridType(final int type) {
+        run(new Runnable() {
+            @Override
+            public void run() {
+                OpenTakEngine.nativeSetGridType(engine, type);
+                requestRender();
+            }
+        });
+    }
+
     public void importTiles(final int layer, final String path, final Result result) {
         run(new Runnable() {
             @Override

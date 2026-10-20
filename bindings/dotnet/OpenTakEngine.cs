@@ -101,6 +101,19 @@ namespace OpenTakEngine
         [DllImport(Lib)] public static extern void ote_cancel_download(IntPtr e, int id);
         [DllImport(Lib)] public static extern long ote_export_tiles(IntPtr e, int layer, double west, double south, double east, double north, int minZoom, int maxZoom, [MarshalAs(UnmanagedType.LPUTF8Str)] string path);
         [DllImport(Lib)] public static extern long ote_import_tiles(IntPtr e, int layer, [MarshalAs(UnmanagedType.LPUTF8Str)] string path);
+        [DllImport(Lib)] public static extern double ote_geodesic_inverse(double lat1, double lon1, double lat2, double lon2, out double initialBearing, out double finalBearing);
+        [DllImport(Lib)] public static extern void ote_geodesic_direct(double lat, double lon, double bearing, double distance, out double outLat, out double outLon);
+        [DllImport(Lib)] public static extern double ote_magnetic_declination(double lat, double lon, double altitudeM, double decimalYear);
+        [DllImport(Lib)] public static extern double ote_grid_convergence(double lat, double lon);
+        [DllImport(Lib)] public static extern int ote_format_coordinate(double lat, double lon, int format, int precision, byte[] output, int capacity);
+        [DllImport(Lib)] public static extern int ote_parse_coordinate([MarshalAs(UnmanagedType.LPUTF8Str)] string text, out double lat, out double lon);
+        [DllImport(Lib)] public static extern ulong ote_add_symbol(IntPtr e, double lat, double lon, double alt, [MarshalAs(UnmanagedType.LPUTF8Str)] string sidcOrCotType, [MarshalAs(UnmanagedType.LPUTF8Str)] string name);
+        [DllImport(Lib)] public static extern int ote_add_range_rings(IntPtr e, double lat, double lon, double spacingM, int count, int radials, uint argb);
+        [DllImport(Lib)] public static extern int ote_add_bullseye(IntPtr e, double lat, double lon, double radiusM, int rings, double bearingStep, int reference, int unit, uint argb);
+        [DllImport(Lib)] public static extern int ote_add_range_bearing(IntPtr e, double lat1, double lon1, double lat2, double lon2, int reference, int unit, int distanceUnit, uint argb);
+        [DllImport(Lib)] public static extern int ote_add_contours_in_view(IntPtr e, double interval, int majorEvery, uint argb);
+        [DllImport(Lib)] public static extern void ote_set_terrain_slope(IntPtr e, int enabled, float opacity, double maxSlopeDegrees);
+        [DllImport(Lib)] public static extern void ote_set_grid_type(IntPtr e, int type);
         [DllImport(Lib)] public static extern void ote_set_memory_budget(IntPtr e, int megabytes);
         [DllImport(Lib)] public static extern void ote_clear_layers(IntPtr e);
         [DllImport(Lib)] public static extern int ote_add_layer(IntPtr e, Source type, [MarshalAs(UnmanagedType.LPUTF8Str)] string name, [MarshalAs(UnmanagedType.LPUTF8Str)] string urlOrPath, int minZoom, int maxZoom, float opacity);
@@ -205,6 +218,28 @@ namespace OpenTakEngine
         public long ExportTiles(int layer, double west, double south, double east, double north, int minZoom, int maxZoom, string path) =>
             Native.ote_export_tiles(Handle, layer, west, south, east, north, minZoom, maxZoom, path);
         public long ImportTiles(int layer, string path) => Native.ote_import_tiles(Handle, layer, path);
+        public ulong AddSymbol(double lat, double lon, string sidcOrCotType, string name = "", double alt = 0) =>
+            Native.ote_add_symbol(Handle, lat, lon, alt, sidcOrCotType, name);
+        public int AddRangeRings(double lat, double lon, double spacingM, int count, int radials = 0, uint argb = 0) =>
+            Native.ote_add_range_rings(Handle, lat, lon, spacingM, count, radials, argb);
+        public int AddBullseye(double lat, double lon, double radiusM, int rings = 3, double bearingStep = 30, int reference = 1, int unit = 0, uint argb = 0) =>
+            Native.ote_add_bullseye(Handle, lat, lon, radiusM, rings, bearingStep, reference, unit, argb);
+        public int AddRangeBearing(double lat1, double lon1, double lat2, double lon2, int reference = 1, int unit = 0, int distanceUnit = 0, uint argb = 0) =>
+            Native.ote_add_range_bearing(Handle, lat1, lon1, lat2, lon2, reference, unit, distanceUnit, argb);
+        public int AddContoursInView(double interval, int majorEvery = 5, uint argb = 0) => Native.ote_add_contours_in_view(Handle, interval, majorEvery, argb);
+        public void SetTerrainSlope(bool enabled, float opacity = 0.6f, double maxSlopeDegrees = 45) => Native.ote_set_terrain_slope(Handle, enabled ? 1 : 0, opacity, maxSlopeDegrees);
+        public int GridType { set => Native.ote_set_grid_type(Handle, value); }
+
+        public static string FormatCoordinate(double lat, double lon, int format, int precision = -1)
+        {
+            var buffer = new byte[128];
+            int n = Native.ote_format_coordinate(lat, lon, format, precision, buffer, buffer.Length);
+            return System.Text.Encoding.UTF8.GetString(buffer, 0, Math.Min(n, buffer.Length - 1));
+        }
+
+        public static bool ParseCoordinate(string text, out double lat, out double lon) => Native.ote_parse_coordinate(text, out lat, out lon) != 0;
+        public static double MagneticDeclination(double lat, double lon, double altitudeM = 0, double decimalYear = 0) =>
+            Native.ote_magnetic_declination(lat, lon, altitudeM, decimalYear);
         public bool Terrain { set => Native.ote_set_terrain(Handle, value ? 1 : 0); }
         public bool Grid { set => Native.ote_set_grid(Handle, value ? 1 : 0); }
 
