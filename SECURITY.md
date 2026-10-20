@@ -8,7 +8,7 @@ You will get a reply within three working days. Anything that puts user data, ac
 
 ## Supported versions
 
-OpenTAKEngine has no tagged releases yet. Fixes land on `main`; build from the latest commit.
+Only the latest release receives security fixes. Fixes land on `main` first and ship in the next release.
 
 ## How this repository is checked
 
