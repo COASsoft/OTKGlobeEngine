@@ -1,0 +1,49 @@
+<html><title>OpenTAKEngine downloads</title>
+
+<table border=0 cellpadding=0 cellspacing=0>
+<tr>
+<td valign=top>
+<b>About</b>
+<ul>
+  <li><a href=index.html>Home</a></li>
+  <li><a href=screenshots.html>Screenshots</a></li>
+</ul>
+<b>Code</b>
+<ul>
+  <li><a href=download.html>Download</a></li>
+  <li><a href=https://github.com/grangedevgroup-code/OpenTAKEngine>Source (GitHub)</a></li>
+  <li><a href=https://gitlab.com/grangedevgroup/OpenTAKEngine>Mirror (GitLab)</a></li>
+  <li><a href=https://github.com/grangedevgroup-code/OpenTAKEngine/blob/main/CHANGELOG.md>Changelog</a></li>
+</ul>
+</td>
+<td valign=top>
+
+<h2>Downloads</h2>
+
+<p>Each release has packages for every platform.  The desktop packages hold
+the shared library and its C header (<tt>ote.h</tt>), the viewer, the
+documentation and the license texts.  Use them from CMake with
+<tt>find_package(OpenTAKEngine)</tt> or with <tt>pkg-config opentakengine</tt>.
+<tt>SHA256SUMS.txt</tt> in each release has the checksums.</p>
+
+<ul>
+<li>Windows: the <tt>.zip</tt></li>
+<li>Debian and Ubuntu: <tt>apt install ./opentakengine_VERSION_amd64.deb</tt> (or <tt>arm64</tt>)</li>
+<li>Fedora, RHEL, SUSE: <tt>dnf install ./opentakengine-VERSION-1.x86_64.rpm</tt></li>
+<li>FreeBSD: <tt>pkg add ./opentakengine-VERSION-freebsd-x86_64.pkg</tt></li>
+<li>OpenBSD, NetBSD, other Linux, macOS: unpack the <tt>.tar.gz</tt> anywhere</li>
+<li>Android: the <tt>.aar</tt> library, or the viewer <tt>.apk</tt> to try it on a phone</li>
+<li>iOS, iPadOS and macOS apps: the <tt>.xcframework.zip</tt></li>
+<li>.NET: the <tt>.nupkg</tt>, which carries the native libraries for Windows, Linux and macOS</li>
+</ul>
+
+@RELEASES@
+
+<p>Older builds, release notes and the source code archives are on the
+<a href=https://github.com/grangedevgroup-code/OpenTAKEngine/releases>GitHub releases page</a>
+and mirrored on <a href=https://gitlab.com/grangedevgroup/OpenTAKEngine/-/releases>GitLab</a>.</p>
+
+</td>
+</tr>
+</table>
+</html>
