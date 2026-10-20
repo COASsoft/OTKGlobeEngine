@@ -79,7 +79,7 @@ Releases on GitHub carry ready-made packages:
 | Windows x64 | `opentakengine-<version>-windows-x86_64.zip` |
 | Linux x86_64 and arm64 | `.deb`, `.rpm` and `.tar.gz` |
 | macOS (Apple silicon and Intel) | `opentakengine-<version>-macos-universal.tar.gz` |
-| FreeBSD | `.pkg` (`pkg add ./opentakengine-<version>-freebsd-amd64.pkg`) and `.tar.gz` |
+| FreeBSD | `.pkg` (`pkg add ./opentakengine-<version>-freebsd-x86_64.pkg`) and `.tar.gz` |
 | OpenBSD, NetBSD | `.tar.gz` |
 | Android | `opentakengine-<version>.aar` and a viewer APK |
 | iOS, iPadOS, macOS apps | `OpenTAKEngine-<version>.xcframework.zip` |

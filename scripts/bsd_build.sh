@@ -68,7 +68,7 @@ EOF
     (cd "$build/stage" && find . -type f -o -type l | sed 's|^\.||' | sort) > "$build/plist"
     pkg create -M "$build/+MANIFEST" -r "$build/stage" -p "$build/plist" -o "$root/dist"
     for f in "$root"/dist/opentakengine-*.pkg; do
-        mv "$f" "$root/dist/opentakengine-$version-freebsd-$(uname -m).pkg"
+        mv "$f" "$root/dist/opentakengine-$version-freebsd-$(uname -m | sed s/amd64/x86_64/).pkg"
     done
 fi
 
