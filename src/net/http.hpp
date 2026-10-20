@@ -15,4 +15,12 @@ struct Response {
 Response get(const std::string& url, const std::string& userAgent);
 void setJavaVm(void* vm);
 
+std::string hostKey(const std::string& url);
+bool hostAvailable(const std::string& url);
+bool admit(const std::string& url);
+void report(const std::string& url, int status);
+std::uint64_t reachabilityEpoch();
+int hostsDown();
+void resetReachability();
+
 }
