@@ -9,6 +9,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 option(OTE_BUILD_VIEWER "Build the demo viewer" ON)
 option(OTE_WITH_GDAL "Build the optional GDAL raster, elevation and vector module" OFF)
+option(OTE_EMBED_BACKDROP "Embed a low-resolution world image shown wherever no imagery is available offline" ON)
 
 if(APPLE)
     enable_language(OBJC OBJCXX)

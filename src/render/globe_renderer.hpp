@@ -52,6 +52,7 @@ public:
     bool reachabilityChanged() const;
     void setOffline(bool offline);
     void retryUnavailable();
+    void setBackdrop(bool enabled) { backdropEnabled_ = enabled; }
     void setMemoryBudget(int megabytes);
     void fitPools();
     size_t imageryLimit() const;
@@ -119,6 +120,7 @@ private:
         std::vector<TileId> missing;
         int imageryZ = -1;
         int sourceZ = -1;
+        bool degraded = false;
     };
     struct ImageryTexture {
         sg_image image{};
@@ -170,6 +172,7 @@ private:
         int featureFirst = 0;
         int featureCount = 0;
         bool complete = false;
+        bool degraded = false;
         int hollow = 0;
         int imageryZ = -1;
         int sourceZ = 99;
@@ -291,6 +294,11 @@ private:
     sg_buffer featureBuffer_{};
     sg_image fallbackImage_{};
     sg_view fallbackView_{};
+    sg_image backdropImage_{};
+    sg_view backdropView_{};
+    bool backdropTried_ = false;
+    bool backdropEnabled_ = true;
+    sg_view backdrop();
     sg_sampler sampler_{};
     sg_sampler imagerySampler_{};
     sg_shader globeShader_{};

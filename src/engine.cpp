@@ -341,6 +341,12 @@ void Engine::setCacheLimit(int megabytes) { impl_->globe.cache().setLimit(static
 
 std::int64_t Engine::cacheBytes() const { return impl_->globe.cache().bytes(); }
 
+void Engine::setOfflineBackdrop(bool enabled) {
+    impl_->globe.setBackdrop(enabled);
+    impl_->globe.retryUnavailable();
+    impl_->dirty = true;
+}
+
 void Engine::networkChanged() {
     net::resetReachability();
     impl_->globe.retryUnavailable();

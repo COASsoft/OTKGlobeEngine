@@ -1,6 +1,8 @@
 #include "tiles3d/tileset.hpp"
 
 #include "net/http.hpp"
+#include "raster/tile_cache.hpp"
+#include "raster/tile_provider.hpp"
 
 #include <json.hpp>
 #include <miniz.h>
@@ -61,10 +63,23 @@ public:
 
 class HttpSource : public TileSource {
 public:
+    HttpSource(TileCache* cache, const std::atomic<bool>* offline) : cache_(cache), offline_(offline) {}
     std::vector<std::uint8_t> read(const std::string& path) override {
+        std::string key = "3dtiles|" + stripCredentials(path);
+        bool useCache = cache_ && cache_->isOpen();
+        std::vector<std::uint8_t> data;
+        std::int64_t expires = 0;
+        if (useCache && cache_->get(key, -2, 0, 0, data, expires)) return data;
+        if (offline_ && offline_->load()) return {};
         net::Response r = net::get(path, "OpenTAKEngine/0.1");
-        return r.status == 200 ? std::move(r.body) : std::vector<std::uint8_t>();
+        if (r.status != 200 || r.body.empty()) return {};
+        if (useCache) cache_->put(key, -2, 0, 0, r.body, std::int64_t(1) << 50);
+        return std::move(r.body);
     }
+
+private:
+    TileCache* cache_;
+    const std::atomic<bool>* offline_;
 };
 
 class ZipSource : public TileSource {
@@ -123,14 +138,14 @@ std::string lowerExt(const std::string& path) {
 
 }
 
-Tileset3D::Tileset3D(const std::string& uri, double maxSse) : maxSse_(maxSse) {
+Tileset3D::Tileset3D(const std::string& uri, double maxSse, TileCache* cache, const std::atomic<bool>* offline) : maxSse_(maxSse) {
     std::string entry;
     std::string base;
     std::string norm = uri;
     std::replace(norm.begin(), norm.end(), '\\', '/');
     std::string ext = lowerExt(norm);
     if (norm.find("://") != std::string::npos) {
-        source_ = std::make_shared<HttpSource>();
+        source_ = std::make_shared<HttpSource>(cache, offline);
         entry = norm;
         base = TileSource::dir(norm);
     } else if (ext == ".3tz" || ext == ".zip") {

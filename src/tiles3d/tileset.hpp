@@ -17,10 +17,11 @@
 namespace ote {
 
 class TileSource;
+class TileCache;
 
 class Tileset3D {
 public:
-    Tileset3D(const std::string& uri, double maxSse);
+    Tileset3D(const std::string& uri, double maxSse, TileCache* cache = nullptr, const std::atomic<bool>* offline = nullptr);
     ~Tileset3D();
 
     bool valid() const { return root_ != nullptr; }

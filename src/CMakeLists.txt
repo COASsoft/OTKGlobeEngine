@@ -93,6 +93,10 @@ ote_add_shaders(opentakengine
     render/shaders/points.glsl)
 ote_embed(opentakengine font_bold ${PROJECT_SOURCE_DIR}/assets/fonts/NotoSans-Bold-subset.ttf)
 ote_embed(opentakengine geoid_egm96 ${PROJECT_SOURCE_DIR}/assets/geoid/egm96-1deg.bin)
+if(OTE_EMBED_BACKDROP)
+    ote_embed(opentakengine world_backdrop ${PROJECT_SOURCE_DIR}/assets/world/blue-marble-2048.jpg)
+    target_compile_definitions(opentakengine PRIVATE OTE_EMBED_BACKDROP)
+endif()
 
 add_library(opentakengine_c SHARED capi_shared.cpp)
 target_link_libraries(opentakengine_c PRIVATE opentakengine)

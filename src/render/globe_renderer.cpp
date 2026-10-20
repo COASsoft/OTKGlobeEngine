@@ -30,6 +30,8 @@
 #include "feature/grid.hpp"
 #include "net/http.hpp"
 
+#include <stb_image.h>
+
 #include "globe.glsl.h"
 #include "mip.glsl.h"
 #include "vector.glsl.h"
@@ -43,6 +45,13 @@
 #include <cstring>
 #include <limits>
 #include <unordered_set>
+
+#if defined(OTE_EMBED_BACKDROP)
+namespace ote::embedded {
+extern const unsigned char world_backdrop[];
+extern const std::size_t world_backdrop_size;
+}
+#endif
 
 namespace ote {
 
@@ -313,6 +322,13 @@ void GlobeRenderer::shutdown() {
         sg_destroy_sampler(imagerySampler_);
         sg_destroy_view(fallbackView_);
         sg_destroy_image(fallbackImage_);
+        if (backdropImage_.id) {
+            sg_destroy_view(backdropView_);
+            sg_destroy_image(backdropImage_);
+            backdropImage_ = {};
+            backdropView_ = {};
+        }
+        backdropTried_ = false;
         sg_destroy_buffer(indexBuffer_);
         sg_destroy_buffer(skyBuffer_);
         sg_destroy_buffer(surfaceBuffer_);
@@ -417,7 +433,7 @@ void GlobeRenderer::poolPressure(const char* what) {
 }
 
 std::uint64_t GlobeRenderer::addTileset(const std::string& uri, double maxSse, Vec3* center) {
-    auto t = std::make_unique<Tileset3D>(uri, maxSse);
+    auto t = std::make_unique<Tileset3D>(uri, maxSse, cache_.isOpen() ? &cache_ : nullptr, &offline_);
     if (!t->valid()) return 0;
     if (center) *center = t->center();
     std::uint64_t id = nextTileset_++;
@@ -433,11 +449,35 @@ void GlobeRenderer::setOffline(bool offline) {
     if (reconnect) retryUnavailable();
 }
 
+sg_view GlobeRenderer::backdrop() {
+    if (backdropTried_ || !backdropEnabled_) return backdropView_;
+    backdropTried_ = true;
+#if defined(OTE_EMBED_BACKDROP)
+    int w = 0, h = 0, n = 0;
+    unsigned char* px = stbi_load_from_memory(embedded::world_backdrop, static_cast<int>(embedded::world_backdrop_size), &w, &h, &n, 4);
+    if (!px) return backdropView_;
+    sg_image_desc d{};
+    d.width = w;
+    d.height = h;
+    d.pixel_format = SG_PIXELFORMAT_RGBA8;
+    d.data.mip_levels[0] = {px, static_cast<size_t>(w) * h * 4};
+    backdropImage_ = sg_make_image(&d);
+    stbi_image_free(px);
+    sg_view_desc v{};
+    v.texture.image = backdropImage_;
+    backdropView_ = sg_make_view(&v);
+#endif
+    return backdropView_;
+}
+
 void GlobeRenderer::retryUnavailable() {
     failed_.clear();
     failCount_.clear();
     for (auto& [k, s] : surface_)
-        if (!s.complete) s.missing.clear();
+        if (!s.complete || s.degraded) {
+            s.complete = false;
+            s.missing.clear();
+        }
     elevation_.clearFailures();
     busy_ = true;
 }
@@ -1296,6 +1336,7 @@ bool GlobeRenderer::buildSurfaceJob(const QuadKey& k, double priority, SurfaceJo
     bool complete = true;
     double coverLat = 0;
     bool anyCover = false;
+    bool unavailable = false;
     for (int l = 0; l < static_cast<int>(matrices_.size()) && l < static_cast<int>(layers_.size()); ++l)
         if (!layers_[l].polarFill) {
             coverLat = std::max(coverLat, maxLatitude(matrices_[l].srid));
@@ -1341,9 +1382,11 @@ bool GlobeRenderer::buildSurfaceJob(const QuadKey& k, double priority, SurfaceJo
                     if (job) job->missing.push_back(id);
                 }
                 if (!tex) {
-                    if (job && !layers_[l].polarFill && !(l < static_cast<int>(vectorLayers_.size()) && vectorLayers_[l])) ++job->hollow;
+                    if (!missing) unavailable = true;
+                    else if (job && !layers_[l].polarFill && !(l < static_cast<int>(vectorLayers_.size()) && vectorLayers_[l])) ++job->hollow;
                     continue;
                 }
+                if (job && !missing && src.z < id.z) job->degraded = true;
                 tex->used = frame_;
                 if (!job) continue;
                 if (l == 0) {
@@ -1420,6 +1463,22 @@ bool GlobeRenderer::buildSurfaceJob(const QuadKey& k, double priority, SurfaceJo
             emit(e, nn);
             emit(w, nn);
             job->draws.push_back({o.view, o.opacity, first, 6});
+        }
+        if (unavailable && backdropEnabled_ && backdrop().id) {
+            int first = static_cast<int>(verts->size() / 4);
+            auto emit = [&](double lon, double lat) {
+                float px = static_cast<float>((lon - b.west) / span * 2.0 - 1.0);
+                float py = static_cast<float>((lat - b.south) / span * 2.0 - 1.0);
+                verts->insert(verts->end(), {px, py, static_cast<float>((lon + 180.0) / 360.0), static_cast<float>((90.0 - lat) / 180.0)});
+            };
+            emit(b.west, b.south);
+            emit(b.east, b.south);
+            emit(b.east, b.north);
+            emit(b.west, b.south);
+            emit(b.east, b.north);
+            emit(b.west, b.north);
+            job->draws.insert(job->draws.begin(), SurfaceDraw{backdropView_, 1.0f, first, 6});
+            job->degraded = true;
         }
         job->complete = complete;
     }
@@ -1993,6 +2052,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             s->missing = std::move(job.missing);
             s->imageryZ = job.imageryZ;
             s->sourceZ = job.sourceZ;
+            s->degraded = job.degraded;
             continue;
         }
         for (int level = 0; level < kMips; ++level) {
@@ -2021,6 +2081,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         s->missing = std::move(job.missing);
         s->imageryZ = job.imageryZ;
         s->sourceZ = job.sourceZ;
+        s->degraded = job.degraded;
     }
 
     if (!mipQueue.empty()) generateMips(mipQueue);

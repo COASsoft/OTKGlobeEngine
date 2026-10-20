@@ -159,6 +159,7 @@ public:
     std::int64_t cacheBytes() const;
     void setOffline(bool offline);
     void networkChanged();
+    void setOfflineBackdrop(bool enabled);
     void setMemoryBudget(int megabytes);
     void setElevation(const std::vector<ElevationLayer>& layers);
     void setTerrainEnabled(bool enabled);
