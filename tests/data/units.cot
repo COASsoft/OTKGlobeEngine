@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<events>
+  <event version="2.0" uid="unit-1" type="a-f-G-U-C-I" how="m-g" time="2026-10-20T00:00:00Z" start="2026-10-20T00:00:00Z" stale="2030-01-01T00:00:00Z">
+    <point lat="46.880" lon="-121.800" hae="9999999.0" ce="9999999.0" le="9999999.0"/>
+    <detail><contact callsign="A CO 1-2 IN"/></detail>
+  </event>
+  <event version="2.0" uid="unit-2" type="a-f-G-U-C-A" how="m-g" time="2026-10-20T00:00:00Z" start="2026-10-20T00:00:00Z" stale="2030-01-01T00:00:00Z">
+    <point lat="46.875" lon="-121.700" hae="9999999.0" ce="9999999.0" le="9999999.0"/>
+    <detail><contact callsign="B CO 3-8 AR"/></detail>
+  </event>
+  <event version="2.0" uid="unit-3" type="a-f-G-U-C-F" how="m-g" time="2026-10-20T00:00:00Z" start="2026-10-20T00:00:00Z" stale="2030-01-01T00:00:00Z">
+    <point lat="46.905" lon="-121.760" hae="9999999.0" ce="9999999.0" le="9999999.0"/>
+    <detail><contact callsign="2-17 FA"/></detail>
+  </event>
+  <event version="2.0" uid="unit-4" type="a-h-G-U-C-A" how="h-e" time="2026-10-20T00:00:00Z" start="2026-10-20T00:00:00Z" stale="2030-01-01T00:00:00Z">
+    <point lat="46.815" lon="-121.710" hae="9999999.0" ce="9999999.0" le="9999999.0"/>
+    <detail><contact callsign="OPFOR ARMOR"/></detail>
+  </event>
+  <event version="2.0" uid="unit-5" type="a-h-G-U-C-I" how="h-e" time="2026-10-20T00:00:00Z" start="2026-10-20T00:00:00Z" stale="2030-01-01T00:00:00Z">
+    <point lat="46.825" lon="-121.810" hae="9999999.0" ce="9999999.0" le="9999999.0"/>
+    <detail><contact callsign="OPFOR INF"/></detail>
+  </event>
+  <event version="2.0" uid="unit-6" type="a-u-G" how="h-e" time="2026-10-20T00:00:00Z" start="2026-10-20T00:00:00Z" stale="2030-01-01T00:00:00Z">
+    <point lat="46.845" lon="-121.680" hae="9999999.0" ce="9999999.0" le="9999999.0"/>
+    <detail><contact callsign="UNKNOWN"/></detail>
+  </event>
+  <event version="2.0" uid="unit-7" type="a-n-G-U-C-R" how="h-e" time="2026-10-20T00:00:00Z" start="2026-10-20T00:00:00Z" stale="2030-01-01T00:00:00Z">
+    <point lat="46.900" lon="-121.680" hae="9999999.0" ce="9999999.0" le="9999999.0"/>
+    <detail><contact callsign="NEUTRAL RECON"/></detail>
+  </event>
+  <event version="2.0" uid="unit-8" type="a-f-A-M-H" how="m-g" time="2026-10-20T00:00:00Z" start="2026-10-20T00:00:00Z" stale="2030-01-01T00:00:00Z">
+    <point lat="46.865" lon="-121.840" hae="2500.0" ce="9999999.0" le="9999999.0"/>
+    <detail><contact callsign="DUSTOFF 21"/></detail>
+  </event>
+</events>
