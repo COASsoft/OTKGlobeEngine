@@ -216,9 +216,9 @@ double gridConvergence(double lat, double lon) {
 
 double bearingFromTrue(double trueBearing, double lat, double lon, NorthReference reference) {
     switch (reference) {
-    case NorthReference::Magnetic:
+    case NorthReference::MagneticNorth:
         return wrap360(trueBearing - magneticDeclination(lat, lon));
-    case NorthReference::Grid:
+    case NorthReference::GridNorth:
         return wrap360(trueBearing - gridConvergence(lat, lon));
     default:
         return wrap360(trueBearing);
@@ -227,9 +227,9 @@ double bearingFromTrue(double trueBearing, double lat, double lon, NorthReferenc
 
 double bearingToTrue(double bearing, double lat, double lon, NorthReference reference) {
     switch (reference) {
-    case NorthReference::Magnetic:
+    case NorthReference::MagneticNorth:
         return wrap360(bearing + magneticDeclination(lat, lon));
-    case NorthReference::Grid:
+    case NorthReference::GridNorth:
         return wrap360(bearing + gridConvergence(lat, lon));
     default:
         return wrap360(bearing);
@@ -241,7 +241,7 @@ double degreesToMils(double degrees) { return degrees * 6400.0 / 360.0; }
 double milsToDegrees(double mils) { return mils * 360.0 / 6400.0; }
 
 std::string formatBearing(double bearing, AngleUnit unit, NorthReference reference) {
-    const char* suffix = reference == NorthReference::Magnetic ? "M" : reference == NorthReference::Grid ? "G" : "T";
+    const char* suffix = reference == NorthReference::MagneticNorth ? "M" : reference == NorthReference::GridNorth ? "G" : "T";
     char buf[48];
     if (unit == AngleUnit::Mils) {
         int mils = static_cast<int>(std::lround(degreesToMils(wrap360(bearing)))) % 6400;

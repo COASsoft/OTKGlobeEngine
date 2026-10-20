@@ -7,7 +7,7 @@
 
 namespace ote {
 
-enum class Affiliation { Pending, Unknown, AssumedFriend, Friend, Neutral, Suspect, Hostile, Joker, Faker, None };
+enum class Affiliation { Pending, Unknown, AssumedFriend, Friend, Neutral, Suspect, Hostile, Joker, Faker, NoAffiliation };
 enum class Dimension { Space, Air, Ground, SeaSurface, Subsurface, Sof, Other };
 
 struct SymbolCode {

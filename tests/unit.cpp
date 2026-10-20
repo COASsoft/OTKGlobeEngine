@@ -374,10 +374,10 @@ int main() {
         check(std::abs(gridConvergence(47.0, -123.0)) < 1e-9 && std::abs(gridConvergence(47.0, -122.9) - 0.1 * std::sin(47.0 * 3.14159265358979 / 180)) < 1e-4,
               "grid convergence");
         double t = 100.0;
-        bool refs = std::abs(bearingToTrue(bearingFromTrue(t, 47, -122.9, NorthReference::Magnetic), 47, -122.9, NorthReference::Magnetic) - t) < 1e-9 &&
-                    std::abs(bearingFromTrue(t, 47, -122.9, NorthReference::Magnetic) - (t - magneticDeclination(47, -122.9))) < 1e-9;
+        bool refs = std::abs(bearingToTrue(bearingFromTrue(t, 47, -122.9, NorthReference::MagneticNorth), 47, -122.9, NorthReference::MagneticNorth) - t) < 1e-9 &&
+                    std::abs(bearingFromTrue(t, 47, -122.9, NorthReference::MagneticNorth) - (t - magneticDeclination(47, -122.9))) < 1e-9;
         check(refs, "true/magnetic/grid bearing conversion");
-        check(formatBearing(90, AngleUnit::Mils, NorthReference::Magnetic) == "1600 mils M" && std::abs(degreesToMils(180) - 3200) < 1e-9 &&
+        check(formatBearing(90, AngleUnit::Mils, NorthReference::MagneticNorth) == "1600 mils M" && std::abs(degreesToMils(180) - 3200) < 1e-9 &&
                   formatBearing(5.4) == "005\xC2\xB0T",
               "bearing formatting in degrees and NATO mils");
         check(formatDistance(850) == "850 m" && formatDistance(12345) == "12.3 km" && formatDistance(1852, DistanceUnit::Nautical) == "1.00 NM",
@@ -436,7 +436,7 @@ int main() {
     {
         std::vector<Feature> be = bullseye({47.0, -122.9, 0}, 10000, 3, 30);
         std::vector<Feature> rr = rangeRings({47.0, -122.9, 0}, 1000, 4, 8);
-        std::vector<Feature> rb = rangeBearingLine({47.0, -122.9, 0}, {47.1, -122.8, 0}, NorthReference::True);
+        std::vector<Feature> rb = rangeBearingLine({47.0, -122.9, 0}, {47.1, -122.8, 0}, NorthReference::TrueNorth);
         GeodesicLine g = geodesicInverse(47.0, -122.9, 47.1, -122.8);
         const std::string* dist = rb.empty() ? nullptr : findAttribute(rb[0], "distance_m");
         Feature circle = geodesicCircle({10, 20, 0}, 5000);

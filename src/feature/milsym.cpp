@@ -321,7 +321,7 @@ Affiliation affiliationFrom(char c) {
     case 'K':
         return Affiliation::Faker;
     case 'O':
-        return Affiliation::None;
+        return Affiliation::NoAffiliation;
     default:
         return Affiliation::Unknown;
     }
@@ -489,7 +489,7 @@ Image renderSymbolImage(const std::string& sidc, int size) {
                      : hostile ? Rgba{1, 128 / 255.f, 128 / 255.f, 1}
                      : neutral ? Rgba{170 / 255.f, 1, 170 / 255.f, 1}
                                : Rgba{1, 1, 128 / 255.f, 1};
-    if (a == Affiliation::None) fillColor = Rgba{0.85f, 0.85f, 0.85f, 1};
+    if (a == Affiliation::NoAffiliation) fillColor = Rgba{0.85f, 0.85f, 0.85f, 1};
 
     const std::string& fn = code.function;
     char kind = fn.empty() ? '-' : fn[0];

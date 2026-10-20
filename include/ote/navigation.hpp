@@ -36,7 +36,7 @@ double currentDecimalYear();
 double magneticDeclination(double lat, double lon, double altitudeMeters = 0, double decimalYear = 0);
 double gridConvergence(double lat, double lon);
 
-enum class NorthReference { True, Magnetic, Grid };
+enum class NorthReference { TrueNorth, MagneticNorth, GridNorth };
 enum class AngleUnit { Degrees, Mils };
 enum class DistanceUnit { Metric, Imperial, Nautical };
 
@@ -44,7 +44,7 @@ double bearingFromTrue(double trueBearing, double lat, double lon, NorthReferenc
 double bearingToTrue(double bearing, double lat, double lon, NorthReference reference);
 double degreesToMils(double degrees);
 double milsToDegrees(double mils);
-std::string formatBearing(double bearing, AngleUnit unit = AngleUnit::Degrees, NorthReference reference = NorthReference::True);
+std::string formatBearing(double bearing, AngleUnit unit = AngleUnit::Degrees, NorthReference reference = NorthReference::TrueNorth);
 std::string formatDistance(double meters, DistanceUnit unit = DistanceUnit::Metric);
 
 enum class CoordinateFormat { Decimal, DegreesMinutes, DegreesMinutesSeconds, Mgrs, Utm, Gars };
@@ -70,12 +70,12 @@ Feature sector(const Coord& center, double radiusMeters, double fromBearing, dou
 std::vector<Feature> rangeRings(const Coord& center, double spacingMeters, int count, int radials = 0, const ShapeStyle& style = {},
                                 DistanceUnit unit = DistanceUnit::Metric);
 std::vector<Feature> bullseye(const Coord& center, double radiusMeters, int rings = 3, double bearingStep = 30.0,
-                              NorthReference reference = NorthReference::Magnetic, AngleUnit unit = AngleUnit::Degrees,
+                              NorthReference reference = NorthReference::MagneticNorth, AngleUnit unit = AngleUnit::Degrees,
                               const ShapeStyle& style = {}, DistanceUnit distanceUnit = DistanceUnit::Metric);
 std::vector<Feature> contourLines(const std::vector<float>& heights, int cols, int rows, double west, double south, double east,
                                   double north, double interval, int majorEvery = 5, const ShapeStyle& style = {},
                                   DistanceUnit unit = DistanceUnit::Metric);
-std::vector<Feature> rangeBearingLine(const Coord& from, const Coord& to, NorthReference reference = NorthReference::Magnetic,
+std::vector<Feature> rangeBearingLine(const Coord& from, const Coord& to, NorthReference reference = NorthReference::MagneticNorth,
                                       AngleUnit unit = AngleUnit::Degrees, DistanceUnit distanceUnit = DistanceUnit::Metric,
                                       const ShapeStyle& style = {});
 
