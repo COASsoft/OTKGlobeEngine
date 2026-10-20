@@ -228,15 +228,15 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           pattern: pkg-*
-          path: assets
+          path: release-assets
           merge-multiple: true
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.version.outputs.version }}
         run: |
-          cd assets
+          cd release-assets
           sha256sum * > SHA256SUMS.txt
           cd ..
           awk -v v="## $VERSION" '$0 == v {on = 1; next} /^## / {on = 0} on' CHANGELOG.md > notes.md
-          gh release create "$GITHUB_REF_NAME" assets/* --title "OpenTAKEngine $VERSION" --notes-file notes.md
+          gh release create "$GITHUB_REF_NAME" release-assets/* --title "OpenTAKEngine $VERSION" --notes-file notes.md
