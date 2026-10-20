@@ -42,6 +42,11 @@ void parseSource(const pugi::xml_node& n, std::vector<ImageryLayer>& out) {
     l.minZoom = childInt(n, "minZoom", 0);
     l.maxZoom = childInt(n, "maxZoom", 19);
     l.url = child(n, "url");
+    std::string update = child(n, "tileUpdate");
+    if (!update.empty() && std::all_of(update.begin(), update.end(), [](unsigned char c) { return std::isdigit(c) != 0; })) {
+        long long ms = std::atoll(update.c_str());
+        l.expirySeconds = ms == 0 ? -1 : static_cast<int>(std::clamp(ms / 1000, 1LL, 3650LL * 24 * 3600));
+    }
     if (kind == "customMapSource") {
         l.type = SourceType::Url;
         l.tms = childBool(n, "invertYCoordinate");
