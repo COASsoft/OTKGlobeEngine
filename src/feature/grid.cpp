@@ -108,4 +108,36 @@ void buildGrid(const GeoRect& tile, double texelDeg, double dpi, double spacing,
     }
 }
 
+double graticuleStep(double minDeg, bool gars) {
+    static const double kLatLon[] = {1.0 / 3600, 2.0 / 3600, 5.0 / 3600, 10.0 / 3600, 30.0 / 3600, 1.0 / 60, 2.0 / 60, 5.0 / 60, 10.0 / 60,
+                                     15.0 / 60, 30.0 / 60, 1, 2, 5, 10, 15, 30};
+    static const double kGars[] = {5.0 / 60, 15.0 / 60, 30.0 / 60};
+    if (gars) {
+        for (double s : kGars)
+            if (s >= minDeg) return s;
+        return 0.0;
+    }
+    for (double s : kLatLon)
+        if (s >= minDeg) return s;
+    return 30.0;
+}
+
+void buildGraticule(const GeoRect& tile, double texelDeg, double dpi, double stepDeg, bool gars, std::vector<float>& verts) {
+    double span = tile.north - tile.south;
+    double coslat = std::max(std::cos((tile.south + tile.north) * 0.5 * kD2R), 0.05);
+    Emitter major{tile, span, coslat, 1.5 * dpi * texelDeg * 0.5, {1.0f, 0.85f, 0.2f, 0.9f}, verts};
+    Emitter minor{tile, span, coslat, 1.0 * dpi * texelDeg * 0.5, {1.0f, 1.0f, 1.0f, 0.7f}, verts};
+    double big = gars ? 0.5 : (stepDeg < 1.0 ? 1.0 : stepDeg * 5.0);
+    if (gars && stepDeg <= 0) stepDeg = 0.5;
+    if (stepDeg <= 0) return;
+    if (span / stepDeg > 400) return;
+    auto isMajor = [&](double v) { return std::abs(v / big - std::round(v / big)) < 1e-6; };
+    double lon0 = std::ceil((tile.west + 180.0) / stepDeg - 1e-9) * stepDeg - 180.0;
+    for (double lon = lon0; lon <= tile.east + 1e-12; lon += stepDeg)
+        (isMajor(lon + 180.0) ? major : minor).segment(lon, tile.south, lon, tile.north);
+    double lat0 = std::ceil((tile.south + 90.0) / stepDeg - 1e-9) * stepDeg - 90.0;
+    for (double lat = lat0; lat <= tile.north + 1e-12; lat += stepDeg)
+        (isMajor(lat + 90.0) ? major : minor).segment(tile.west, lat, tile.east, lat);
+}
+
 }

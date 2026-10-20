@@ -489,6 +489,62 @@ void Engine::setGridEnabled(bool enabled) {
     impl_->dirty = true;
 }
 
+void Engine::setGridType(GridType type) {
+    impl_->globe.setGridType(static_cast<int>(type));
+    impl_->dirty = true;
+}
+
+void Engine::setTerrainSlope(bool enabled, float opacity, double maxSlopeDegrees) {
+    impl_->globe.setSlope(enabled, opacity, maxSlopeDegrees);
+    impl_->dirty = true;
+}
+
+Region Engine::viewRegion() const {
+    const Camera& c = impl_->camera;
+    double south = 90, north = -90, west = 180, east = -180;
+    bool any = false;
+    for (int j = 0; j <= 8; ++j)
+        for (int i = 0; i <= 8; ++i) {
+            double lat, lon;
+            if (!pick(c.width * i / 8.0, c.height * j / 8.0, lat, lon)) continue;
+            any = true;
+            south = std::min(south, lat);
+            north = std::max(north, lat);
+            west = std::min(west, lon);
+            east = std::max(east, lon);
+        }
+    if (!any) return {-180, -90, 180, 90};
+    if (east - west > 180.0) return {-180, south, 180, north};
+    return {west, south, east, north};
+}
+
+double Engine::terrainHeightMsl(double lat, double lon) const {
+    double h = impl_->globe.terrainHeight(lat, lon);
+    return std::isnan(h) ? h : h - geoidOffset(lat, lon);
+}
+
+std::vector<std::uint64_t> Engine::addContours(const Region& region, double interval, int majorEvery, int resolution, std::uint32_t color,
+                                               DistanceUnit unit) {
+    resolution = std::clamp(resolution, 16, 1024);
+    double w = region.west, e = region.east, s = std::max(region.south, -90.0), n = std::min(region.north, 90.0);
+    if (!(e > w) || !(n > s)) return {};
+    double aspect = (e - w) * std::cos(0.5 * (s + n) * 3.14159265358979323846 / 180.0) / (n - s);
+    int cols = aspect >= 1 ? resolution : std::max(16, static_cast<int>(resolution * aspect));
+    int rows = aspect >= 1 ? std::max(16, static_cast<int>(resolution / aspect)) : resolution;
+    std::vector<float> heights(static_cast<size_t>(cols) * rows);
+    for (int j = 0; j < rows; ++j)
+        for (int i = 0; i < cols; ++i)
+            heights[static_cast<size_t>(j) * cols + i] =
+                static_cast<float>(terrainHeightMsl(s + (n - s) * j / (rows - 1), w + (e - w) * i / (cols - 1)));
+    ShapeStyle style;
+    style.stroke = color;
+    style.width = 1.5f;
+    style.label = color | 0xFF000000u;
+    std::vector<std::uint64_t> ids;
+    for (Feature& f : contourLines(heights, cols, rows, w, s, e, n, interval, majorEvery, style, unit)) ids.push_back(addFeature(f));
+    return ids;
+}
+
 std::uint64_t Engine::addImageOverlay(const ImageOverlay& o) {
     impl_->dirty = true;
     return impl_->globe.addOverlay({o.west, o.south, o.east, o.north}, o.width, o.height, o.rgba, o.opacity);

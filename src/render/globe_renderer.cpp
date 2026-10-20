@@ -550,6 +550,15 @@ void GlobeRenderer::setGrid(bool enabled) {
     markDirty({-180, -90, 180, 90});
 }
 
+void GlobeRenderer::setGridType(int type) {
+    if (gridType_ == type) return;
+    gridType_ = type;
+    gridSpacing_ = -1;
+    if (grid_) markDirty({-180, -90, 180, 90});
+}
+
+double GlobeRenderer::terrainHeight(double lat, double lon) const { return elevation_.sample(lat, lon); }
+
 std::uint64_t GlobeRenderer::addOverlay(const GeoRect& rect, int width, int height, const std::vector<std::uint8_t>& rgba,
                                         float opacity) {
     if (width <= 0 || height <= 0 || rgba.size() < static_cast<size_t>(width) * height * 4) return 0;
@@ -1663,6 +1672,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     if (grid_) {
         double s = cam.gsd * 70.0 * dpiScale_;
         double spacing = s <= 1000.0 ? 1000.0 : s <= 10000.0 ? 10000.0 : s <= 100000.0 ? 100000.0 : 0.0;
+        if (gridType_ != 0) spacing = graticuleStep(s / 111320.0, gridType_ == 2);
         if (spacing != gridSpacing_) {
             gridSpacing_ = spacing;
             markDirty({-180, -90, 180, 90});
@@ -1934,7 +1944,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             Bounds b = jb;
             size_t before = vectorStart;
             features_.buildSurface({b.west, b.south, b.east, b.north}, texelDeg, dpiScale_, fverts);
-            if (grid_) buildGrid({b.west, b.south, b.east, b.north}, texelDeg, dpiScale_, gridSpacing_, fverts);
+            if (grid_ && gridType_ == 0) buildGrid({b.west, b.south, b.east, b.north}, texelDeg, dpiScale_, gridSpacing_, fverts);
+            if (grid_ && gridType_ != 0) buildGraticule({b.west, b.south, b.east, b.north}, texelDeg, dpiScale_, gridSpacing_, gridType_ == 2, fverts);
             job.featureFirst = static_cast<int>(before / 6);
             job.featureCount = static_cast<int>((fverts.size() - before) / 6);
         }
@@ -2133,6 +2144,9 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     gfs.heat[0] = static_cast<float>(heatMin_);
     gfs.heat[1] = static_cast<float>(1.0 / std::max(heatMax_ - heatMin_, 1.0));
     gfs.heat[2] = heatmap_ ? heatOpacity_ : 0.0f;
+    gfs.slope[0] = slope_ && terrainEnabled_ ? slopeOpacity_ : 0.0f;
+    gfs.slope[1] = static_cast<float>(1.0 / std::max(exaggeration_, 0.01));
+    gfs.slope[2] = static_cast<float>(slopeMax_);
     sg_apply_uniforms(UB_globe_fs_params, SG_RANGE(gfs));
     int maxLevel = 0;
     int incomplete = 0;

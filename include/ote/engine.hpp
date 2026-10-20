@@ -9,6 +9,7 @@
 
 #include "ote/features.hpp"
 #include "ote/mgrs.hpp"
+#include "ote/navigation.hpp"
 
 struct sg_swapchain;
 struct sg_attachments;
@@ -44,6 +45,8 @@ struct ImageryLayer {
     std::string wmsExtra;
     std::string userAgent;
 };
+
+enum class GridType { Mgrs, LatLon, Gars };
 
 enum class ElevationType { Terrarium, Directory, Gdal, QuantizedMesh };
 
@@ -211,6 +214,12 @@ public:
     bool tilesetCenter(std::uint64_t id, double& lat, double& lon, double& alt) const;
 
     void setGridEnabled(bool enabled);
+    void setGridType(GridType type);
+    void setTerrainSlope(bool enabled, float opacity = 0.6f, double maxSlopeDegrees = 45.0);
+    Region viewRegion() const;
+    double terrainHeightMsl(double lat, double lon) const;
+    std::vector<std::uint64_t> addContours(const Region& region, double interval, int majorEvery = 5, int resolution = 256,
+                                           std::uint32_t color = 0xFFB0703A, DistanceUnit unit = DistanceUnit::Metric);
     std::uint64_t addImageOverlay(const ImageOverlay& overlay);
     bool removeImageOverlay(std::uint64_t id);
     LineOfSight lineOfSight(const Coord& from, double fromHeight, const Coord& to, double toHeight) const;

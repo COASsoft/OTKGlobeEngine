@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstring>
 #include <ctime>
+#include <unordered_map>
 
 namespace ote {
 
@@ -630,6 +631,130 @@ std::vector<Feature> rangeBearingLine(const Coord& from, const Coord& to, NorthR
     setAttribute(line, "bearing", std::to_string(bearing));
     out.push_back(line);
     if (style.labels) out.push_back(labelPoint(geodesicDirect(from, g.initialBearing, g.distance / 2), line.name, style));
+    return out;
+}
+
+std::vector<Feature> contourLines(const std::vector<float>& h, int cols, int rows, double west, double south, double east, double north,
+                                  double interval, int majorEvery, const ShapeStyle& style, DistanceUnit unit) {
+    std::vector<Feature> out;
+    if (cols < 2 || rows < 2 || h.size() < static_cast<size_t>(cols) * rows || interval <= 0) return out;
+    float lo = 1e30f, hi = -1e30f;
+    for (float v : h)
+        if (std::isfinite(v)) {
+            lo = std::min(lo, v);
+            hi = std::max(hi, v);
+        }
+    if (lo > hi) return out;
+    double scale = unit == DistanceUnit::Metric ? 1.0 : 0.3048;
+    double step = interval * scale;
+    long first = static_cast<long>(std::ceil(lo / step)), last = static_cast<long>(std::floor(hi / step));
+    if (last - first > 2000) return out;
+    auto at = [&](int i, int j) { return h[static_cast<size_t>(j) * cols + i]; };
+    auto lonOf = [&](double i) { return west + (east - west) * i / (cols - 1); };
+    auto latOf = [&](double j) { return south + (north - south) * j / (rows - 1); };
+    for (long k = first; k <= last; ++k) {
+        double level = k * step;
+        bool major = majorEvery > 0 && k % majorEvery == 0;
+        struct Seg {
+            long long a, b;
+            Coord pa, pb;
+        };
+        std::vector<Seg> segs;
+        auto edgeKey = [&](int i, int j, int dir) { return (static_cast<long long>(j) * cols + i) * 2 + dir; };
+        auto cross = [&](int i0, int j0, int i1, int j1) {
+            double v0 = at(i0, j0), v1 = at(i1, j1);
+            double t = (level - v0) / (v1 - v0);
+            return Coord{latOf(j0 + (j1 - j0) * t), lonOf(i0 + (i1 - i0) * t), level};
+        };
+        for (int j = 0; j + 1 < rows; ++j)
+            for (int i = 0; i + 1 < cols; ++i) {
+                float v00 = at(i, j), v10 = at(i + 1, j), v01 = at(i, j + 1), v11 = at(i + 1, j + 1);
+                if (!std::isfinite(v00) || !std::isfinite(v10) || !std::isfinite(v01) || !std::isfinite(v11)) continue;
+                int c = (v00 > level ? 1 : 0) | (v10 > level ? 2 : 0) | (v11 > level ? 4 : 0) | (v01 > level ? 8 : 0);
+                if (c == 0 || c == 15) continue;
+                long long eb = edgeKey(i, j, 0), et = edgeKey(i, j + 1, 0), el = edgeKey(i, j, 1), er = edgeKey(i + 1, j, 1);
+                auto pB = [&] { return cross(i, j, i + 1, j); };
+                auto pT = [&] { return cross(i, j + 1, i + 1, j + 1); };
+                auto pL = [&] { return cross(i, j, i, j + 1); };
+                auto pR = [&] { return cross(i + 1, j, i + 1, j + 1); };
+                auto add = [&](long long a, Coord ca, long long b, Coord cb) { segs.push_back({a, b, ca, cb}); };
+                double center = (v00 + v10 + v01 + v11) / 4.0;
+                switch (c) {
+                case 1: case 14: add(el, pL(), eb, pB()); break;
+                case 2: case 13: add(eb, pB(), er, pR()); break;
+                case 3: case 12: add(el, pL(), er, pR()); break;
+                case 4: case 11: add(er, pR(), et, pT()); break;
+                case 6: case 9: add(eb, pB(), et, pT()); break;
+                case 7: case 8: add(el, pL(), et, pT()); break;
+                case 5:
+                    if (center > level) {
+                        add(el, pL(), et, pT());
+                        add(eb, pB(), er, pR());
+                    } else {
+                        add(el, pL(), eb, pB());
+                        add(er, pR(), et, pT());
+                    }
+                    break;
+                case 10:
+                    if (center > level) {
+                        add(el, pL(), eb, pB());
+                        add(er, pR(), et, pT());
+                    } else {
+                        add(el, pL(), et, pT());
+                        add(eb, pB(), er, pR());
+                    }
+                    break;
+                default: break;
+                }
+            }
+        if (segs.empty()) continue;
+        std::unordered_multimap<long long, size_t> byEdge;
+        for (size_t s = 0; s < segs.size(); ++s) {
+            byEdge.emplace(segs[s].a, s);
+            byEdge.emplace(segs[s].b, s);
+        }
+        std::vector<bool> used(segs.size(), false);
+        auto next = [&](long long edge, size_t from) -> long {
+            auto range = byEdge.equal_range(edge);
+            for (auto it = range.first; it != range.second; ++it)
+                if (it->second != from && !used[it->second]) return static_cast<long>(it->second);
+            return -1;
+        };
+        for (size_t s = 0; s < segs.size(); ++s) {
+            if (used[s]) continue;
+            used[s] = true;
+            std::vector<Coord> chain{segs[s].pa, segs[s].pb};
+            long long tail = segs[s].b, head = segs[s].a;
+            for (long n = next(tail, s); n >= 0; n = next(tail, static_cast<size_t>(n))) {
+                used[n] = true;
+                bool forward = segs[n].a == tail;
+                chain.push_back(forward ? segs[n].pb : segs[n].pa);
+                tail = forward ? segs[n].b : segs[n].a;
+            }
+            std::vector<Coord> front;
+            for (long n = next(head, s); n >= 0; n = next(head, static_cast<size_t>(n))) {
+                used[n] = true;
+                bool forward = segs[n].b == head;
+                front.push_back(forward ? segs[n].pa : segs[n].pb);
+                head = forward ? segs[n].a : segs[n].b;
+            }
+            if (!front.empty()) chain.insert(chain.begin(), front.rbegin(), front.rend());
+            if (chain.size() < 3 && !major) continue;
+            Feature f;
+            f.type = "u-d-f";
+            f.geometries.push_back({GeometryType::LineString, std::move(chain), {}});
+            f.style.strokeColor = style.stroke;
+            f.style.strokeWidth = major ? style.width * 1.6f : style.width * 0.8f;
+            f.style.labelColor = style.label;
+            char buf[32];
+            std::snprintf(buf, sizeof(buf), unit == DistanceUnit::Metric ? "%.0f m" : "%.0f ft", k * interval);
+            f.name = buf;
+            f.style.showLabel = major && style.labels;
+            setAttribute(f, "contour", std::to_string(k * interval));
+            setAttribute(f, "major", major ? "1" : "0");
+            out.push_back(std::move(f));
+        }
+    }
     return out;
 }
 

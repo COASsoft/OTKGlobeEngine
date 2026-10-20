@@ -22,6 +22,7 @@
 #include <cstdio>
 #include <algorithm>
 #include <chrono>
+#include <array>
 #include <cstdlib>
 #include <filesystem>
 #include <string>
@@ -58,6 +59,15 @@ struct ViewerState {
     int downloadMin = 0, downloadMax = 0;
     int downloadId = 0;
     std::vector<std::string> imports;
+    int gridType = 0;
+    bool slope = false;
+    double contourInterval = 0;
+    bool contoursDone = false;
+    std::vector<std::array<double, 3>> bullseyes;
+    std::vector<std::array<double, 4>> rings;
+    std::vector<std::array<double, 4>> rbLines;
+    bool rbStarted = false;
+    double rbLat = 0, rbLon = 0;
     bool hasExport = false;
     ote::Region exportRegion;
     int exportMin = 0, exportMax = 0;
@@ -247,6 +257,14 @@ void init() {
     for (const auto& t : state->tilesets) state->engine.addTileset(t);
     for (const auto& p : state->pointClouds) state->engine.addPointCloud(p);
     if (state->cacheLimit > 0) state->engine.setCacheLimit(state->cacheLimit);
+    state->engine.setGridType(static_cast<ote::GridType>(state->gridType));
+    state->engine.setTerrainSlope(state->slope);
+    for (const auto& b : state->bullseyes)
+        for (const ote::Feature& f : ote::bullseye({b[0], b[1], 0}, b[2])) state->engine.addFeature(f);
+    for (const auto& r : state->rings)
+        for (const ote::Feature& f : ote::rangeRings({r[0], r[1], 0}, r[2], static_cast<int>(r[3]), 8)) state->engine.addFeature(f);
+    for (const auto& r : state->rbLines)
+        for (const ote::Feature& f : ote::rangeBearingLine({r[0], r[1], 0}, {r[2], r[3], 0})) state->engine.addFeature(f);
     for (const auto& path : state->imports) {
         std::string err;
         long long n = state->engine.importTiles(0, path, &err);
@@ -351,6 +369,10 @@ void frame() {
             ote::View v = state->engine.view();
             state->viewshed = state->engine.computeViewshed({v.lat, v.lon, 0}, 2.0, 5000.0);
         }
+        if (state->contourInterval > 0 && !state->contoursDone && state->shotElapsed > 1.0 && !state->engine.needsRedraw()) {
+            state->engine.addContours(state->engine.viewRegion(), state->contourInterval);
+            state->contoursDone = true;
+        }
         state->settledFrames = state->engine.needsRedraw() ? 0 : state->settledFrames + 1;
         if (state->zoomTest) {
             bool startNow = state->zoomStartAfter > 0 ? state->shotElapsed > state->zoomStartAfter
@@ -389,7 +411,7 @@ void frame() {
         zooming = zooming || (state->bench > 0 && state->benchDone < state->bench);
         bool downloading = (state->downloadId && !state->engine.downloadStatus(state->downloadId).finished) || zooming;
         bool settled = state->shotElapsed > 1.0 && state->settledFrames > 10 && !downloading &&
-                       (!state->shotViewshed || state->viewshed);
+                       (!state->shotViewshed || state->viewshed) && (state->contourInterval <= 0 || state->contoursDone);
         if (settled || state->shotElapsed >= state->shotTimeout) {
             bool ok = saveImagePng(state->shotColor, state->width, state->height,
 #if defined(SOKOL_D3D11)
@@ -679,8 +701,41 @@ void event(const sapp_event* e) {
             v.azimuth = 20;
             eng.flyTo(v, 4.0);
         } else if (e->key_code == SAPP_KEYCODE_G) {
-            state->grid = !state->grid;
+            if (!state->grid) {
+                state->grid = true;
+                state->gridType = 0;
+            } else if (state->gridType < 2) {
+                ++state->gridType;
+            } else {
+                state->grid = false;
+            }
+            eng.setGridType(static_cast<ote::GridType>(state->gridType));
             eng.setGridEnabled(state->grid);
+        } else if (e->key_code == SAPP_KEYCODE_K) {
+            state->slope = !state->slope;
+            eng.setTerrainSlope(state->slope);
+        } else if (e->key_code == SAPP_KEYCODE_L) {
+            double gsd = eng.view().gsd;
+            double interval = 10;
+            for (double c : {10.0, 20.0, 50.0, 100.0, 200.0, 500.0, 1000.0})
+                if (c >= gsd * 15) {
+                    interval = c;
+                    break;
+                }
+            eng.addContours(eng.viewRegion(), interval);
+        } else if (e->key_code == SAPP_KEYCODE_B) {
+            double lat, lon;
+            if (eng.pick(state->mouseX, state->mouseY, lat, lon))
+                for (const ote::Feature& f : ote::bullseye({lat, lon, 0}, eng.view().gsd * 250.0)) eng.addFeature(f);
+        } else if (e->key_code == SAPP_KEYCODE_C) {
+            double lat, lon;
+            if (eng.pick(state->mouseX, state->mouseY, lat, lon)) {
+                if (state->rbStarted)
+                    for (const ote::Feature& f : ote::rangeBearingLine({state->rbLat, state->rbLon, 0}, {lat, lon, 0})) eng.addFeature(f);
+                state->rbStarted = !state->rbStarted;
+                state->rbLat = lat;
+                state->rbLon = lon;
+            }
         } else if (e->key_code == SAPP_KEYCODE_V) {
             double lat, lon;
             if (eng.pick(state->mouseX, state->mouseY, lat, lon)) {
@@ -792,6 +847,21 @@ void parseArgs(int argc, char** argv) {
             state->xray = static_cast<float>(std::atof(argv[++i]));
         } else if (a == "--grid") {
             state->grid = std::atoi(argv[++i]) != 0;
+        } else if (a == "--grid-type") {
+            state->gridType = std::clamp(std::atoi(argv[++i]), 0, 2);
+        } else if (a == "--slope") {
+            state->slope = std::atoi(argv[++i]) != 0;
+        } else if (a == "--contours") {
+            state->contourInterval = std::atof(argv[++i]);
+        } else if (a == "--bullseye") {
+            std::array<double, 3> b{};
+            if (std::sscanf(argv[++i], "%lf,%lf,%lf", &b[0], &b[1], &b[2]) == 3) state->bullseyes.push_back(b);
+        } else if (a == "--rings") {
+            std::array<double, 4> r{};
+            if (std::sscanf(argv[++i], "%lf,%lf,%lf,%lf", &r[0], &r[1], &r[2], &r[3]) == 4) state->rings.push_back(r);
+        } else if (a == "--rb") {
+            std::array<double, 4> r{};
+            if (std::sscanf(argv[++i], "%lf,%lf,%lf,%lf", &r[0], &r[1], &r[2], &r[3]) == 4) state->rbLines.push_back(r);
         } else if (a == "--viewshed") {
             state->shotViewshed = std::atoi(argv[++i]) != 0;
         } else if (a == "--terrain") {

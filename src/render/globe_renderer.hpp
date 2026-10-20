@@ -73,6 +73,13 @@ public:
         heatOpacity_ = opacity;
     }
     void setGrid(bool enabled);
+    void setGridType(int type);
+    void setSlope(bool enabled, float opacity, double maxDegrees) {
+        slope_ = enabled;
+        slopeOpacity_ = opacity;
+        slopeMax_ = std::max(maxDegrees, 1.0);
+    }
+    double terrainHeight(double lat, double lon) const;
     std::uint64_t addOverlay(const GeoRect& rect, int width, int height, const std::vector<std::uint8_t>& rgba, float opacity);
     bool removeOverlay(std::uint64_t id);
     double elevationAt(double lat, double lon) const;
@@ -223,6 +230,10 @@ private:
     std::uint64_t nextTileset_ = 1;
     std::atomic<bool> offline_{false};
     std::uint64_t netEpoch_ = 0;
+    int gridType_ = 0;
+    bool slope_ = false;
+    float slopeOpacity_ = 0.6f;
+    double slopeMax_ = 45.0;
     std::string cacheDir_;
     std::vector<ImageryLayer> layers_;
     std::vector<TileMatrix> matrices_;

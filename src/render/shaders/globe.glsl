@@ -40,6 +40,7 @@ void main() {
 layout(binding=1) uniform globe_fs_params {
     vec4 flags;
     vec4 heat;
+    vec4 slope;
 };
 
 layout(binding=0) uniform texture2D tex;
@@ -61,12 +62,24 @@ vec3 ramp(float x) {
     return mix(c, vec3(0.95, 0.95, 0.95), smoothstep(0.75, 1.0, x));
 }
 
+vec3 slopeRamp(float x) {
+    x = clamp(x, 0.0, 1.0);
+    vec3 a = mix(vec3(1.0, 0.95, 0.25), vec3(1.0, 0.55, 0.1), smoothstep(0.0, 0.35, x));
+    vec3 b = mix(a, vec3(0.8, 0.1, 0.05), smoothstep(0.35, 0.7, x));
+    return mix(b, vec3(0.05, 0.05, 0.05), smoothstep(0.7, 1.0, x));
+}
+
 void main() {
     vec2 t = vec2(uv.x, flags.x > 0.5 ? 1.0 - uv.y : uv.y);
     float s = mix(1.0, min(0.25 + 0.75 * light, 1.0), flags.y);
     vec2 t2 = vec2(uv2.x, flags.x > 0.5 ? 1.0 - uv2.y : uv2.y);
     vec3 c = mix(texture(sampler2D(tex2, smp), t2).rgb, texture(sampler2D(tex, smp), t).rgb, flags.z * smoothstep(0.0, 1.0, lodw));
     c = mix(c, ramp((elev - heat.x) * heat.y), heat.z);
+    if (slope.x > 0.0) {
+        float cs = clamp(light, 0.0001, 1.0);
+        float tn = sqrt(max(1.0 - cs * cs, 0.0)) / cs * slope.y;
+        c = mix(c, slopeRamp(degrees(atan(tn)) / slope.z), slope.x);
+    }
     frag_color = vec4(c * s, flags.w);
 }
 @end

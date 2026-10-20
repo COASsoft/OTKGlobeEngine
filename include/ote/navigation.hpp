@@ -72,6 +72,9 @@ std::vector<Feature> rangeRings(const Coord& center, double spacingMeters, int c
 std::vector<Feature> bullseye(const Coord& center, double radiusMeters, int rings = 3, double bearingStep = 30.0,
                               NorthReference reference = NorthReference::Magnetic, AngleUnit unit = AngleUnit::Degrees,
                               const ShapeStyle& style = {}, DistanceUnit distanceUnit = DistanceUnit::Metric);
+std::vector<Feature> contourLines(const std::vector<float>& heights, int cols, int rows, double west, double south, double east,
+                                  double north, double interval, int majorEvery = 5, const ShapeStyle& style = {},
+                                  DistanceUnit unit = DistanceUnit::Metric);
 std::vector<Feature> rangeBearingLine(const Coord& from, const Coord& to, NorthReference reference = NorthReference::Magnetic,
                                       AngleUnit unit = AngleUnit::Degrees, DistanceUnit distanceUnit = DistanceUnit::Metric,
                                       const ShapeStyle& style = {});
