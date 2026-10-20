@@ -1,4 +1,4 @@
-import argparse, json, math, os, struct, subprocess, zipfile
+import argparse, json, math, os, struct, subprocess, zipfile, zlib
 
 LAT, LON, H = 47.04, -122.90, 400.0
 A = 6378137.0
