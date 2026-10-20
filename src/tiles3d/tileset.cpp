@@ -1,5 +1,6 @@
 #include "tiles3d/tileset.hpp"
 
+#include "core/geo.hpp"
 #include "net/http.hpp"
 #include "raster/tile_cache.hpp"
 #include "raster/tile_provider.hpp"
@@ -11,6 +12,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 
 namespace ote {
@@ -39,6 +41,36 @@ public:
     }
 };
 
+struct Tileset3D::Implicit {
+    std::string contentTemplate;
+    std::string subtreeTemplate;
+    std::string base;
+    Mat4 transform = Mat4::identity();
+    bool octree = false;
+    bool add = false;
+    int subtreeLevels = 1;
+    int availableLevels = 1;
+    double rootError = 0;
+    bool region = false;
+    double bounds[6] = {0, 0, 0, 0, 0, 0};
+    Vec3 boxCenter, boxX, boxY, boxZ;
+};
+
+struct Tileset3D::Subtree {
+    struct Bits {
+        int constant = 0;
+        std::vector<std::uint8_t> bits;
+        bool get(std::uint64_t i) const {
+            if (bits.empty()) return constant != 0;
+            std::uint64_t b = i >> 3;
+            return b < bits.size() && ((bits[b] >> (i & 7)) & 1) != 0;
+        }
+    };
+    Bits tiles;
+    Bits content;
+    Bits children;
+};
+
 namespace {
 
 constexpr int kUnloaded = 0;
@@ -46,9 +78,11 @@ constexpr int kLoading = 1;
 constexpr int kMesh = 2;
 constexpr int kExpanded = 3;
 constexpr int kFailed = 4;
+constexpr int kSubtreeReady = 2;
 constexpr int kUploadsPerFrame = 8;
 constexpr double kUploadMs = 3.0;
 constexpr double kRetrySeconds = 30.0;
+constexpr float kPointSize = 2.0f;
 
 double seconds() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
 
@@ -155,18 +189,152 @@ Vec3 applyDir(const Mat4& m, Vec3 v) {
     return {r.x, r.y, r.z};
 }
 
-std::string lowerExt(const std::string& path) {
-    std::string e = std::filesystem::u8path(path).extension().string();
-    std::transform(e.begin(), e.end(), e.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return e;
-}
-
 bool looksLikeJson(const std::vector<std::uint8_t>& bytes) {
     for (std::uint8_t c : bytes) {
         if (c == ' ' || c == '\t' || c == '\r' || c == '\n') continue;
         return c == '{';
     }
     return false;
+}
+
+std::string normalizePath(const std::string& p) {
+    std::string prefix;
+    size_t start = 0;
+    size_t scheme = p.find("://");
+    if (scheme != std::string::npos) {
+        size_t slash = p.find('/', scheme + 3);
+        if (slash == std::string::npos) return p;
+        prefix = p.substr(0, slash + 1);
+        start = slash + 1;
+    } else if (!p.empty() && p[0] == '/') {
+        prefix = "/";
+        start = 1;
+    }
+    std::string rest = p.substr(start), tail;
+    size_t query = rest.find('?');
+    if (query != std::string::npos) {
+        tail = rest.substr(query);
+        rest = rest.substr(0, query);
+    }
+    std::vector<std::string> parts;
+    size_t pos = 0;
+    while (pos <= rest.size()) {
+        size_t next = rest.find('/', pos);
+        if (next == std::string::npos) next = rest.size();
+        std::string seg = rest.substr(pos, next - pos);
+        if (seg == "..") {
+            if (!parts.empty() && parts.back() != "..") parts.pop_back();
+            else parts.push_back(seg);
+        } else if (seg != "." && !(seg.empty() && next < rest.size())) {
+            parts.push_back(seg);
+        }
+        pos = next + 1;
+    }
+    std::string out = prefix;
+    for (size_t i = 0; i < parts.size(); ++i) {
+        if (i) out += '/';
+        out += parts[i];
+    }
+    return out + tail;
+}
+
+void regionSphere(double w, double s, double e, double n, double h0, double h1, Vec3& center, double& radius) {
+    center = geodeticToEcef((s + n) * 0.5, (w + e) * 0.5, (h0 + h1) * 0.5);
+    radius = 0;
+    for (double la : {s, (s + n) * 0.5, n})
+        for (double lo : {w, (w + e) * 0.5, e})
+            for (double h : {h0, h1}) radius = std::max(radius, length(geodeticToEcef(la, lo, h) - center));
+}
+
+std::uint64_t morton(std::uint32_t x, std::uint32_t y, std::uint32_t z, bool octree) {
+    std::uint64_t r = 0;
+    const int dims = octree ? 3 : 2;
+    for (int i = 0; i < (octree ? 21 : 32); ++i) {
+        r |= static_cast<std::uint64_t>((x >> i) & 1) << (dims * i);
+        r |= static_cast<std::uint64_t>((y >> i) & 1) << (dims * i + 1);
+        if (octree) r |= static_cast<std::uint64_t>((z >> i) & 1) << (dims * i + 2);
+    }
+    return r;
+}
+
+std::uint64_t levelOffset(int level, bool octree) {
+    const std::uint64_t base = octree ? 8 : 4;
+    std::uint64_t total = 0, count = 1;
+    for (int l = 0; l < level; ++l) {
+        total += count;
+        count *= base;
+    }
+    return total;
+}
+
+std::string substitute(std::string t, int level, std::uint32_t x, std::uint32_t y, std::uint32_t z) {
+    auto put = [&t](const char* key, const std::string& v) {
+        for (size_t p = t.find(key); p != std::string::npos; p = t.find(key, p + v.size())) t.replace(p, std::strlen(key), v);
+    };
+    put("{level}", std::to_string(level));
+    put("{x}", std::to_string(x));
+    put("{y}", std::to_string(y));
+    put("{z}", std::to_string(z));
+    return t;
+}
+
+std::string contentUri(const nlohmann::json& j) {
+    const nlohmann::json* c = nullptr;
+    if (j.contains("content")) c = &j["content"];
+    else if (j.contains("contents") && j["contents"].is_array() && !j["contents"].empty()) c = &j["contents"][0];
+    if (!c) return {};
+    if (c->contains("uri")) return (*c)["uri"].get<std::string>();
+    if (c->contains("url")) return (*c)["url"].get<std::string>();
+    return {};
+}
+
+bool parseSubtree(const std::vector<std::uint8_t>& bytes, const std::string& path, const ResourceReader& read, Tileset3D::Subtree& out) {
+    const std::uint8_t* json = bytes.data();
+    size_t jsonLen = bytes.size();
+    const std::uint8_t* bin = nullptr;
+    size_t binLen = 0;
+    if (bytes.size() >= 24 && std::memcmp(bytes.data(), "subt", 4) == 0) {
+        std::uint64_t jl = 0, bl = 0;
+        std::memcpy(&jl, bytes.data() + 8, 8);
+        std::memcpy(&bl, bytes.data() + 16, 8);
+        if (24 + jl + bl > bytes.size()) return false;
+        json = bytes.data() + 24;
+        jsonLen = static_cast<size_t>(jl);
+        bin = json + jl;
+        binLen = static_cast<size_t>(bl);
+    }
+    nlohmann::json j = nlohmann::json::parse(json, json + jsonLen, nullptr, false);
+    if (j.is_discarded()) return false;
+    std::vector<std::vector<std::uint8_t>> buffers;
+    if (j.contains("buffers"))
+        for (const auto& b : j["buffers"]) {
+            if (b.contains("uri")) {
+                buffers.push_back(read(normalizePath(TileSource::join(TileSource::dir(path), b["uri"].get<std::string>()))));
+            } else {
+                buffers.emplace_back(bin, bin + binLen);
+            }
+        }
+    auto bits = [&](const nlohmann::json& a, Tileset3D::Subtree::Bits& out) {
+        if (a.contains("constant")) {
+            out.constant = a["constant"].get<int>();
+            return true;
+        }
+        int view = a.contains("bitstream") ? a["bitstream"].get<int>() : a.value("bufferView", -1);
+        if (view < 0 || !j.contains("bufferViews") || view >= static_cast<int>(j["bufferViews"].size())) return false;
+        const auto& bv = j["bufferViews"][view];
+        size_t buffer = bv.value("buffer", size_t(0)), off = bv.value("byteOffset", size_t(0)), len = bv.value("byteLength", size_t(0));
+        if (buffer >= buffers.size() || off + len > buffers[buffer].size()) return false;
+        out.bits.assign(buffers[buffer].begin() + off, buffers[buffer].begin() + off + len);
+        return true;
+    };
+    if (!j.contains("tileAvailability") || !bits(j["tileAvailability"], out.tiles)) return false;
+    if (j.contains("contentAvailability")) {
+        const auto& c = j["contentAvailability"];
+        if (c.is_array() && !c.empty()) bits(c[0], out.content);
+        else if (c.is_object()) bits(c, out.content);
+    }
+    if (j.contains("childSubtreeAvailability")) bits(j["childSubtreeAvailability"], out.children);
+    return true;
 }
 
 }
@@ -176,7 +344,8 @@ Tileset3D::Tileset3D(const std::string& uri, double maxSse, TileCache* cache, co
     std::string base;
     std::string norm = uri;
     std::replace(norm.begin(), norm.end(), '\\', '/');
-    std::string ext = lowerExt(norm);
+    std::string ext = std::filesystem::u8path(norm).extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     if (norm.find("://") != std::string::npos) {
         source_ = std::make_shared<HttpSource>(cache, offline);
         entry = norm;
@@ -217,19 +386,20 @@ std::unique_ptr<Tileset3D::Node> Tileset3D::parse(const void* jp, const Mat4& pa
     std::string refine = j.value("refine", parentAdd ? "ADD" : "REPLACE");
     n->add = refine == "ADD" || refine == "add";
     n->base = base;
-    if (j.contains("content")) {
-        const auto& c = j["content"];
-        if (c.contains("uri")) n->content = c["uri"].get<std::string>();
-        else if (c.contains("url")) n->content = c["url"].get<std::string>();
-    }
+    n->content = contentUri(j);
     const auto& bv = j.contains("boundingVolume") ? j["boundingVolume"] : nlohmann::json();
+    Vec3 boxC, boxX, boxY, boxZ;
+    double region[6] = {0, 0, 0, 0, 0, 0};
+    bool isRegion = false, isBox = false;
     if (bv.contains("box") && bv["box"].size() == 12) {
         const auto& b = bv["box"];
-        Vec3 c{b[0].get<double>(), b[1].get<double>(), b[2].get<double>()};
-        Vec3 x = applyDir(n->transform, {b[3].get<double>(), b[4].get<double>(), b[5].get<double>()});
-        Vec3 y = applyDir(n->transform, {b[6].get<double>(), b[7].get<double>(), b[8].get<double>()});
-        Vec3 z = applyDir(n->transform, {b[9].get<double>(), b[10].get<double>(), b[11].get<double>()});
-        n->center = apply(n->transform, c);
+        isBox = true;
+        boxC = {b[0].get<double>(), b[1].get<double>(), b[2].get<double>()};
+        boxX = {b[3].get<double>(), b[4].get<double>(), b[5].get<double>()};
+        boxY = {b[6].get<double>(), b[7].get<double>(), b[8].get<double>()};
+        boxZ = {b[9].get<double>(), b[10].get<double>(), b[11].get<double>()};
+        Vec3 x = applyDir(n->transform, boxX), y = applyDir(n->transform, boxY), z = applyDir(n->transform, boxZ);
+        n->center = apply(n->transform, boxC);
         n->radius = std::sqrt(dot(x, x) + dot(y, y) + dot(z, z));
     } else if (bv.contains("sphere") && bv["sphere"].size() == 4) {
         const auto& s = bv["sphere"];
@@ -239,32 +409,142 @@ std::unique_ptr<Tileset3D::Node> Tileset3D::parse(const void* jp, const Mat4& pa
         n->radius = s[3].get<double>() * scale;
     } else if (bv.contains("region") && bv["region"].size() == 6) {
         const auto& r = bv["region"];
-        double w = r[0].get<double>() * kRadToDeg, s = r[1].get<double>() * kRadToDeg;
-        double e = r[2].get<double>() * kRadToDeg, nn = r[3].get<double>() * kRadToDeg;
-        double h0 = r[4].get<double>(), h1 = r[5].get<double>();
-        n->center = geodeticToEcef((s + nn) * 0.5, (w + e) * 0.5, (h0 + h1) * 0.5);
-        double rad = 0;
-        for (double la : {s, nn})
-            for (double lo : {w, e})
-                for (double h : {h0, h1}) rad = std::max(rad, length(geodeticToEcef(la, lo, h) - n->center));
-        n->radius = rad;
+        isRegion = true;
+        for (int k = 0; k < 6; ++k) region[k] = r[k].get<double>();
+        regionSphere(region[0] * kRadToDeg, region[1] * kRadToDeg, region[2] * kRadToDeg, region[3] * kRadToDeg, region[4], region[5], n->center,
+                     n->radius);
+    }
+    const nlohmann::json* it = nullptr;
+    if (j.contains("implicitTiling")) it = &j["implicitTiling"];
+    else if (j.contains("extensions") && j["extensions"].contains("3DTILES_implicit_tiling")) it = &j["extensions"]["3DTILES_implicit_tiling"];
+    if (it && (isRegion || isBox) && it->contains("subtrees")) {
+        auto im = std::make_shared<Implicit>();
+        im->contentTemplate = n->content;
+        const auto& st = (*it)["subtrees"];
+        im->subtreeTemplate = st.contains("uri") ? st["uri"].get<std::string>() : st.value("url", std::string());
+        im->base = base;
+        im->transform = n->transform;
+        im->octree = it->value("subdivisionScheme", std::string("QUADTREE")) == "OCTREE";
+        im->add = n->add;
+        im->subtreeLevels = std::max(1, it->value("subtreeLevels", 1));
+        im->availableLevels = it->contains("availableLevels") ? (*it)["availableLevels"].get<int>() : it->value("maximumLevel", 0) + 1;
+        im->rootError = n->geometricError;
+        im->region = isRegion;
+        for (int k = 0; k < 6; ++k) im->bounds[k] = region[k];
+        im->boxCenter = boxC;
+        im->boxX = boxX;
+        im->boxY = boxY;
+        im->boxZ = boxZ;
+        n->implicit = im;
+        n->content.clear();
+        n->subtreeState = kUnloaded;
+        return n;
     }
     if (j.contains("children"))
         for (const auto& c : j["children"]) n->children.push_back(parse(&c, n->transform, base, n->add));
     return n;
 }
 
+std::unique_ptr<Tileset3D::Node> Tileset3D::implicitNode(const std::shared_ptr<const Implicit>& im, int level, std::uint32_t x, std::uint32_t y,
+                                                         std::uint32_t z) const {
+    auto n = std::make_unique<Node>();
+    n->implicit = im;
+    n->transform = im->transform;
+    n->add = im->add;
+    n->base = im->base;
+    n->level = level;
+    n->x = x;
+    n->y = y;
+    n->z = z;
+    n->geometricError = std::ldexp(im->rootError, -level);
+    const double div = std::ldexp(1.0, level);
+    if (im->region) {
+        const double* b = im->bounds;
+        double dw = (b[2] - b[0]) / div, ds = (b[3] - b[1]) / div;
+        double w = b[0] + dw * x, s = b[1] + ds * y;
+        double h0 = b[4], h1 = b[5];
+        if (im->octree) {
+            double dh = (b[5] - b[4]) / div;
+            h0 = b[4] + dh * z;
+            h1 = h0 + dh;
+        }
+        regionSphere(w * kRadToDeg, s * kRadToDeg, (w + dw) * kRadToDeg, (s + ds) * kRadToDeg, h0, h1, n->center, n->radius);
+    } else {
+        auto offset = [div](std::uint32_t i) { return -1.0 + (2.0 * i + 1.0) / div; };
+        Vec3 c = im->boxCenter + im->boxX * offset(x) + im->boxY * offset(y);
+        Vec3 hz = im->boxZ;
+        if (im->octree) {
+            c = c + im->boxZ * offset(z);
+            hz = im->boxZ * (1.0 / div);
+        }
+        Vec3 hx = applyDir(im->transform, im->boxX * (1.0 / div)), hy = applyDir(im->transform, im->boxY * (1.0 / div));
+        hz = applyDir(im->transform, hz);
+        n->center = apply(im->transform, c);
+        n->radius = std::sqrt(dot(hx, hx) + dot(hy, hy) + dot(hz, hz));
+    }
+    return n;
+}
+
+void Tileset3D::expand(Node* n) {
+    n->expanded = true;
+    const Implicit& im = *n->implicit;
+    const int childLevel = n->level + 1;
+    if (childLevel >= im.availableLevels || !n->subtree) return;
+    const bool newSubtree = childLevel - n->rootLevel == im.subtreeLevels;
+    const int local = childLevel - n->rootLevel;
+    for (int c = 0; c < (im.octree ? 8 : 4); ++c) {
+        std::uint32_t cx = n->x * 2 + (c & 1), cy = n->y * 2 + ((c >> 1) & 1), cz = im.octree ? n->z * 2 + ((c >> 2) & 1) : 0;
+        std::uint32_t lx = cx - (n->rootX << local), ly = cy - (n->rootY << local), lz = cz - (n->rootZ << local);
+        std::uint64_t m = morton(lx, ly, lz, im.octree);
+        if (newSubtree) {
+            if (!n->subtree->children.get(m)) continue;
+            auto kid = implicitNode(n->implicit, childLevel, cx, cy, cz);
+            kid->rootLevel = childLevel;
+            kid->rootX = cx;
+            kid->rootY = cy;
+            kid->rootZ = cz;
+            kid->subtreeState = kUnloaded;
+            n->children.push_back(std::move(kid));
+        } else {
+            std::uint64_t index = levelOffset(local, im.octree) + m;
+            if (!n->subtree->tiles.get(index)) continue;
+            auto kid = implicitNode(n->implicit, childLevel, cx, cy, cz);
+            kid->subtree = n->subtree;
+            kid->rootLevel = n->rootLevel;
+            kid->rootX = n->rootX;
+            kid->rootY = n->rootY;
+            kid->rootZ = n->rootZ;
+            if (!im.contentTemplate.empty() && n->subtree->content.get(index)) kid->content = substitute(im.contentTemplate, childLevel, cx, cy, cz);
+            n->children.push_back(std::move(kid));
+        }
+    }
+}
+
 Vec3 Tileset3D::center() const { return root_ ? root_->center : Vec3{}; }
 
 bool Tileset3D::contentReady(const Node* n) const {
+    if (n->subtreeState.load() != kSubtreeReady) return false;
     if (n->content.empty()) return true;
     int s = n->state.load();
     return s == kMesh || s == kExpanded;
 }
 
-bool Tileset3D::hasFallback(const Node* n) const { return n->state.load() == kMesh; }
+bool Tileset3D::hasFallback(const Node* n) const { return n->state.load() == kMesh && !n->meshes.empty(); }
 
 void Tileset3D::request(Node* n, double priority) {
+    int st = n->subtreeState.load();
+    if (st != kSubtreeReady) {
+        if (st == kFailed) {
+            if (n->subtreePermanent || (seconds() < n->subtreeRetryAt && net::reachabilityEpoch() == n->failedEpoch)) return;
+            n->subtreeState = kUnloaded;
+            --failed_;
+        } else if (st != kUnloaded) {
+            return;
+        }
+        const Implicit& im = *n->implicit;
+        wanted_.push_back({n, normalizePath(TileSource::join(im.base, substitute(im.subtreeTemplate, n->level, n->x, n->y, n->z))), priority, true});
+        return;
+    }
     if (n->content.empty()) return;
     int s = n->state.load();
     if (s == kFailed) {
@@ -274,7 +554,7 @@ void Tileset3D::request(Node* n, double priority) {
     } else if (s != kUnloaded) {
         return;
     }
-    wanted_.push_back({n, TileSource::join(n->base, n->content), priority});
+    wanted_.push_back({n, normalizePath(TileSource::join(n->base, n->content)), priority, false});
 }
 
 void Tileset3D::select(Node* n, const Camera& cam, const std::array<double, 16>& frustum, std::uint64_t frame) {
@@ -284,6 +564,7 @@ void Tileset3D::select(Node* n, const Camera& cam, const std::array<double, 16>&
         if (pl[0] * rel.x + pl[1] * rel.y + pl[2] * rel.z + pl[3] < -n->radius) return;
     }
     n->used = frame;
+    if (n->implicit && !n->expanded && n->subtreeState.load() == kSubtreeReady) expand(n);
     double dist = std::max(length(rel) - n->radius, 1.0);
     double sse = n->geometricError * cam.height / (2.0 * dist * std::tan(cam.fovY * 0.5));
     bool refine = sse > maxSse_ && !n->children.empty();
@@ -328,20 +609,39 @@ void Tileset3D::update(const Camera& cam, const std::array<double, 16>& frustum,
             d = std::move(done_.front());
             done_.pop_front();
         }
+        Node* n = d.node;
+        if (d.isSubtree) {
+            if (d.ok) {
+                n->subtree = d.availability;
+                const Implicit& im = *n->implicit;
+                if (!im.contentTemplate.empty() && n->subtree->content.get(0)) n->content = substitute(im.contentTemplate, n->level, n->x, n->y, n->z);
+                n->subtreeState = kSubtreeReady;
+            } else {
+                n->subtreePermanent = !d.transient;
+                n->subtreeRetryAt = seconds() + kRetrySeconds;
+                n->failedEpoch = net::reachabilityEpoch();
+                n->subtreeState = kFailed;
+                ++failed_;
+            }
+            continue;
+        }
         if (d.ok && d.subtree) {
-            d.node->children.push_back(std::move(d.subtree));
-            d.node->state = kExpanded;
-        } else if (d.ok && d.model) {
-            d.node->mesh = ModelLayer::upload(*d.model);
-            d.node->state = kMesh;
-            resident_ += d.node->mesh->bytes;
-            loaded_.push_back(d.node);
+            n->children.push_back(std::move(d.subtree));
+            n->state = kExpanded;
+        } else if (d.ok && !d.models.empty()) {
+            for (const CpuModel& m : d.models) {
+                auto mesh = ModelLayer::upload(m);
+                resident_ += mesh->bytes;
+                n->meshes.push_back(std::move(mesh));
+            }
+            n->state = kMesh;
+            loaded_.push_back(n);
             ++uploads;
         } else {
-            d.node->permanent = !d.transient;
-            d.node->retryAt = seconds() + kRetrySeconds;
-            d.node->failedEpoch = net::reachabilityEpoch();
-            d.node->state = kFailed;
+            n->permanent = !d.transient;
+            n->retryAt = seconds() + kRetrySeconds;
+            n->failedEpoch = net::reachabilityEpoch();
+            n->state = kFailed;
             ++failed_;
         }
     }
@@ -363,8 +663,8 @@ void Tileset3D::evict(std::uint64_t frame) {
     for (auto it = loaded_.begin(); it != loaded_.end() && resident_ > budget_;) {
         Node* n = *it;
         if (n->used + 2 >= frame) break;
-        resident_ -= n->mesh ? n->mesh->bytes : 0;
-        n->mesh.reset();
+        for (const auto& m : n->meshes) resident_ -= m->bytes;
+        n->meshes.clear();
         n->state = kUnloaded;
         it = loaded_.erase(it);
     }
@@ -375,24 +675,36 @@ bool Tileset3D::busy() const {
     return !queue_.empty() || inflight_ > 0 || !done_.empty();
 }
 
-void Tileset3D::draw(const Camera& cam, ModelLayer& models) {
+void Tileset3D::draw(const Camera& cam, ModelLayer& models, PointCloudLayer& points, double dpi) {
     if (draw_.empty()) return;
     models.begin();
-    Mat4 yUp = yUpToZUp();
+    bool anyPoints = false;
     for (Node* n : draw_) {
-        if (!n->mesh) continue;
-        const GpuMesh& m = *n->mesh;
-        Mat4 model = translation(Vec3{-cam.eye().x, -cam.eye().y, -cam.eye().z}) * n->transform *
-                     translation({m.rtc[0], m.rtc[1], m.rtc[2]}) * yUp;
         Mat4 orient = n->transform;
         orient.at(0, 3) = orient.at(1, 3) = orient.at(2, 3) = 0;
-        Vec3 c = n->center;
-        Vec3 light = normalize(normalize(cam.eye() - c) + normalize(c) * 0.8);
-        models.drawMesh(cam, m, model, orient * yUp, light);
+        Vec3 light = normalize(normalize(cam.eye() - n->center) + normalize(n->center) * 0.8);
+        for (const auto& mesh : n->meshes) {
+            anyPoints = anyPoints || mesh->pointCount > 0;
+            if (mesh->primitives.empty()) continue;
+            Mat4 model = translation(-cam.eye()) * n->transform * translation({mesh->rtc[0], mesh->rtc[1], mesh->rtc[2]});
+            models.drawMesh(cam, *mesh, model, orient, light);
+        }
     }
+    if (!anyPoints) return;
+    for (Node* n : draw_)
+        for (const auto& mesh : n->meshes) {
+            if (mesh->pointCount <= 0) continue;
+            Mat4 model = translation(-cam.eye()) * n->transform * translation({mesh->rtc[0], mesh->rtc[1], mesh->rtc[2]}) *
+                         translation({mesh->pointsOrigin[0], mesh->pointsOrigin[1], mesh->pointsOrigin[2]});
+            points.drawBuffer(cam, mesh->points, mesh->pointCount, model, kPointSize, dpi);
+        }
 }
 
 void Tileset3D::run() {
+    ResourceReader read = [this](const std::string& p) {
+        bool transient = false;
+        return source_->read(normalizePath(p), transient);
+    };
     for (;;) {
         Job job;
         {
@@ -401,23 +713,30 @@ void Tileset3D::run() {
             if (stop_) return;
             job = queue_.back();
             queue_.pop_back();
+            std::atomic<int>& st = job.subtree ? job.node->subtreeState : job.node->state;
             int expected = kUnloaded;
-            if (!job.node->state.compare_exchange_strong(expected, kLoading)) continue;
+            if (!st.compare_exchange_strong(expected, kLoading)) continue;
             ++inflight_;
         }
         Done d;
         d.node = job.node;
+        d.isSubtree = job.subtree;
         std::vector<std::uint8_t> bytes = source_->read(job.path, d.transient);
-        if (!bytes.empty() && (lowerExt(job.path) == ".json" || looksLikeJson(bytes))) {
-            nlohmann::json j = nlohmann::json::parse(bytes.begin(), bytes.end(), nullptr, false);
-            if (!j.is_discarded() && j.contains("root")) {
-                d.subtree = parse(&j["root"], job.node->transform, TileSource::dir(job.path), job.node->add);
-                d.ok = true;
-            }
+        if (!bytes.empty() && job.subtree) {
+            auto sub = std::make_shared<Subtree>();
+            d.ok = parseSubtree(bytes, job.path, read, *sub);
+            d.availability = sub;
         } else if (!bytes.empty()) {
-            auto model = std::make_unique<CpuModel>();
-            d.ok = parseB3dm(bytes.data(), bytes.size(), *model);
-            d.model = std::move(model);
+            bool tileset = false;
+            if (looksLikeJson(bytes)) {
+                nlohmann::json j = nlohmann::json::parse(bytes.begin(), bytes.end(), nullptr, false);
+                if (!j.is_discarded() && j.contains("root")) {
+                    tileset = true;
+                    d.subtree = parse(&j["root"], job.node->transform, TileSource::dir(job.path), job.node->add);
+                    d.ok = true;
+                }
+            }
+            if (!tileset) d.ok = parseTileContent(bytes.data(), bytes.size(), job.path, read, job.node->transform, d.models);
         }
         std::lock_guard lock(mutex_);
         --inflight_;
