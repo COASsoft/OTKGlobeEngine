@@ -43,6 +43,7 @@ struct Style {
     std::uint32_t labelColor = 0xFFFFFFFF;
     float labelScale = 1.0f;
     bool showLabel = true;
+    std::string sidc;
 };
 
 struct Feature {

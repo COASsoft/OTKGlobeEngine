@@ -3,6 +3,7 @@
 #endif
 #include "ote/engine.hpp"
 #include "ote/formats.hpp"
+#include "ote/milsym.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -358,12 +359,18 @@ void Engine::setOffline(bool offline) {
 
 std::uint64_t Engine::addFeature(const Feature& f) {
     impl_->dirty = true;
-    return impl_->globe.features().add(f);
+    if (f.style.sidc.empty() && f.type.compare(0, 2, "a-") != 0) return impl_->globe.features().add(f);
+    Feature s = f;
+    applySymbol(s);
+    return impl_->globe.features().add(s);
 }
 
 bool Engine::updateFeature(std::uint64_t id, const Feature& f) {
     impl_->dirty = true;
-    return impl_->globe.features().update(id, f);
+    if (f.style.sidc.empty() && f.type.compare(0, 2, "a-") != 0) return impl_->globe.features().update(id, f);
+    Feature s = f;
+    applySymbol(s);
+    return impl_->globe.features().update(id, s);
 }
 
 bool Engine::removeFeature(std::uint64_t id) {

@@ -5,6 +5,7 @@
 #include "ote/features.hpp"
 #include "ote/formats.hpp"
 #include "ote/mgrs.hpp"
+#include "ote/milsym.hpp"
 #include "ote/navigation.hpp"
 #include "net/http.hpp"
 #include "ote/engine.hpp"
@@ -443,6 +444,45 @@ int main() {
         for (const Coord& c : circle.geometries[0].points) worst = std::max(worst, std::abs(geodesicInverse(10, 20, c.lat, c.lon).distance - 5000));
         check(be.size() == 31 && rr.size() == 16 && rb.size() == 2 && dist && std::abs(std::stod(*dist) - g.distance) < 1e-3 && worst < 1e-3,
               "bullseye, range rings, range and bearing line, geodesic circle");
+    }
+    {
+        check(sidcFromCotType("a-f-G-U-C-I") == "SFGPUCI--------" && sidcFromCotType("a-h-A-M-F") == "SHAPMF---------" &&
+                  sidcFromCotType("b-m-p-s-p-i").empty(),
+              "CoT type to 2525C SIDC");
+        check(cotTypeFromSidc("SFGPUCI----D---") == "a-f-G-U-C-I" && cotTypeFromSidc("10031000001211000000") == "a-f-G-U-C-I", "SIDC to CoT type");
+        SymbolCode d = parseSidc("10061000161211000000");
+        check(d.valid && d.affiliation == Affiliation::Hostile && d.echelon == 'F' && d.function == "UCI---", "2525D numeric SIDC");
+        const char* sheet[] = {"SFGPUCI----D---", "SHGPUCA----E---", "SNGPUCR--------", "SUGPUCF--------", "SFGAUCE---F----", "SFAPMF---------",
+                               "SHAPMH---------", "SFSPCLDD-------", "SHUPS----------", "SFGPUCIZ--H----", "SFGPUSM----A---", "SAGPUCD--------",
+                               "SFGPUCFM-AF----", "SHGPUCAA--B----", "SFGPEVAT-------", "SFGPUUS----G---", "SPGPU----------", "SFGPIZ---------",
+                               "SFFPA----------", "SJGPUCI----C---", "SFGPUCV--------", "10031000141211000000", "SSGPUCI--------", "SFGPUST----I---"};
+        int n = static_cast<int>(sizeof(sheet) / sizeof(sheet[0]));
+        bool drawn = true;
+        const int cell = 96, cols = 6;
+        std::vector<std::uint8_t> rgb(static_cast<size_t>(cols * cell) * ((n + cols - 1) / cols * cell) * 3, 255);
+        for (int i = 0; i < n; ++i) {
+            Image img = renderSymbolImage(sheet[i], cell);
+            int opaque = 0;
+            for (size_t p = 3; p < img.rgba.size(); p += 4) opaque += img.rgba[p] > 128 ? 1 : 0;
+            drawn = drawn && img.width == cell && opaque > cell * cell / 20;
+            for (int y = 0; y < cell; ++y)
+                for (int x = 0; x < cell; ++x) {
+                    const std::uint8_t* s = &img.rgba[(static_cast<size_t>(y) * cell + x) * 4];
+                    std::uint8_t* t = &rgb[((static_cast<size_t>(i / cols * cell + y)) * cols * cell + i % cols * cell + x) * 3];
+                    for (int k = 0; k < 3; ++k) t[k] = static_cast<std::uint8_t>((s[k] * s[3] + 255 * (255 - s[3])) / 255);
+                }
+        }
+        if (const char* out = std::getenv("OTE_MILSYM_SHEET")) {
+            std::ofstream ppm(out, std::ios::binary);
+            ppm << "P6\n" << cols * cell << " " << (n + cols - 1) / cols * cell << "\n255\n";
+            ppm.write(reinterpret_cast<const char*>(rgb.data()), static_cast<std::streamsize>(rgb.size()));
+        }
+        check(drawn, "2525 symbols render");
+        Feature unit;
+        unit.type = "a-f-G-U-C-I";
+        unit.geometries.push_back({GeometryType::Point, {{47, -122.9, 0}}, {}});
+        applySymbol(unit);
+        check(unit.style.sidc == "SFGPUCI--------" && unit.style.iconImage && unit.style.iconColor == 0xFFFFFFFF, "CoT units get 2525 icons");
     }
     std::printf("%d failure(s)\n", failures);
     return failures == 0 ? 0 : 1;

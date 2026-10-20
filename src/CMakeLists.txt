@@ -28,6 +28,7 @@ add_library(opentakengine STATIC
     feature/text.cpp
     feature/feature_layer.cpp
     feature/grid.cpp
+    feature/milsym.cpp
     model/model_layer.cpp
     model/pointcloud.cpp
     tiles3d/tileset.cpp
