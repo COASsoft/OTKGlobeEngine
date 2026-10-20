@@ -347,11 +347,7 @@ void Engine::setOfflineBackdrop(bool enabled) {
     impl_->dirty = true;
 }
 
-void Engine::networkChanged() {
-    net::resetReachability();
-    impl_->globe.retryUnavailable();
-    impl_->dirty = true;
-}
+void Engine::networkChanged() { net::resetReachability(); }
 
 void Engine::setMemoryBudget(int megabytes) { impl_->globe.setMemoryBudget(megabytes); }
 

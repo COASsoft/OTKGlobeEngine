@@ -1,4 +1,5 @@
 import MetalKit
+import Network
 import OpenTAKEngineC
 
 #if canImport(UIKit)
@@ -13,6 +14,7 @@ public final class OpenTAKView: OTEPlatformView, MTKViewDelegate {
     public private(set) var engine: OpaquePointer?
     public var onTap: ((CGPoint, Int) -> Void)?
     public var onLongPress: ((CGPoint) -> Void)?
+    private let pathMonitor = NWPathMonitor()
 
     public init(frame: CGRect) {
         let device = MTLCreateSystemDefaultDevice()
@@ -27,9 +29,22 @@ public final class OpenTAKView: OTEPlatformView, MTKViewDelegate {
         if let device = device {
             engine = ote_create_metal(Unmanaged.passUnretained(device).toOpaque(), 1)
         }
-        if let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first {
-            ote_set_cache_directory(engine, caches.path)
+        if let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            var dir = support.appendingPathComponent("OpenTAKEngine", isDirectory: true)
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            try? dir.setResourceValues(values)
+            ote_set_cache_directory(engine, dir.path)
         }
+        pathMonitor.pathUpdateHandler = { [weak self] path in
+            guard path.status == .satisfied else { return }
+            DispatchQueue.main.async {
+                guard let self = self, let engine = self.engine else { return }
+                ote_network_changed(engine)
+            }
+        }
+        pathMonitor.start(queue: DispatchQueue.global(qos: .utility))
         let me = Unmanaged.passUnretained(self).toOpaque()
         ote_set_tap_callback(engine, { user, x, y, taps, _ in
             guard let user = user else { return }
@@ -51,6 +66,7 @@ public final class OpenTAKView: OTEPlatformView, MTKViewDelegate {
     }
 
     deinit {
+        pathMonitor.cancel()
         ote_set_tap_callback(engine, nil, nil)
         ote_set_long_press_callback(engine, nil, nil)
         ote_destroy(engine)
@@ -81,6 +97,22 @@ public final class OpenTAKView: OTEPlatformView, MTKViewDelegate {
 
     @discardableResult
     public func addTileset(path: String, maxScreenSpaceError: Double = 16) -> UInt64 { ote_add_tileset(engine, path, maxScreenSpaceError) }
+
+    public func setOffline(_ offline: Bool) { ote_set_offline(engine, offline ? 1 : 0) }
+    public func setCacheLimit(megabytes: Int32) { ote_set_cache_limit(engine, megabytes) }
+    public func downloadRegion(layer: Int32 = 0, west: Double, south: Double, east: Double, north: Double, minZoom: Int32, maxZoom: Int32) -> Int32 {
+        ote_download_region(engine, layer, west, south, east, north, minZoom, maxZoom)
+    }
+    public func downloadStatus(_ id: Int32) -> ote_download_status {
+        var s = ote_download_status()
+        ote_get_download_status(engine, id, &s)
+        return s
+    }
+    public func cancelDownload(_ id: Int32) { ote_cancel_download(engine, id) }
+    public func exportTiles(layer: Int32 = 0, west: Double, south: Double, east: Double, north: Double, minZoom: Int32, maxZoom: Int32, path: String) -> Int64 {
+        ote_export_tiles(engine, layer, west, south, east, north, minZoom, maxZoom, path)
+    }
+    public func importTiles(layer: Int32 = 0, path: String) -> Int64 { ote_import_tiles(engine, layer, path) }
 
     public func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
 

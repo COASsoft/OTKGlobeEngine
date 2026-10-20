@@ -72,6 +72,35 @@ JNIEXPORT void JNICALL OTE_FN(nativeSetOffline)(JNIEnv*, jclass, jlong h, jboole
 
 JNIEXPORT void JNICALL OTE_FN(nativeSetMemoryBudget)(JNIEnv*, jclass, jlong h, jint mb) { ote_set_memory_budget(E(h), mb); }
 
+JNIEXPORT void JNICALL OTE_FN(nativeSetCacheLimit)(JNIEnv*, jclass, jlong h, jint mb) { ote_set_cache_limit(E(h), mb); }
+
+JNIEXPORT void JNICALL OTE_FN(nativeNetworkChanged)(JNIEnv*, jclass, jlong h) { ote_network_changed(E(h)); }
+
+JNIEXPORT jint JNICALL OTE_FN(nativeDownloadRegion)(JNIEnv*, jclass, jlong h, jint layer, jdouble w, jdouble s, jdouble e, jdouble n,
+                                                    jint minZ, jint maxZ) {
+    return ote_download_region(E(h), layer, w, s, e, n, minZ, maxZ);
+}
+
+JNIEXPORT jlongArray JNICALL OTE_FN(nativeDownloadStatus)(JNIEnv* env, jclass, jlong h, jint id) {
+    ote_download_status st{};
+    ote_get_download_status(E(h), id, &st);
+    jlong values[6] = {st.total, st.done, st.failed, st.retrying, st.finished, st.cancelled};
+    jlongArray out = env->NewLongArray(6);
+    env->SetLongArrayRegion(out, 0, 6, values);
+    return out;
+}
+
+JNIEXPORT void JNICALL OTE_FN(nativeCancelDownload)(JNIEnv*, jclass, jlong h, jint id) { ote_cancel_download(E(h), id); }
+
+JNIEXPORT jlong JNICALL OTE_FN(nativeExportTiles)(JNIEnv* env, jclass, jlong h, jint layer, jdouble w, jdouble s, jdouble e, jdouble n,
+                                                  jint minZ, jint maxZ, jstring path) {
+    return ote_export_tiles(E(h), layer, w, s, e, n, minZ, maxZ, str(env, path).c_str());
+}
+
+JNIEXPORT jlong JNICALL OTE_FN(nativeImportTiles)(JNIEnv* env, jclass, jlong h, jint layer, jstring path) {
+    return ote_import_tiles(E(h), layer, str(env, path).c_str());
+}
+
 JNIEXPORT void JNICALL OTE_FN(nativeClearLayers)(JNIEnv*, jclass, jlong h) { ote_clear_layers(E(h)); }
 
 JNIEXPORT jint JNICALL OTE_FN(nativeAddLayer)(JNIEnv* env, jclass, jlong h, jint type, jstring name, jstring url, jint minZ,

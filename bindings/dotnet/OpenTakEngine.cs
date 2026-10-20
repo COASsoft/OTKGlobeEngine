@@ -57,6 +57,17 @@ namespace OpenTakEngine
     }
 
     [StructLayout(LayoutKind.Sequential)]
+    public struct DownloadStatus
+    {
+        public long Total;
+        public long Done;
+        public long Failed;
+        public long Retrying;
+        public int Finished;
+        public int Cancelled;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
     public struct View
     {
         public double Lat;
@@ -80,6 +91,16 @@ namespace OpenTakEngine
         [DllImport(Lib)] public static extern int ote_needs_redraw(IntPtr e);
         [DllImport(Lib)] public static extern void ote_set_cache_directory(IntPtr e, [MarshalAs(UnmanagedType.LPUTF8Str)] string dir);
         [DllImport(Lib)] public static extern void ote_set_offline(IntPtr e, int offline);
+        [DllImport(Lib)] public static extern void ote_set_cache_limit(IntPtr e, int megabytes);
+        [DllImport(Lib)] public static extern long ote_cache_bytes(IntPtr e);
+        [DllImport(Lib)] public static extern void ote_network_changed(IntPtr e);
+        [DllImport(Lib)] public static extern void ote_set_offline_backdrop(IntPtr e, int enabled);
+        [DllImport(Lib)] public static extern long ote_count_region_tiles(IntPtr e, int layer, double west, double south, double east, double north, int minZoom, int maxZoom);
+        [DllImport(Lib)] public static extern int ote_download_region(IntPtr e, int layer, double west, double south, double east, double north, int minZoom, int maxZoom);
+        [DllImport(Lib)] public static extern void ote_get_download_status(IntPtr e, int id, out DownloadStatus status);
+        [DllImport(Lib)] public static extern void ote_cancel_download(IntPtr e, int id);
+        [DllImport(Lib)] public static extern long ote_export_tiles(IntPtr e, int layer, double west, double south, double east, double north, int minZoom, int maxZoom, [MarshalAs(UnmanagedType.LPUTF8Str)] string path);
+        [DllImport(Lib)] public static extern long ote_import_tiles(IntPtr e, int layer, [MarshalAs(UnmanagedType.LPUTF8Str)] string path);
         [DllImport(Lib)] public static extern void ote_set_memory_budget(IntPtr e, int megabytes);
         [DllImport(Lib)] public static extern void ote_clear_layers(IntPtr e);
         [DllImport(Lib)] public static extern int ote_add_layer(IntPtr e, Source type, [MarshalAs(UnmanagedType.LPUTF8Str)] string name, [MarshalAs(UnmanagedType.LPUTF8Str)] string urlOrPath, int minZoom, int maxZoom, float opacity);
@@ -138,11 +159,24 @@ namespace OpenTakEngine
     public sealed class Engine : IDisposable
     {
         public IntPtr Handle { get; private set; }
+        private readonly object gate = new object();
 
         private Engine(IntPtr handle)
         {
             if (handle == IntPtr.Zero) throw new InvalidOperationException("OpenTAKEngine could not initialize the graphics device");
             Handle = handle;
+            System.Net.NetworkInformation.NetworkChange.NetworkAvailabilityChanged += OnNetworkAvailability;
+            System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged += OnNetworkAddress;
+        }
+
+        private void OnNetworkAvailability(object sender, System.Net.NetworkInformation.NetworkAvailabilityEventArgs e)
+        {
+            lock (gate) if (e.IsAvailable && Handle != IntPtr.Zero) Native.ote_network_changed(Handle);
+        }
+
+        private void OnNetworkAddress(object sender, EventArgs e)
+        {
+            lock (gate) if (Handle != IntPtr.Zero) Native.ote_network_changed(Handle);
         }
 
         public static Engine CreateD3D11(IntPtr device, IntPtr context, int samples = 1) => new Engine(Native.ote_create_d3d11(device, context, samples));
@@ -158,6 +192,19 @@ namespace OpenTakEngine
 
         public string CacheDirectory { set => Native.ote_set_cache_directory(Handle, value); }
         public bool Offline { set => Native.ote_set_offline(Handle, value ? 1 : 0); }
+        public int CacheLimitMegabytes { set => Native.ote_set_cache_limit(Handle, value); }
+        public long CacheBytes => Native.ote_cache_bytes(Handle);
+        public bool OfflineBackdrop { set => Native.ote_set_offline_backdrop(Handle, value ? 1 : 0); }
+        public void NetworkChanged() => Native.ote_network_changed(Handle);
+        public long CountRegionTiles(int layer, double west, double south, double east, double north, int minZoom, int maxZoom) =>
+            Native.ote_count_region_tiles(Handle, layer, west, south, east, north, minZoom, maxZoom);
+        public int DownloadRegion(int layer, double west, double south, double east, double north, int minZoom, int maxZoom) =>
+            Native.ote_download_region(Handle, layer, west, south, east, north, minZoom, maxZoom);
+        public DownloadStatus GetDownloadStatus(int id) { Native.ote_get_download_status(Handle, id, out var s); return s; }
+        public void CancelDownload(int id) => Native.ote_cancel_download(Handle, id);
+        public long ExportTiles(int layer, double west, double south, double east, double north, int minZoom, int maxZoom, string path) =>
+            Native.ote_export_tiles(Handle, layer, west, south, east, north, minZoom, maxZoom, path);
+        public long ImportTiles(int layer, string path) => Native.ote_import_tiles(Handle, layer, path);
         public bool Terrain { set => Native.ote_set_terrain(Handle, value ? 1 : 0); }
         public bool Grid { set => Native.ote_set_grid(Handle, value ? 1 : 0); }
 
@@ -234,8 +281,13 @@ namespace OpenTakEngine
 
         public void Dispose()
         {
-            if (Handle != IntPtr.Zero) Native.ote_destroy(Handle);
-            Handle = IntPtr.Zero;
+            System.Net.NetworkInformation.NetworkChange.NetworkAvailabilityChanged -= OnNetworkAvailability;
+            System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged -= OnNetworkAddress;
+            lock (gate)
+            {
+                if (Handle != IntPtr.Zero) Native.ote_destroy(Handle);
+                Handle = IntPtr.Zero;
+            }
         }
     }
 }

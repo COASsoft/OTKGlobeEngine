@@ -13,6 +13,7 @@ MANIFEST = """<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.opentakengine">
     <uses-sdk android:minSdkVersion="26" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-feature android:glEsVersion="0x00030000" android:required="true" />
 </manifest>
 """

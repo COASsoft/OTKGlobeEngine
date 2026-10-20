@@ -1,6 +1,8 @@
 package com.opentakengine;
 
 import android.content.Context;
+import android.net.ConnectivityManager;
+import android.net.Network;
 import android.opengl.GLSurfaceView;
 import android.util.AttributeSet;
 import android.view.KeyEvent;
@@ -22,6 +24,11 @@ public class OpenTakView extends GLSurfaceView implements GLSurfaceView.Renderer
     private final float density;
     private final ArrayList<Runnable> pending = new ArrayList<>();
     private Ready ready;
+    private ConnectivityManager.NetworkCallback networkCallback;
+
+    public interface Result {
+        void onResult(long value);
+    }
 
     public OpenTakView(Context context) {
         this(context, null);
@@ -98,10 +105,127 @@ public class OpenTakView extends GLSurfaceView implements GLSurfaceView.Renderer
     }
 
     @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        ConnectivityManager cm = (ConnectivityManager) getContext().getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (cm == null || networkCallback != null) return;
+        networkCallback = new ConnectivityManager.NetworkCallback() {
+            @Override
+            public void onAvailable(Network network) {
+                run(new Runnable() {
+                    @Override
+                    public void run() {
+                        OpenTakEngine.nativeNetworkChanged(engine);
+                    }
+                });
+            }
+        };
+        try {
+            cm.registerDefaultNetworkCallback(networkCallback);
+        } catch (RuntimeException e) {
+            networkCallback = null;
+        }
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        ConnectivityManager cm = (ConnectivityManager) getContext().getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (cm != null && networkCallback != null) {
+            try {
+                cm.unregisterNetworkCallback(networkCallback);
+            } catch (RuntimeException ignored) {
+            }
+        }
+        networkCallback = null;
+        super.onDetachedFromWindow();
+    }
+
+    public void setOffline(final boolean offline) {
+        run(new Runnable() {
+            @Override
+            public void run() {
+                OpenTakEngine.nativeSetOffline(engine, offline);
+            }
+        });
+    }
+
+    public void setCacheLimit(final int megabytes) {
+        run(new Runnable() {
+            @Override
+            public void run() {
+                OpenTakEngine.nativeSetCacheLimit(engine, megabytes);
+            }
+        });
+    }
+
+    public void downloadRegion(final int layer, final double west, final double south, final double east, final double north,
+                               final int minZoom, final int maxZoom, final Result result) {
+        run(new Runnable() {
+            @Override
+            public void run() {
+                final long id = OpenTakEngine.nativeDownloadRegion(engine, layer, west, south, east, north, minZoom, maxZoom);
+                if (result != null) post(new Runnable() {
+                    @Override
+                    public void run() {
+                        result.onResult(id);
+                    }
+                });
+            }
+        });
+    }
+
+    public long[] downloadStatus(int id) {
+        return engine == 0 ? new long[6] : OpenTakEngine.nativeDownloadStatus(engine, id);
+    }
+
+    public void cancelDownload(final int id) {
+        run(new Runnable() {
+            @Override
+            public void run() {
+                OpenTakEngine.nativeCancelDownload(engine, id);
+            }
+        });
+    }
+
+    public void exportTiles(final int layer, final double west, final double south, final double east, final double north,
+                            final int minZoom, final int maxZoom, final String path, final Result result) {
+        run(new Runnable() {
+            @Override
+            public void run() {
+                final long n = OpenTakEngine.nativeExportTiles(engine, layer, west, south, east, north, minZoom, maxZoom, path);
+                if (result != null) post(new Runnable() {
+                    @Override
+                    public void run() {
+                        result.onResult(n);
+                    }
+                });
+            }
+        });
+    }
+
+    public void importTiles(final int layer, final String path, final Result result) {
+        run(new Runnable() {
+            @Override
+            public void run() {
+                final long n = OpenTakEngine.nativeImportTiles(engine, layer, path);
+                requestRender();
+                if (result != null) post(new Runnable() {
+                    @Override
+                    public void run() {
+                        result.onResult(n);
+                    }
+                });
+            }
+        });
+    }
+
+    @Override
     public void onSurfaceCreated(GL10 gl, EGLConfig config) {
         if (engine != 0) return;
         engine = OpenTakEngine.nativeCreate(1);
-        OpenTakEngine.nativeSetCacheDirectory(engine, getContext().getCacheDir().getAbsolutePath());
+        java.io.File tiles = new java.io.File(getContext().getNoBackupFilesDir(), "opentakengine");
+        if (!tiles.isDirectory()) tiles.mkdirs();
+        OpenTakEngine.nativeSetCacheDirectory(engine, tiles.getAbsolutePath());
         for (Runnable r : pending) r.run();
         pending.clear();
         if (ready != null) {

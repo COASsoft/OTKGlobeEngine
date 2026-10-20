@@ -47,6 +47,13 @@ public final class OpenTakEngine {
     static native void nativeSetCacheDirectory(long h, String dir);
     static native void nativeSetOffline(long h, boolean offline);
     static native void nativeSetMemoryBudget(long h, int megabytes);
+    static native void nativeSetCacheLimit(long h, int megabytes);
+    static native void nativeNetworkChanged(long h);
+    static native int nativeDownloadRegion(long h, int layer, double west, double south, double east, double north, int minZoom, int maxZoom);
+    static native long[] nativeDownloadStatus(long h, int id);
+    static native void nativeCancelDownload(long h, int id);
+    static native long nativeExportTiles(long h, int layer, double west, double south, double east, double north, int minZoom, int maxZoom, String path);
+    static native long nativeImportTiles(long h, int layer, String path);
     static native void nativeClearLayers(long h);
     static native int nativeAddLayer(long h, int type, String name, String urlOrPath, int minZoom, int maxZoom, float opacity);
     static native int nativeLoadMobac(long h, String xmlOrPath);

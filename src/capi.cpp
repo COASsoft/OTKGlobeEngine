@@ -143,6 +143,43 @@ void ote_set_offline(ote_engine* e, int offline) { e->engine.setOffline(offline 
 
 void ote_set_memory_budget(ote_engine* e, int megabytes) { e->engine.setMemoryBudget(megabytes); }
 
+void ote_set_cache_limit(ote_engine* e, int megabytes) { e->engine.setCacheLimit(megabytes); }
+
+int64_t ote_cache_bytes(const ote_engine* e) { return e->engine.cacheBytes(); }
+
+void ote_network_changed(ote_engine* e) { e->engine.networkChanged(); }
+
+void ote_set_offline_backdrop(ote_engine* e, int enabled) { e->engine.setOfflineBackdrop(enabled != 0); }
+
+int64_t ote_count_region_tiles(const ote_engine* e, int layer, double west, double south, double east, double north, int min_zoom,
+                               int max_zoom) {
+    return e->engine.countRegionTiles(layer, {west, south, east, north}, min_zoom, max_zoom);
+}
+
+int ote_download_region(ote_engine* e, int layer, double west, double south, double east, double north, int min_zoom, int max_zoom) {
+    return e->engine.downloadRegion(layer, {west, south, east, north}, min_zoom, max_zoom);
+}
+
+void ote_get_download_status(const ote_engine* e, int id, ote_download_status* out) {
+    if (!out) return;
+    ote::DownloadStatus s = e->engine.downloadStatus(id);
+    out->total = s.total;
+    out->done = s.done;
+    out->failed = s.failed;
+    out->retrying = s.retrying;
+    out->finished = s.finished ? 1 : 0;
+    out->cancelled = s.cancelled ? 1 : 0;
+}
+
+void ote_cancel_download(ote_engine* e, int id) { e->engine.cancelDownload(id); }
+
+int64_t ote_export_tiles(ote_engine* e, int layer, double west, double south, double east, double north, int min_zoom, int max_zoom,
+                         const char* path) {
+    return path ? e->engine.exportTiles(layer, {west, south, east, north}, min_zoom, max_zoom, path) : -1;
+}
+
+int64_t ote_import_tiles(ote_engine* e, int layer, const char* path) { return path ? e->engine.importTiles(layer, path) : -1; }
+
 void ote_clear_layers(ote_engine* e) {
     e->layers.clear();
     e->engine.setLayers(e->layers);

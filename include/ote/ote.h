@@ -56,6 +56,29 @@ OTE_API void ote_set_android_vm(void* java_vm);
 OTE_API void ote_set_cache_directory(ote_engine* e, const char* dir);
 OTE_API void ote_set_offline(ote_engine* e, int offline);
 OTE_API void ote_set_memory_budget(ote_engine* e, int megabytes);
+OTE_API void ote_set_cache_limit(ote_engine* e, int megabytes);
+OTE_API int64_t ote_cache_bytes(const ote_engine* e);
+OTE_API void ote_network_changed(ote_engine* e);
+OTE_API void ote_set_offline_backdrop(ote_engine* e, int enabled);
+
+typedef struct ote_download_status {
+    int64_t total;
+    int64_t done;
+    int64_t failed;
+    int64_t retrying;
+    int finished;
+    int cancelled;
+} ote_download_status;
+
+OTE_API int64_t ote_count_region_tiles(const ote_engine* e, int layer, double west, double south, double east, double north,
+                                       int min_zoom, int max_zoom);
+OTE_API int ote_download_region(ote_engine* e, int layer, double west, double south, double east, double north, int min_zoom,
+                                int max_zoom);
+OTE_API void ote_get_download_status(const ote_engine* e, int id, ote_download_status* out);
+OTE_API void ote_cancel_download(ote_engine* e, int id);
+OTE_API int64_t ote_export_tiles(ote_engine* e, int layer, double west, double south, double east, double north, int min_zoom,
+                                 int max_zoom, const char* path);
+OTE_API int64_t ote_import_tiles(ote_engine* e, int layer, const char* path);
 
 OTE_API void ote_clear_layers(ote_engine* e);
 OTE_API int ote_add_layer(ote_engine* e, ote_source type, const char* name, const char* url_or_path, int min_zoom,
