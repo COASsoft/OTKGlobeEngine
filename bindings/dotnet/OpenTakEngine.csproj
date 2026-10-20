@@ -7,8 +7,17 @@
     <RootNamespace>OpenTakEngine</RootNamespace>
     <PackageId>OpenTakEngine</PackageId>
     <Version>0.1.0</Version>
-    <Description>.NET bindings for OpenTAKEngine, a cross-platform globe map engine</Description>
+    <Authors>OpenTAKEngine</Authors>
+    <Description>.NET bindings for OpenTAKEngine, a cross-platform globe map engine for TAK-style applications</Description>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/grangedevgroup-code/OpenTAKEngine</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/grangedevgroup-code/OpenTAKEngine</RepositoryUrl>
+    <PackageTags>map;gis;globe;tak;milstd2525;3dtiles;offline</PackageTags>
     <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
   </PropertyGroup>
+
+  <ItemGroup Condition="Exists('runtimes')">
+    <None Include="runtimes/**" Pack="true" PackagePath="runtimes/" />
+  </ItemGroup>
 
 </Project>
