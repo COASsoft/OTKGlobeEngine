@@ -192,6 +192,8 @@ PmTilesArchive::Directory PmTilesArchive::directory(std::uint64_t offset, std::u
     }
     if (v.failed) return nullptr;
     std::lock_guard lock(mutex_);
+    auto have = dirs_.find(offset);
+    if (have != dirs_.end()) return have->second.first;
     lru_.push_front(offset);
     dirs_[offset] = {entries, lru_.begin()};
     while (dirs_.size() > kDirectoryCacheEntries) {
