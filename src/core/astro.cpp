@@ -3,6 +3,7 @@
 #include "core/geo.hpp"
 #include "ote/astro.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <limits>
