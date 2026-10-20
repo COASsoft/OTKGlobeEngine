@@ -31,7 +31,7 @@ HINTERNET session(const std::string& userAgent) {
             WinHttpSetOption(handle, WINHTTP_OPTION_ENABLE_HTTP_PROTOCOL, &protocols, sizeof(protocols));
             DWORD decompression = WINHTTP_DECOMPRESSION_FLAG_ALL;
             WinHttpSetOption(handle, WINHTTP_OPTION_DECOMPRESSION, &decompression, sizeof(decompression));
-            WinHttpSetTimeouts(handle, 10000, 10000, 15000, 30000);
+            WinHttpSetTimeouts(handle, 5000, 5000, 15000, 30000);
         }
     });
     return handle;

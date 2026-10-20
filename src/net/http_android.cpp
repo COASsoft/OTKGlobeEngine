@@ -58,7 +58,7 @@ Response getBackend(const std::string& url, const std::string& userAgent) {
         e->PopLocalFrame(nullptr);
         return res;
     }
-    e->CallVoidMethod(conn, e->GetMethodID(connClass, "setConnectTimeout", "(I)V"), 10000);
+    e->CallVoidMethod(conn, e->GetMethodID(connClass, "setConnectTimeout", "(I)V"), 5000);
     e->CallVoidMethod(conn, e->GetMethodID(connClass, "setReadTimeout", "(I)V"), 20000);
     e->CallVoidMethod(conn, e->GetMethodID(connClass, "setRequestProperty", "(Ljava/lang/String;Ljava/lang/String;)V"),
                       e->NewStringUTF("User-Agent"), e->NewStringUTF(userAgent.c_str()));

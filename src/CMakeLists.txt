@@ -2,6 +2,7 @@ add_library(opentakengine STATIC
     engine.cpp
     input/input_controller.cpp
     net/http_faults.cpp
+    net/reachability.cpp
     formats/formats.cpp
     formats/cot.cpp
     formats/text_formats.cpp

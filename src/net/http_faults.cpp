@@ -19,6 +19,7 @@ struct Faults {
     double timeoutRate = 0;
     double corruptRate = 0;
     double missingRate = 0;
+    bool unreachable = false;
     bool any = false;
 };
 
@@ -36,7 +37,9 @@ const Faults& faults() {
         r.timeoutRate = envNumber("OTE_NET_TIMEOUT_RATE");
         r.corruptRate = envNumber("OTE_NET_CORRUPT_RATE");
         r.missingRate = envNumber("OTE_NET_404_RATE");
-        r.any = r.delayMs > 0 || r.jitterMs > 0 || r.failRate > 0 || r.timeoutRate > 0 || r.corruptRate > 0 || r.missingRate > 0;
+        r.unreachable = envNumber("OTE_NET_UNREACHABLE") > 0;
+        r.any = r.delayMs > 0 || r.jitterMs > 0 || r.failRate > 0 || r.timeoutRate > 0 || r.corruptRate > 0 || r.missingRate > 0 ||
+                r.unreachable;
         return r;
     }();
     return f;
@@ -51,13 +54,17 @@ double roll() {
 
 }
 
-Response get(const std::string& url, const std::string& userAgent) {
+Response faulted(const std::string& url, const std::string& userAgent) {
     const Faults& f = faults();
     if (!f.any) return getBackend(url, userAgent);
     double wait = f.delayMs + f.jitterMs * roll();
     if (wait > 0) std::this_thread::sleep_for(std::chrono::microseconds(static_cast<long long>(wait * 1000.0)));
-    double r = roll();
     Response out;
+    if (f.unreachable) {
+        out.error = "injected unreachable network";
+        return out;
+    }
+    double r = roll();
     if (r < f.failRate) {
         out.status = 503;
         out.error = "injected server error";
@@ -80,6 +87,17 @@ Response get(const std::string& url, const std::string& userAgent) {
     if (r < f.corruptRate && out.status == 200) {
         for (size_t i = 0; i < out.body.size(); ++i) out.body[i] = static_cast<std::uint8_t>(roll() * 256.0);
     }
+    return out;
+}
+
+Response get(const std::string& url, const std::string& userAgent) {
+    if (!admit(url)) {
+        Response out;
+        out.error = "host unreachable";
+        return out;
+    }
+    Response out = faulted(url, userAgent);
+    report(url, out.status);
     return out;
 }
 
