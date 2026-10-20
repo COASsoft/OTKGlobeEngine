@@ -70,6 +70,23 @@ ATAK reference captures are in `screenshots/atak`.
 - C ABI `include/ote/ote.h` and `opentakengine_c` shared library
 - Android AAR with `OpenTakView` (`scripts/android_aar.py`), Swift `OpenTAKView` and xcframework (`scripts/apple_xcframework.sh`), C# wrapper (`bindings/dotnet`)
 
+## Install
+
+Releases on GitHub carry ready-made packages:
+
+| Platform | Package |
+| --- | --- |
+| Windows x64 | `opentakengine-<version>-windows-x86_64.zip` |
+| Linux x86_64 and arm64 | `.deb`, `.rpm` and `.tar.gz` |
+| macOS (Apple silicon and Intel) | `opentakengine-<version>-macos-universal.tar.gz` |
+| FreeBSD | `.pkg` (`pkg add ./opentakengine-<version>-freebsd-amd64.pkg`) and `.tar.gz` |
+| OpenBSD, NetBSD | `.tar.gz` |
+| Android | `opentakengine-<version>.aar` and a viewer APK |
+| iOS, iPadOS, macOS apps | `OpenTAKEngine-<version>.xcframework.zip` |
+| .NET | `OpenTakEngine.<version>.nupkg` with native libraries for Windows, Linux and macOS |
+
+The desktop packages contain the C ABI as a shared library (`ote.h`), the viewer, the documentation and the license texts of bundled libraries. Use them from CMake with `find_package(OpenTAKEngine)` and `target_link_libraries(app PRIVATE OpenTAKEngine::opentakengine_c)`, or through `pkg-config opentakengine`. The C++ API is used by building the engine from source (`add_subdirectory` or `FetchContent`). `SHA256SUMS.txt` lists checksums for every file.
+
 ## Build
 
 Windows (Visual Studio 2022 or newer, CMake 3.24+, Ninja):
@@ -81,13 +98,17 @@ build\windows\apps\viewer\ote_viewer.exe
 
 Linux: `cmake -S . -B build -G Ninja && cmake --build build` (libcurl, X11, Xi, Xcursor and OpenGL development packages; add `-DOTE_WITH_GDAL=ON` and libgdal-dev for the GDAL module).
 
+FreeBSD, OpenBSD and NetBSD: `sh scripts/bsd_build.sh` installs the build dependencies (cmake, ninja, curl, X11 and Mesa), builds and runs the tests; `OTE_PACKAGE=1` also makes the packages. sokol-shdc has no BSD binaries, so these hosts use the GLSL 4.1 shader headers checked in under `src/render/shaders/generated` (`cmake --build build --target ote_pregenerate_shaders` refreshes them; CI fails when they are stale).
+
 macOS: `cmake -S . -B build -G Ninja && cmake --build build`. iOS: `cmake -S . -B build -G Xcode -DCMAKE_SYSTEM_NAME=iOS`.
 
 Android: `python scripts/android_apk.py --install --run` builds, signs and installs a standalone viewer APK (needs the Android SDK and NDK).
 
 OpenGL on Windows (to check the GL path used on Linux and Android): add `-DOTE_GFX_BACKEND=SOKOL_GLCORE -DOTE_SHDC_LANG=glsl410` to the CMake configure.
 
-Tests: `ctest --test-dir build/windows` runs the unit tests (geodesy, MGRS, tile matrices, camera, geoid, file parsers, quantized mesh); CI runs them on Windows, Linux and macOS.
+Tests: `ctest --test-dir build/windows` runs the unit tests (geodesy, MGRS, tile matrices, camera, geoid, file parsers, quantized mesh); CI runs them on Windows, Linux, macOS, FreeBSD, OpenBSD and NetBSD.
+
+Packages: `cpack --config build/CPackConfig.cmake` makes the platform packages; [docs/RELEASING.md](docs/RELEASING.md) describes a release.
 
 ## Viewer
 
