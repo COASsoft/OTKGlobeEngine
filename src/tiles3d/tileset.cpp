@@ -850,8 +850,9 @@ bool Tileset3D::busy() const {
 }
 
 void Tileset3D::draw(const Camera& cam, ModelLayer& models, PointCloudLayer& points, double dpi) {
-    if (draw_.empty()) return;
+    if (draw_.empty() || !(opacity_ > 0.0f)) return;
     models.begin();
+    models.setOpacity(opacity_);
     bool anyPoints = false;
     for (Node* n : draw_) {
         Mat4 orient = n->transform;
@@ -864,6 +865,7 @@ void Tileset3D::draw(const Camera& cam, ModelLayer& models, PointCloudLayer& poi
             models.drawMesh(cam, *mesh, model, orient, light, lighting_);
         }
     }
+    models.setOpacity(1.0f);
     if (!anyPoints) return;
     for (Node* n : draw_)
         for (const auto& mesh : n->meshes) {

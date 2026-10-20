@@ -30,6 +30,8 @@ public:
     bool valid() const { return root_ != nullptr; }
     void update(const Camera& cam, const std::array<double, 16>& frustum, std::uint64_t frame);
     void draw(const Camera& cam, ModelLayer& models, PointCloudLayer& points, double dpi);
+    void setOpacity(float opacity) { opacity_ = opacity; }
+    float opacity() const { return opacity_; }
     bool busy() const;
     std::size_t residentBytes() const { return resident_; }
     int drawnTiles() const { return static_cast<int>(draw_.size()); }
@@ -41,6 +43,7 @@ public:
     struct Subtree;
 
 private:
+    float opacity_ = 1.0f;
     struct Node {
         Mat4 transform;
         Vec3 center;

@@ -753,6 +753,7 @@ void ModelLayer::drawPrimitive(const Camera& cam, const GpuMesh& mesh, const Gpu
     }
     model_fs_params_t fs{};
     for (int k = 0; k < 4; ++k) fs.base_color[k] = mat.color[k];
+    fs.base_color[3] *= opacity_;
     fs.light[0] = static_cast<float>(l.x);
     fs.light[1] = static_cast<float>(l.y);
     fs.light[2] = static_cast<float>(l.z);
@@ -810,14 +811,16 @@ void ModelLayer::draw(const Camera& cam, const GroundFn& ground, bool reuse) {
             frame.at(0, 2) = u.x; frame.at(1, 2) = u.y; frame.at(2, 2) = u.z;
             Mat4 orient = frame * rotZ(-pl.heading * kDegToRad) * rotX(pl.pitch * kDegToRad) * rotY(pl.roll * kDegToRad);
             Mat4 base = translation(origin - frameOrigin_) * orient * scaleMat(pl.scale);
-            placed_.push_back({inst.mesh.get(), base, orient, normalize(normalize(cam.eye() - origin) + u * 0.8), u});
+            if (!(pl.opacity > 0.0f)) continue;
+            placed_.push_back({inst.mesh.get(), base, orient, normalize(normalize(cam.eye() - origin) + u * 0.8), u, std::min(pl.opacity, 1.0f)});
         }
-        std::stable_sort(placed_.begin(), placed_.end(), [](const Placed& a, const Placed& b) { return a.mesh < b.mesh; });
+        std::stable_sort(placed_.begin(), placed_.end(),
+                         [](const Placed& a, const Placed& b) { return a.mesh != b.mesh ? a.mesh < b.mesh : a.opacity > b.opacity; });
         batches_.clear();
         std::vector<float> matrices;
         for (size_t i = 0; i < placed_.size();) {
             size_t j = i;
-            while (j < placed_.size() && placed_[j].mesh == placed_[i].mesh) ++j;
+            while (j < placed_.size() && placed_[j].mesh == placed_[i].mesh && placed_[j].opacity == placed_[i].opacity) ++j;
             if (j - i >= 2 && placed_[i].mesh->instances.empty()) {
                 batches_.push_back({i, j - i});
                 for (size_t k = i; k < j; ++k) {
@@ -852,6 +855,7 @@ void ModelLayer::draw(const Camera& cam, const GroundFn& ground, bool reuse) {
     for (size_t i = 0; i < placed_.size();) {
         if (batch < batches_.size() && batches_[batch].first == i) {
             const Placed& first = placed_[i];
+            opacity_ = first.opacity;
             for (const GpuMesh::Primitive& p : first.mesh->primitives) {
                 Mat4 node;
                 node.m = p.matrix;
@@ -863,9 +867,11 @@ void ModelLayer::draw(const Camera& cam, const GroundFn& ground, bool reuse) {
             ++batch;
             continue;
         }
+        opacity_ = placed_[i].opacity;
         drawMesh(cam, *placed_[i].mesh, shift * placed_[i].base, placed_[i].orient, placed_[i].light);
         ++i;
     }
+    opacity_ = 1.0f;
 }
 
 }

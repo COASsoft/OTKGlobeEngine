@@ -289,6 +289,7 @@ public:
     std::uint64_t addPointCloud(const std::string& lasPath, std::size_t maxPoints = 4000000, float pointSizePx = 2.0f);
     bool removePointCloud(std::uint64_t id);
     bool removeTileset(std::uint64_t id);
+    bool setTilesetOpacity(std::uint64_t id, float opacity);
     bool tilesetCenter(std::uint64_t id, double& lat, double& lon, double& alt) const;
 
     void setGridEnabled(bool enabled);

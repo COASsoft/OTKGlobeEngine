@@ -127,6 +127,12 @@ public:
     std::vector<std::string> credits() const;
     void setSunLighting(bool enabled, double unixSeconds);
     bool removeTileset(std::uint64_t id) { return tilesets_.erase(id) > 0; }
+    bool setTilesetOpacity(std::uint64_t id, float opacity) {
+        auto it = tilesets_.find(id);
+        if (it == tilesets_.end()) return false;
+        it->second->setOpacity(std::clamp(opacity, 0.0f, 1.0f));
+        return true;
+    }
     const FeatureLayer& features() const { return features_; }
     const TileLoader& loader() const { return loader_; }
     void setImageryScale(double s) { imageryScale_ = s; }

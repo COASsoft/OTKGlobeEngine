@@ -113,6 +113,7 @@ public:
     void begin();
     void drawMesh(const Camera& cam, const GpuMesh& mesh, const Mat4& model, const Mat4& orientation, Vec3 lightDir, int lighting = 0);
     void setSun(bool enabled, Vec3 direction);
+    void setOpacity(float opacity) { opacity_ = opacity; }
 
 private:
     struct Instance {
@@ -125,6 +126,7 @@ private:
         Mat4 orient;
         Vec3 light;
         Vec3 up;
+        float opacity = 1.0f;
     };
     struct Batch {
         size_t first = 0;
@@ -151,6 +153,7 @@ private:
     sg_image flat_{};
     sg_view flatView_{};
     bool sun_ = false;
+    float opacity_ = 1.0f;
     Vec3 sunDir_{0, 0, 1};
     std::vector<Placed> placed_;
     std::vector<Batch> batches_;

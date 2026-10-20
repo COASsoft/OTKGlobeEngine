@@ -90,6 +90,7 @@ struct ModelPlacement {
     double pitch = 0;
     double roll = 0;
     double scale = 1;
+    float opacity = 1.0f;
 };
 
 struct MeshPart {

@@ -562,6 +562,11 @@ bool Engine::removePointCloud(std::uint64_t id) {
     return impl_->globe.points().remove(id);
 }
 
+bool Engine::setTilesetOpacity(std::uint64_t id, float opacity) {
+    impl_->dirty = true;
+    return impl_->globe.setTilesetOpacity(id, opacity);
+}
+
 bool Engine::removeTileset(std::uint64_t id) {
     impl_->tilesetCenters.erase(id);
     impl_->dirty = true;
