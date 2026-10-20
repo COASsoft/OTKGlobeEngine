@@ -66,19 +66,20 @@ Round trips through GeoJSON, KML, GML, CSV, CoT and TAK data packages are covere
 | GDAL DEMs (GeoTIFF, IMG, BAG, …) (.tif .img .bag) | `dem` | Elevation | yes | no | yes | ElevationLayer type Gdal |  |
 | Cesium quantized-mesh (.terrain) | `quantized-mesh` | Elevation | yes | no | no | ElevationLayer type QuantizedMesh |  |
 | Terrarium RGB elevation tiles (.png) | `terrarium` | Elevation | yes | no | no | ElevationLayer type Terrarium | Default online terrain |
-| glTF 2.0 / GLB (.gltf .glb) | `gltf` | 3D model | yes | no | no | addModel | PBR base colour, textures, node transforms |
+| glTF 2.0 / GLB (.gltf .glb) | `gltf` | 3D model | yes | no | no | addModel | Metallic-roughness PBR, normal/emissive/occlusion maps, KHR_materials_unlit, KHR_texture_transform, Draco, meshopt, KTX2, EXT_mesh_gpu_instancing |
 | OGC 3D Tiles 1.0/1.1 (.json .b3dm .i3dm .pnts .cmpt .glb .gltf .subtree .3tz) | `3dtiles` | 3D model | yes | no | no | addTileset | tileset.json, external tilesets, implicit tiling (quadtree/octree, region or box, binary or JSON subtrees), b3dm, i3dm, pnts (incl. Draco point compression), cmpt, glb/glTF content with `EXT_mesh_gpu_instancing`, `KHR_draco_mesh_compression`, `EXT_meshopt_compression`, `KHR_texture_basisu` (KTX2), `KHR_mesh_quantization`, `KHR_texture_transform`; .3tz archives |
 | Wavefront OBJ (.obj) | `obj` | 3D model | no | no | no | - | Planned adapter |
 | COLLADA (.dae) | `collada` | 3D model | no | no | no | - | Planned adapter (KMZ models use COLLADA) |
 | Autodesk FBX (.fbx) | `fbx` | 3D model | no | no | no | - | Proprietary; convert to glTF |
 | ASPRS LAS 1.0–1.4 (.las) | `las` | Point cloud | yes | no | no | addPointCloud | Instanced point rendering |
 | LAZ (compressed LAS) (.laz) | `laz` | Point cloud | no | no | no | - | Needs LASzip (LGPL) as an optional module |
+| MISB ST 0601 UAS metadata (KLV, MPEG-TS) (.ts .m2ts .klv) | `klv` | Vector | yes | no | no | importData / loadFeatures | Sensor and frame-centre tracks, footprints and line of sight from FMV video or raw KLV |
 | CoT over TCP/UDP/TLS (TAK Server, mesh SA) | `cot-stream` | Stream | no | no | no | - | Planned network adapter; CoT messages already parse with the cot adapter |
 
 ## Military and government formats
 
 * NITF, CADRG/CIB (RPF `A.TOC`), DTED, ADRG and S-57 load through GDAL's drivers; DTED and SRTM HGT also have native readers.
-* MIL-STD-2525 / APP-6 symbology is rendering, not a data format; CoT `type` strings are preserved so a symbology module can draw them.
+* MIL-STD-2525 C/D symbology is rendering, not a data format: CoT `type` strings and SIDCs are drawn as 2525 icons by `ote/milsym.hpp`.
 * VMAP/VPF has no GDAL driver; it needs OGDI and is not supported.
 * Formats without public specifications or with export-controlled specifications are out of scope unless a licensed implementation is supplied.
 

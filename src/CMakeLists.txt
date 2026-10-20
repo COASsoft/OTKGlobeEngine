@@ -8,11 +8,13 @@ add_library(opentakengine STATIC
     formats/text_formats.cpp
     formats/exporters.cpp
     formats/package.cpp
+    formats/klv.cpp
     capi.cpp
     core/geo.cpp
     core/camera.cpp
     core/mgrs.cpp
     core/navigation.cpp
+    core/astro.cpp
     core/wmm.cpp
     core/geoid.cpp
     raster/tile_loader.cpp

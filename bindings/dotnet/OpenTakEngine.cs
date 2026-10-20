@@ -15,6 +15,41 @@ namespace OpenTakEngine
         Mvt = 7,
     }
 
+    public enum TilesetLighting
+    {
+        Auto = 0,
+        Lit = 1,
+        Unlit = 2,
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct SunMoon
+    {
+        public double SunAzimuth, SunElevation;
+        public double MoonAzimuth, MoonElevation, MoonIllumination, MoonPhaseAngle;
+        public int MoonWaxing;
+        public double SunLux, MoonLux, TotalLux;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct Twilight
+    {
+        public double AstronomicalDawn, NauticalDawn, CivilDawn, Sunrise, Sunset, CivilDusk, NauticalDusk, AstronomicalDusk, Moonrise, Moonset;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct XrView
+    {
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 3)] public double[] Position;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 4)] public double[] Orientation;
+        public double AngleLeft, AngleRight, AngleUp, AngleDown;
+        public int X, Y, Width, Height;
+        public IntPtr RenderView;
+        public IntPtr ResolveView;
+        public IntPtr DepthStencilView;
+        public uint GlFramebuffer;
+    }
+
     public enum PointerType
     {
         Mouse = 0,
@@ -104,6 +139,14 @@ namespace OpenTakEngine
         [DllImport(Lib)] public static extern double ote_geodesic_inverse(double lat1, double lon1, double lat2, double lon2, out double initialBearing, out double finalBearing);
         [DllImport(Lib)] public static extern void ote_geodesic_direct(double lat, double lon, double bearing, double distance, out double outLat, out double outLon);
         [DllImport(Lib)] public static extern double ote_magnetic_declination(double lat, double lon, double altitudeM, double decimalYear);
+        [DllImport(Lib)] public static extern void ote_sun_moon_at(double unixSeconds, double lat, double lon, out SunMoon result);
+        [DllImport(Lib)] public static extern void ote_sun_moon_times(double startUnixSeconds, double lat, double lon, double hours, out Twilight result);
+        [DllImport(Lib)] public static extern ulong ote_add_tileset_ex(IntPtr e, [MarshalAs(UnmanagedType.LPUTF8Str)] string pathOrUrl, double maxSse,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string headers, int lighting, int cacheOffline);
+        [DllImport(Lib)] public static extern int ote_credits(IntPtr e, byte[] buffer, int size);
+        [DllImport(Lib)] public static extern void ote_set_sun_lighting(IntPtr e, int enabled, double unixSeconds);
+        [DllImport(Lib)] public static extern void ote_set_xr_anchor(IntPtr e, double lat, double lon, double alt, double headingDeg, double scale);
+        [DllImport(Lib)] public static extern void ote_frame_xr(IntPtr e, [In] XrView[] views, int count, int targetWidth, int targetHeight, float dpiScale);
         [DllImport(Lib)] public static extern double ote_grid_convergence(double lat, double lon);
         [DllImport(Lib)] public static extern int ote_format_coordinate(double lat, double lon, int format, int precision, byte[] output, int capacity);
         [DllImport(Lib)] public static extern int ote_parse_coordinate([MarshalAs(UnmanagedType.LPUTF8Str)] string text, out double lat, out double lon);
@@ -240,6 +283,32 @@ namespace OpenTakEngine
         public static bool ParseCoordinate(string text, out double lat, out double lon) => Native.ote_parse_coordinate(text, out lat, out lon) != 0;
         public static double MagneticDeclination(double lat, double lon, double altitudeM = 0, double decimalYear = 0) =>
             Native.ote_magnetic_declination(lat, lon, altitudeM, decimalYear);
+        public static SunMoon SunMoonAt(DateTimeOffset time, double lat, double lon)
+        {
+            Native.ote_sun_moon_at(time.ToUnixTimeMilliseconds() / 1000.0, lat, lon, out var r);
+            return r;
+        }
+        public static Twilight SunMoonTimes(DateTimeOffset start, double lat, double lon, double hours = 24)
+        {
+            Native.ote_sun_moon_times(start.ToUnixTimeMilliseconds() / 1000.0, lat, lon, hours, out var r);
+            return r;
+        }
+        public ulong AddTileset(string pathOrUrl, double maxSse, string headers, TilesetLighting lighting = TilesetLighting.Auto, bool cacheOffline = true) =>
+            Native.ote_add_tileset_ex(Handle, pathOrUrl, maxSse, headers ?? "", (int)lighting, cacheOffline ? 1 : 0);
+        public string[] Credits()
+        {
+            int n = Native.ote_credits(Handle, null, 0);
+            var buffer = new byte[n + 1];
+            Native.ote_credits(Handle, buffer, buffer.Length);
+            string text = System.Text.Encoding.UTF8.GetString(buffer, 0, n);
+            return text.Length == 0 ? Array.Empty<string>() : text.Split('\n');
+        }
+        public void SetSunLighting(bool enabled, DateTimeOffset? time = null) =>
+            Native.ote_set_sun_lighting(Handle, enabled ? 1 : 0, time.HasValue ? time.Value.ToUnixTimeMilliseconds() / 1000.0 : 0);
+        public void SetXrAnchor(double lat, double lon, double alt, double headingDeg, double scale = 1) =>
+            Native.ote_set_xr_anchor(Handle, lat, lon, alt, headingDeg, scale);
+        public void FrameXr(XrView[] views, int targetWidth, int targetHeight, float dpiScale = 1f) =>
+            Native.ote_frame_xr(Handle, views, views.Length, targetWidth, targetHeight, dpiScale);
         public bool Terrain { set => Native.ote_set_terrain(Handle, value ? 1 : 0); }
         public bool Grid { set => Native.ote_set_grid(Handle, value ? 1 : 0); }
 

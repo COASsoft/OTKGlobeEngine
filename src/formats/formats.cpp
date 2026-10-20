@@ -1,6 +1,7 @@
 #include "ote/formats.hpp"
 
 #include "formats/adapters.hpp"
+#include "ote/klv.hpp"
 #include "gdal/gdal_sources.hpp"
 
 #include <miniz.h>
@@ -86,14 +87,16 @@ std::vector<FormatInfo> buildFormats() {
         f("dem", "GDAL DEMs (GeoTIFF, IMG, BAG, …)", {".tif", ".img", ".bag"}, K::Elevation, true, false, true, gdal, "ElevationLayer type Gdal", ""),
         f("quantized-mesh", "Cesium quantized-mesh", {".terrain"}, K::Elevation, true, false, false, true, "ElevationLayer type QuantizedMesh", ""),
         f("terrarium", "Terrarium RGB elevation tiles", {".png"}, K::Elevation, true, false, false, true, "ElevationLayer type Terrarium", "Default online terrain"),
-        f("gltf", "glTF 2.0 / GLB", {".gltf", ".glb"}, K::Model, true, false, false, true, "addModel", "PBR base colour, textures, node transforms"),
-        f("3dtiles", "OGC 3D Tiles 1.0/1.1", {".json", ".b3dm", ".glb", ".3tz"}, K::Model, true, false, false, true, "addTileset",
-          "tileset.json, b3dm, glb content, external tilesets, .3tz archives"),
+        f("gltf", "glTF 2.0 / GLB", {".gltf", ".glb"}, K::Model, true, false, false, true, "addModel", "Metallic-roughness PBR, normal/emissive/occlusion maps, KHR_materials_unlit, KHR_texture_transform, Draco, meshopt, KTX2, EXT_mesh_gpu_instancing"),
+        f("3dtiles", "OGC 3D Tiles 1.0/1.1", {".json", ".b3dm", ".i3dm", ".pnts", ".cmpt", ".glb", ".subtree", ".3tz"}, K::Model, true, false, false,
+          true, "addTileset", "Explicit and implicit tilesets, b3dm, i3dm, pnts, cmpt, glTF content, Draco/meshopt/KTX2, .3tz; Google Photorealistic 3D Tiles and Cesium ion (ion://) with credits"),
         f("obj", "Wavefront OBJ", {".obj"}, K::Model, false, false, false, false, "", "Planned adapter"),
         f("collada", "COLLADA", {".dae"}, K::Model, false, false, false, false, "", "Planned adapter (KMZ models use COLLADA)"),
         f("fbx", "Autodesk FBX", {".fbx"}, K::Model, false, false, false, false, "", "Proprietary; convert to glTF"),
         f("las", "ASPRS LAS 1.0–1.4", {".las"}, K::PointCloud, true, false, false, true, "addPointCloud", "Instanced point rendering"),
         f("laz", "LAZ (compressed LAS)", {".laz"}, K::PointCloud, false, false, false, false, "", "Needs LASzip (LGPL) as an optional module"),
+        f("klv", "MISB ST 0601 UAS metadata (KLV, MPEG-TS)", {".ts", ".m2ts", ".klv"}, K::Vector, true, false, false, true,
+          "importData / loadFeatures", "Sensor and frame-centre tracks, footprints and line of sight from FMV video or raw KLV"),
         f("cot-stream", "CoT over TCP/UDP/TLS (TAK Server, mesh SA)", {}, K::Stream, false, false, false, false, "",
           "Planned network adapter; CoT messages already parse with the cot adapter"),
     };
@@ -198,6 +201,8 @@ std::string detectFormat(const std::vector<std::uint8_t>& b, const std::string& 
     if (starts("II*") || starts("MM\x00*")) return "geotiff";
     if (b.size() >= 4 && b[0] == 0 && b[1] == 0 && b[2] == 0x27 && b[3] == 0x0A) return "shp";
     if (starts("UHL")) return "dted";
+    if (starts("\x06\x0E\x2B\x34\x02\x0B\x01\x01\x0E\x01\x03\x01\x01")) return "klv";
+    if ((ext == ".ts" || ext == ".m2ts") && b.size() >= 188 && b[0] == 0x47) return "klv";
     std::string root = xmlRoot(b);
     if (!root.empty()) {
         if (root == "kml") return "kml";
@@ -273,6 +278,9 @@ ImportResult importBytes(const std::vector<std::uint8_t>& bytes, const std::stri
     const std::string& f = res.format;
     if (f == "kml" || f == "kmz" || f == "gpx" || f == "geojson") {
         res.data = parseBytes(bytes, f == "geojson" ? ".geojson" : "." + f);
+    } else if (f == "klv") {
+        res.data.features = uasFeatures(demuxUasMetadata(bytes.data(), bytes.size()));
+        if (res.data.features.empty()) res.warnings.push_back("no MISB ST 0601 packets found");
     } else if (f == "cot") {
         res.data.features = adapters::parseCot(bytes, res.warnings);
     } else if (f == "csv") {
@@ -306,6 +314,12 @@ ImportResult importData(const std::string& path, const std::string& formatId, co
         res.ok = !res.data.features.empty();
         if (!res.ok) res.error = f == "ogr" && !gdalAvailable() ? "this build has no GDAL" : "no features read";
         if (res.format.empty()) res.format = "ogr";
+        return res;
+    }
+    if (f == "klv") {
+        res.data.features = uasFeatures(readUasMetadata(path));
+        res.ok = !res.data.features.empty();
+        if (!res.ok) res.error = "no MISB ST 0601 packets found";
         return res;
     }
     std::string err;

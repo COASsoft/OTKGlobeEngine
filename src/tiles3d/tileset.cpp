@@ -14,6 +14,8 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <functional>
+#include <map>
 
 namespace ote {
 
@@ -45,6 +47,7 @@ struct Tileset3D::Implicit {
     std::string contentTemplate;
     std::string subtreeTemplate;
     std::string base;
+    std::string query;
     Mat4 transform = Mat4::identity();
     bool octree = false;
     bool add = false;
@@ -114,11 +117,13 @@ public:
 
 class HttpSource : public TileSource {
 public:
-    HttpSource(TileCache* cache, const std::atomic<bool>* offline) : cache_(cache), offline_(offline) {}
+    using Refresh = std::function<bool(net::Headers&)>;
+    HttpSource(TileCache* cache, const std::atomic<bool>* offline, net::Headers headers, bool persist, Refresh refresh)
+        : cache_(cache), offline_(offline), headers_(std::move(headers)), persist_(persist), refresh_(std::move(refresh)) {}
     std::vector<std::uint8_t> read(const std::string& path, bool& transient) override {
         transient = false;
         std::string key = "3dtiles|" + stripCredentials(path);
-        bool useCache = cache_ && cache_->isOpen();
+        bool useCache = persist_ && cache_ && cache_->isOpen();
         std::vector<std::uint8_t> data;
         std::int64_t expires = 0;
         if (useCache && cache_->get(key, -2, 0, 0, data, expires)) return data;
@@ -126,9 +131,20 @@ public:
             transient = true;
             return {};
         }
-        net::Response r = net::get(path, "OpenTAKEngine/0.1");
+        net::Headers headers;
+        {
+            std::lock_guard lock(mutex_);
+            headers = headers_;
+        }
+        net::Response r = net::get(path, "OpenTAKEngine/0.1", headers);
+        if (r.status == 401 && refresh_) {
+            std::lock_guard lock(mutex_);
+            if (headers_ == headers && !refresh_(headers_)) return {};
+            headers = headers_;
+        }
+        if (r.status == 401 && refresh_) r = net::get(path, "OpenTAKEngine/0.1", headers);
         if (r.status != 200 || r.body.empty()) {
-            transient = r.status <= 0 || r.status == 408 || r.status == 429 || r.status >= 500;
+            transient = r.status <= 0 || r.status == 401 || r.status == 408 || r.status == 429 || r.status >= 500;
             return {};
         }
         if (useCache) cache_->put(key, -2, 0, 0, r.body, std::int64_t(1) << 50);
@@ -138,6 +154,10 @@ public:
 private:
     TileCache* cache_;
     const std::atomic<bool>* offline_;
+    std::mutex mutex_;
+    net::Headers headers_;
+    bool persist_;
+    Refresh refresh_;
 };
 
 class ZipSource : public TileSource {
@@ -197,6 +217,69 @@ bool looksLikeJson(const std::vector<std::uint8_t>& bytes) {
         return c == '{';
     }
     return false;
+}
+
+bool isUrl(const std::string& s) { return s.find("://") != std::string::npos; }
+
+std::string splitQuery(const std::string& u, std::string& query) {
+    size_t q = u.find('?');
+    if (q == std::string::npos) {
+        query.clear();
+        return u;
+    }
+    query = u.substr(q + 1);
+    return u.substr(0, q);
+}
+
+std::string withQuery(const std::string& url, const std::string& inherited) {
+    if (inherited.empty()) return url;
+    std::string own;
+    std::string path = splitQuery(url, own);
+    auto names = [](const std::string& q) {
+        std::vector<std::pair<std::string, std::string>> out;
+        size_t pos = 0;
+        while (pos < q.size()) {
+            size_t amp = q.find('&', pos);
+            if (amp == std::string::npos) amp = q.size();
+            std::string part = q.substr(pos, amp - pos);
+            if (!part.empty()) out.emplace_back(part.substr(0, part.find('=')), part);
+            pos = amp + 1;
+        }
+        return out;
+    };
+    std::string merged = own;
+    auto present = names(own);
+    for (const auto& [name, part] : names(inherited)) {
+        bool has = false;
+        for (const auto& p : present) has = has || p.first == name;
+        if (!has) merged += (merged.empty() ? "" : "&") + part;
+    }
+    return merged.empty() ? path : path + "?" + merged;
+}
+
+std::string resolveRef(const std::string& base, const std::string& rel) {
+    if (isUrl(rel)) return rel;
+    if (isUrl(base)) {
+        size_t scheme = base.find("://");
+        if (rel.rfind("//", 0) == 0) return base.substr(0, scheme + 1) + rel;
+        if (!rel.empty() && rel[0] == '/') {
+            size_t slash = base.find('/', scheme + 3);
+            return (slash == std::string::npos ? base : base.substr(0, slash)) + rel;
+        }
+    }
+    return TileSource::join(base, rel);
+}
+
+std::string stripTags(const std::string& html) {
+    std::string out;
+    bool tag = false;
+    for (char c : html) {
+        if (c == '<') tag = true;
+        else if (c == '>') tag = false;
+        else if (!tag) out += c;
+    }
+    size_t a = out.find_first_not_of(" \t\r\n"), b = out.find_last_not_of(" \t\r\n");
+    return a == std::string::npos ? std::string() : out.substr(a, b - a + 1);
 }
 
 std::string normalizePath(const std::string& p) {
@@ -341,17 +424,75 @@ bool parseSubtree(const std::vector<std::uint8_t>& bytes, const std::string& pat
 
 }
 
-Tileset3D::Tileset3D(const std::string& uri, double maxSse, TileCache* cache, const std::atomic<bool>* offline) : maxSse_(maxSse) {
+Tileset3D::Tileset3D(const std::string& uri, const TilesetOptions& options, TileCache* cache, const std::atomic<bool>* offline)
+    : maxSse_(options.maxScreenSpaceError > 0 ? options.maxScreenSpaceError : 16.0), lighting_(static_cast<int>(options.lighting)) {
     std::string entry;
     std::string base;
+    std::string query;
     std::string norm = uri;
+    net::Headers headers(options.headers.begin(), options.headers.end());
+    HttpSource::Refresh refresh;
+    if (norm.rfind("ion://", 0) == 0) {
+        std::string params;
+        std::string id = splitQuery(norm.substr(6), params);
+        std::string token, server = "https://api.cesium.com";
+        size_t pos = 0;
+        while (pos < params.size()) {
+            size_t amp = params.find('&', pos);
+            if (amp == std::string::npos) amp = params.size();
+            std::string part = params.substr(pos, amp - pos);
+            size_t eq = part.find('=');
+            if (eq != std::string::npos && part.substr(0, eq) == "access_token") token = part.substr(eq + 1);
+            if (eq != std::string::npos && part.substr(0, eq) == "server") server = part.substr(eq + 1);
+            pos = amp + 1;
+        }
+        std::string endpoint = server + "/v1/assets/" + id + "/endpoint?access_token=" + token;
+        std::string cacheKey = "ion-endpoint|" + server + "|" + id;
+        auto fetch = [cache, offline, endpoint, cacheKey](nlohmann::json& out) {
+            std::vector<std::uint8_t> body;
+            bool online = !(offline && offline->load());
+            if (online) {
+                net::Response r = net::get(endpoint, "OpenTAKEngine/0.1");
+                if (r.status == 200 && !r.body.empty()) {
+                    body = std::move(r.body);
+                    if (cache && cache->isOpen()) cache->put(cacheKey, -1, 0, 0, body, std::int64_t(1) << 50, true);
+                }
+            }
+            std::int64_t expires = 0;
+            if (body.empty() && cache && cache->isOpen()) cache->get(cacheKey, -1, 0, 0, body, expires);
+            out = nlohmann::json::parse(body.begin(), body.end(), nullptr, false);
+            return !out.is_discarded() && out.is_object();
+        };
+        nlohmann::json ep;
+        if (!fetch(ep)) return;
+        if (ep.value("externalType", std::string()) == "3DTILES" && ep.contains("options") && ep["options"].contains("url")) {
+            norm = ep["options"]["url"].get<std::string>();
+        } else if (ep.contains("url")) {
+            norm = ep["url"].get<std::string>();
+            if (ep.contains("accessToken")) headers.emplace_back("Authorization", "Bearer " + ep["accessToken"].get<std::string>());
+            refresh = [fetch](net::Headers& h) {
+                nlohmann::json again;
+                if (!fetch(again) || !again.contains("accessToken")) return false;
+                for (auto& [name, value] : h)
+                    if (name == "Authorization") value = "Bearer " + again["accessToken"].get<std::string>();
+                return true;
+            };
+        } else {
+            return;
+        }
+        if (ep.contains("attributions"))
+            for (const auto& a : ep["attributions"])
+                if (a.contains("html")) attributions_.push_back(stripTags(a["html"].get<std::string>()));
+    }
     std::replace(norm.begin(), norm.end(), '\\', '/');
-    std::string ext = std::filesystem::u8path(norm).extension().string();
+    std::string ext = std::filesystem::u8path(splitQuery(norm, query)).extension().string();
     std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    if (norm.find("://") != std::string::npos) {
-        source_ = std::make_shared<HttpSource>(cache, offline);
+    if (isUrl(norm)) {
+        remote_ = true;
+        bool persist = options.cacheOffline && norm.find("googleapis.com") == std::string::npos;
+        source_ = std::make_shared<HttpSource>(cache, offline, headers, persist, refresh);
         entry = norm;
-        base = TileSource::dir(norm);
+        base = TileSource::dir(splitQuery(norm, query));
     } else if (ext == ".3tz" || ext == ".zip") {
         source_ = std::make_shared<ZipSource>(norm);
         entry = "tileset.json";
@@ -360,12 +501,13 @@ Tileset3D::Tileset3D(const std::string& uri, double maxSse, TileCache* cache, co
         std::error_code ec;
         entry = std::filesystem::is_directory(std::filesystem::u8path(norm), ec) ? TileSource::join(norm, "tileset.json") : norm;
         base = TileSource::dir(entry);
+        query.clear();
     }
     bool transient = false;
     std::vector<std::uint8_t> bytes = source_->read(entry, transient);
     nlohmann::json j = nlohmann::json::parse(bytes.begin(), bytes.end(), nullptr, false);
     if (j.is_discarded() || !j.contains("root")) return;
-    root_ = parse(&j["root"], Mat4::identity(), base, false);
+    root_ = parse(&j["root"], Mat4::identity(), base, query, false);
     int cores = static_cast<int>(std::thread::hardware_concurrency());
     int threads = norm.find("://") != std::string::npos ? 6 : std::clamp(cores - 1, 2, 6);
     for (int i = 0; i < threads; ++i) workers_.emplace_back([this] { run(); });
@@ -380,7 +522,8 @@ Tileset3D::~Tileset3D() {
     for (auto& t : workers_) t.join();
 }
 
-std::unique_ptr<Tileset3D::Node> Tileset3D::parse(const void* jp, const Mat4& parent, const std::string& base, bool parentAdd) {
+std::unique_ptr<Tileset3D::Node> Tileset3D::parse(const void* jp, const Mat4& parent, const std::string& base, const std::string& query,
+                                                  bool parentAdd) {
     const nlohmann::json& j = *static_cast<const nlohmann::json*>(jp);
     auto n = std::make_unique<Node>();
     n->transform = j.contains("transform") ? parent * fromJson(j["transform"]) : parent;
@@ -388,6 +531,7 @@ std::unique_ptr<Tileset3D::Node> Tileset3D::parse(const void* jp, const Mat4& pa
     std::string refine = j.value("refine", parentAdd ? "ADD" : "REPLACE");
     n->add = refine == "ADD" || refine == "add";
     n->base = base;
+    n->query = query;
     n->content = contentUri(j);
     const auto& bv = j.contains("boundingVolume") ? j["boundingVolume"] : nlohmann::json();
     Vec3 boxC, boxX, boxY, boxZ;
@@ -425,6 +569,7 @@ std::unique_ptr<Tileset3D::Node> Tileset3D::parse(const void* jp, const Mat4& pa
         const auto& st = (*it)["subtrees"];
         im->subtreeTemplate = st.contains("uri") ? st["uri"].get<std::string>() : st.value("url", std::string());
         im->base = base;
+        im->query = query;
         im->transform = n->transform;
         im->octree = it->value("subdivisionScheme", std::string("QUADTREE")) == "OCTREE";
         im->add = n->add;
@@ -443,7 +588,7 @@ std::unique_ptr<Tileset3D::Node> Tileset3D::parse(const void* jp, const Mat4& pa
         return n;
     }
     if (j.contains("children"))
-        for (const auto& c : j["children"]) n->children.push_back(parse(&c, n->transform, base, n->add));
+        for (const auto& c : j["children"]) n->children.push_back(parse(&c, n->transform, base, query, n->add));
     return n;
 }
 
@@ -454,6 +599,7 @@ std::unique_ptr<Tileset3D::Node> Tileset3D::implicitNode(const std::shared_ptr<c
     n->transform = im->transform;
     n->add = im->add;
     n->base = im->base;
+    n->query = im->query;
     n->level = level;
     n->x = x;
     n->y = y;
@@ -524,6 +670,31 @@ void Tileset3D::expand(Node* n) {
 
 Vec3 Tileset3D::center() const { return root_ ? root_->center : Vec3{}; }
 
+std::string Tileset3D::contentPath(const Node* n, const std::string& rel) const {
+    std::string path = normalizePath(resolveRef(n->base, rel));
+    return remote_ ? withQuery(path, n->query) : path;
+}
+
+void Tileset3D::collectCredits() {
+    std::map<std::string, int> counts;
+    for (const Node* n : draw_)
+        for (const auto& mesh : n->meshes) {
+            size_t pos = 0;
+            const std::string& c = mesh->copyright;
+            while (pos < c.size()) {
+                size_t semi = c.find(';', pos);
+                if (semi == std::string::npos) semi = c.size();
+                std::string part = stripTags(c.substr(pos, semi - pos));
+                if (!part.empty()) ++counts[part];
+                pos = semi + 1;
+            }
+        }
+    credits_.clear();
+    for (const std::string& a : attributions_) credits_.emplace_back(a, 1 << 30);
+    for (const auto& [text, count] : counts) credits_.emplace_back(text, count);
+    std::stable_sort(credits_.begin(), credits_.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
+}
+
 bool Tileset3D::contentReady(const Node* n) const {
     if (n->subtreeState.load() != kSubtreeReady) return false;
     if (n->content.empty()) return true;
@@ -544,7 +715,7 @@ void Tileset3D::request(Node* n, double priority) {
             return;
         }
         const Implicit& im = *n->implicit;
-        wanted_.push_back({n, normalizePath(TileSource::join(im.base, substitute(im.subtreeTemplate, n->level, n->x, n->y, n->z))), priority, true});
+        wanted_.push_back({n, contentPath(n, substitute(im.subtreeTemplate, n->level, n->x, n->y, n->z)), priority, true});
         return;
     }
     if (n->content.empty()) return;
@@ -556,7 +727,7 @@ void Tileset3D::request(Node* n, double priority) {
     } else if (s != kUnloaded) {
         return;
     }
-    wanted_.push_back({n, normalizePath(TileSource::join(n->base, n->content)), priority, false});
+    wanted_.push_back({n, contentPath(n, n->content), priority, false});
 }
 
 void Tileset3D::select(Node* n, const Camera& cam, const std::array<double, 16>& frustum, std::uint64_t frame) {
@@ -650,6 +821,7 @@ void Tileset3D::update(const Camera& cam, const std::array<double, 16>& frustum,
     draw_.clear();
     wanted_.clear();
     select(root_.get(), cam, frustum, frame);
+    collectCredits();
     std::sort(wanted_.begin(), wanted_.end(), [](const Job& a, const Job& b) { return a.priority > b.priority; });
     {
         std::lock_guard lock(mutex_);
@@ -689,7 +861,7 @@ void Tileset3D::draw(const Camera& cam, ModelLayer& models, PointCloudLayer& poi
             anyPoints = anyPoints || mesh->pointCount > 0;
             if (mesh->primitives.empty()) continue;
             Mat4 model = translation(-cam.eye()) * n->transform * translation({mesh->rtc[0], mesh->rtc[1], mesh->rtc[2]});
-            models.drawMesh(cam, *mesh, model, orient, light);
+            models.drawMesh(cam, *mesh, model, orient, light, lighting_);
         }
     }
     if (!anyPoints) return;
@@ -703,10 +875,6 @@ void Tileset3D::draw(const Camera& cam, ModelLayer& models, PointCloudLayer& poi
 }
 
 void Tileset3D::run() {
-    ResourceReader read = [this](const std::string& p) {
-        bool transient = false;
-        return source_->read(normalizePath(p), transient);
-    };
     for (;;) {
         Job job;
         {
@@ -723,10 +891,17 @@ void Tileset3D::run() {
         Done d;
         d.node = job.node;
         d.isSubtree = job.subtree;
+        std::string jobQuery;
+        const std::string jobPath = splitQuery(job.path, jobQuery);
+        ResourceReader read = [this, jobQuery](const std::string& p) {
+            bool transient = false;
+            std::string path = normalizePath(p);
+            return source_->read(remote_ ? withQuery(path, jobQuery) : path, transient);
+        };
         std::vector<std::uint8_t> bytes = source_->read(job.path, d.transient);
         if (!bytes.empty() && job.subtree) {
             auto sub = std::make_shared<Subtree>();
-            d.ok = parseSubtree(bytes, job.path, read, *sub);
+            d.ok = parseSubtree(bytes, jobPath, read, *sub);
             d.availability = sub;
         } else if (!bytes.empty()) {
             bool tileset = false;
@@ -734,11 +909,11 @@ void Tileset3D::run() {
                 nlohmann::json j = nlohmann::json::parse(bytes.begin(), bytes.end(), nullptr, false);
                 if (!j.is_discarded() && j.contains("root")) {
                     tileset = true;
-                    d.subtree = parse(&j["root"], job.node->transform, TileSource::dir(job.path), job.node->add);
+                    d.subtree = parse(&j["root"], job.node->transform, TileSource::dir(jobPath), remote_ ? jobQuery : std::string(), job.node->add);
                     d.ok = true;
                 }
             }
-            if (!tileset) d.ok = parseTileContent(bytes.data(), bytes.size(), job.path, read, job.node->transform, d.models);
+            if (!tileset) d.ok = parseTileContent(bytes.data(), bytes.size(), jobPath, read, job.node->transform, d.models);
         }
         std::lock_guard lock(mutex_);
         --inflight_;

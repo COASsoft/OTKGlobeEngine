@@ -16,7 +16,7 @@ size_t onData(char* ptr, size_t size, size_t n, void* user) {
 
 }
 
-Response getBackend(const std::string& url, const std::string& userAgent) {
+Response getBackend(const std::string& url, const std::string& userAgent, const Headers& headers) {
     static std::once_flag once;
     std::call_once(once, [] { curl_global_init(CURL_GLOBAL_DEFAULT); });
     thread_local CURL* curl = curl_easy_init();
@@ -35,7 +35,12 @@ Response getBackend(const std::string& url, const std::string& userAgent) {
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, onData);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &res.body);
+    curl_slist* list = nullptr;
+    for (const auto& [name, value] : headers) list = curl_slist_append(list, (name + ": " + value).c_str());
+    if (list) curl_easy_setopt(curl, CURLOPT_HTTPHEADER, list);
     CURLcode rc = curl_easy_perform(curl);
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, nullptr);
+    curl_slist_free_all(list);
     if (rc != CURLE_OK) {
         res.error = curl_easy_strerror(rc);
         return res;

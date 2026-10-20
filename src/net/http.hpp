@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace ote::net {
@@ -12,7 +13,9 @@ struct Response {
     std::string error;
 };
 
-Response get(const std::string& url, const std::string& userAgent);
+using Headers = std::vector<std::pair<std::string, std::string>>;
+
+Response get(const std::string& url, const std::string& userAgent, const Headers& headers = {});
 void setJavaVm(void* vm);
 
 std::string hostKey(const std::string& url);

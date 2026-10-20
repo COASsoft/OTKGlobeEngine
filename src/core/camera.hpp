@@ -34,6 +34,12 @@ public:
 
     void update();
     void updateFirstPerson();
+    void setPose(Vec3 eyeEcef, Vec3 right, Vec3 up, Vec3 back, double tanLeft, double tanRight, double tanUp, double tanDown);
+    void clearPose() { pose_ = false; }
+    bool hasPose() const { return pose_; }
+    Vec3 axisRight() const { return {viewRel_.at(0, 0), viewRel_.at(0, 1), viewRel_.at(0, 2)}; }
+    Vec3 axisUp() const { return {viewRel_.at(1, 0), viewRel_.at(1, 1), viewRel_.at(1, 2)}; }
+    Vec3 axisBack() const { return {viewRel_.at(2, 0), viewRel_.at(2, 1), viewRel_.at(2, 2)}; }
 
     double range() const { return gsd * (height * 0.5) / std::tan(fovY * 0.5); }
     double clearance() const { return std::max(kCollideRadius, range() * 0.02); }
@@ -58,6 +64,12 @@ public:
 
 private:
     Vec3 computeEye(double tiltDeg) const;
+    void updatePose();
+
+    bool pose_ = false;
+    Vec3 poseEye_;
+    Vec3 poseRight_, poseUp_, poseBack_;
+    double tanLeft_ = -1.0, tanRight_ = 1.0, tanUp_ = 1.0, tanDown_ = -1.0;
 
     Vec3 eye_;
     Vec3 focusEcef_;

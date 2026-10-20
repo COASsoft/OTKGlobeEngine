@@ -98,6 +98,36 @@ public final class OpenTAKView: OTEPlatformView, MTKViewDelegate {
     @discardableResult
     public func addTileset(path: String, maxScreenSpaceError: Double = 16) -> UInt64 { ote_add_tileset(engine, path, maxScreenSpaceError) }
 
+    @discardableResult
+    public func addTileset(path: String, maxScreenSpaceError: Double = 16, headers: [String: String], lighting: Int32 = 0, cacheOffline: Bool = true) -> UInt64 {
+        let text = headers.map { "\($0.key): \($0.value)" }.joined(separator: "\n")
+        return ote_add_tileset_ex(engine, path, maxScreenSpaceError, text, lighting, cacheOffline ? 1 : 0)
+    }
+
+    public func credits() -> [String] {
+        let n = ote_credits(engine, nil, 0)
+        var buffer = [CChar](repeating: 0, count: Int(n) + 1)
+        ote_credits(engine, &buffer, n + 1)
+        let text = String(cString: buffer)
+        return text.isEmpty ? [] : text.components(separatedBy: "\n")
+    }
+
+    public func setSunLighting(_ enabled: Bool, date: Date? = nil) {
+        ote_set_sun_lighting(engine, enabled ? 1 : 0, date?.timeIntervalSince1970 ?? 0)
+    }
+
+    public static func sunMoon(at date: Date, lat: Double, lon: Double) -> ote_sun_moon {
+        var r = ote_sun_moon()
+        ote_sun_moon_at(date.timeIntervalSince1970, lat, lon, &r)
+        return r
+    }
+
+    public static func sunMoonTimes(from date: Date, lat: Double, lon: Double, hours: Double = 24) -> ote_twilight {
+        var r = ote_twilight()
+        ote_sun_moon_times(date.timeIntervalSince1970, lat, lon, hours, &r)
+        return r
+    }
+
     public func setOffline(_ offline: Bool) { ote_set_offline(engine, offline ? 1 : 0) }
     public func setCacheLimit(megabytes: Int32) { ote_set_cache_limit(engine, megabytes) }
     public func downloadRegion(layer: Int32 = 0, west: Double, south: Double, east: Double, north: Double, minZoom: Int32, maxZoom: Int32) -> Int32 {

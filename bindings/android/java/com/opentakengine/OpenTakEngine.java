@@ -64,6 +64,17 @@ public final class OpenTakEngine {
     public static native String nativeFormatCoordinate(double lat, double lon, int format, int precision);
     public static native double[] nativeParseCoordinate(String text);
     public static native double nativeMagneticDeclination(double lat, double lon, double altitudeM, double decimalYear);
+    public static native double[] nativeSunMoon(double unixSeconds, double lat, double lon);
+    public static native double[] nativeSunMoonTimes(double startUnixSeconds, double lat, double lon, double hours);
+    static native long nativeAddTilesetEx(long h, String pathOrUrl, double maxSse, String headers, int lighting, boolean cacheOffline);
+    static native String nativeCredits(long h);
+    static native void nativeSetSunLighting(long h, boolean enabled, double unixSeconds);
+    static native void nativeSetXrAnchor(long h, double lat, double lon, double alt, double headingDeg, double scale);
+    static native void nativeFrameXr(long h, double[] poses, int[] rects, int[] framebuffers, int targetWidth, int targetHeight, float dpiScale);
+
+    public static final int LIGHTING_AUTO = 0;
+    public static final int LIGHTING_LIT = 1;
+    public static final int LIGHTING_UNLIT = 2;
 
     public static final int NORTH_TRUE = 0;
     public static final int NORTH_MAGNETIC = 1;

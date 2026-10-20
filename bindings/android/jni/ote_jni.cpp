@@ -3,6 +3,7 @@
 #include <jni.h>
 
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -145,6 +146,75 @@ JNIEXPORT jdoubleArray JNICALL OTE_FN(nativeParseCoordinate)(JNIEnv* env, jclass
     jdoubleArray out = env->NewDoubleArray(2);
     env->SetDoubleArrayRegion(out, 0, 2, values);
     return out;
+}
+
+JNIEXPORT jdoubleArray JNICALL OTE_FN(nativeSunMoon)(JNIEnv* env, jclass, jdouble t, jdouble lat, jdouble lon) {
+    ote_sun_moon r{};
+    ote_sun_moon_at(t, lat, lon, &r);
+    const jdouble v[] = {r.sun_azimuth, r.sun_elevation, r.moon_azimuth, r.moon_elevation, r.moon_illumination, r.moon_phase_angle,
+                         static_cast<jdouble>(r.moon_waxing), r.sun_lux, r.moon_lux, r.total_lux};
+    jdoubleArray out = env->NewDoubleArray(10);
+    env->SetDoubleArrayRegion(out, 0, 10, v);
+    return out;
+}
+
+JNIEXPORT jdoubleArray JNICALL OTE_FN(nativeSunMoonTimes)(JNIEnv* env, jclass, jdouble t, jdouble lat, jdouble lon, jdouble hours) {
+    ote_twilight r{};
+    ote_sun_moon_times(t, lat, lon, hours, &r);
+    const jdouble v[] = {r.astronomical_dawn, r.nautical_dawn, r.civil_dawn, r.sunrise, r.sunset,
+                         r.civil_dusk, r.nautical_dusk, r.astronomical_dusk, r.moonrise, r.moonset};
+    jdoubleArray out = env->NewDoubleArray(10);
+    env->SetDoubleArrayRegion(out, 0, 10, v);
+    return out;
+}
+
+JNIEXPORT jlong JNICALL OTE_FN(nativeAddTilesetEx)(JNIEnv* env, jclass, jlong h, jstring path, jdouble sse, jstring headers, jint lighting,
+                                                    jboolean cacheOffline) {
+    return static_cast<jlong>(ote_add_tileset_ex(E(h), str(env, path).c_str(), sse, str(env, headers).c_str(), lighting, cacheOffline ? 1 : 0));
+}
+
+JNIEXPORT jstring JNICALL OTE_FN(nativeCredits)(JNIEnv* env, jclass, jlong h) {
+    int n = ote_credits(E(h), nullptr, 0);
+    std::string text(static_cast<size_t>(n) + 1, '\0');
+    ote_credits(E(h), text.data(), n + 1);
+    text.resize(static_cast<size_t>(n));
+    return env->NewStringUTF(text.c_str());
+}
+
+JNIEXPORT void JNICALL OTE_FN(nativeSetSunLighting)(JNIEnv*, jclass, jlong h, jboolean enabled, jdouble t) {
+    ote_set_sun_lighting(E(h), enabled ? 1 : 0, t);
+}
+
+JNIEXPORT void JNICALL OTE_FN(nativeSetXrAnchor)(JNIEnv*, jclass, jlong h, jdouble lat, jdouble lon, jdouble alt, jdouble heading, jdouble scale) {
+    ote_set_xr_anchor(E(h), lat, lon, alt, heading, scale);
+}
+
+JNIEXPORT void JNICALL OTE_FN(nativeFrameXr)(JNIEnv* env, jclass, jlong h, jdoubleArray poses, jintArray rects, jintArray framebuffers, jint tw,
+                                             jint th, jfloat dpi) {
+    jsize count = env->GetArrayLength(framebuffers);
+    if (count <= 0 || env->GetArrayLength(poses) < count * 11 || env->GetArrayLength(rects) < count * 4) return;
+    std::vector<jdouble> p(static_cast<size_t>(count) * 11);
+    std::vector<jint> r(static_cast<size_t>(count) * 4), fb(static_cast<size_t>(count));
+    env->GetDoubleArrayRegion(poses, 0, count * 11, p.data());
+    env->GetIntArrayRegion(rects, 0, count * 4, r.data());
+    env->GetIntArrayRegion(framebuffers, 0, count, fb.data());
+    std::vector<ote_xr_view> views(static_cast<size_t>(count));
+    for (jsize i = 0; i < count; ++i) {
+        ote_xr_view& v = views[static_cast<size_t>(i)];
+        const jdouble* q = &p[static_cast<size_t>(i) * 11];
+        for (int k = 0; k < 3; ++k) v.position[k] = q[k];
+        for (int k = 0; k < 4; ++k) v.orientation[k] = q[3 + k];
+        v.angle_left = q[7];
+        v.angle_right = q[8];
+        v.angle_up = q[9];
+        v.angle_down = q[10];
+        v.x = r[static_cast<size_t>(i) * 4];
+        v.y = r[static_cast<size_t>(i) * 4 + 1];
+        v.width = r[static_cast<size_t>(i) * 4 + 2];
+        v.height = r[static_cast<size_t>(i) * 4 + 3];
+        v.gl_framebuffer = static_cast<uint32_t>(fb[static_cast<size_t>(i)]);
+    }
+    ote_frame_xr(E(h), views.data(), count, tw, th, dpi);
 }
 
 JNIEXPORT jdouble JNICALL OTE_FN(nativeMagneticDeclination)(JNIEnv*, jclass, jdouble lat, jdouble lon, jdouble alt, jdouble year) {

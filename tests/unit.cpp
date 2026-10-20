@@ -3,6 +3,8 @@
 #include "core/geoid.hpp"
 #include "elevation/quantized_mesh.hpp"
 #include "ote/features.hpp"
+#include "ote/astro.hpp"
+#include "ote/klv.hpp"
 #include "ote/formats.hpp"
 #include "ote/mgrs.hpp"
 #include "ote/milsym.hpp"
@@ -16,6 +18,7 @@
 #include "raster/tile_provider.hpp"
 #include "raster/vector_tile.hpp"
 #include "formats/adapters.hpp"
+#include "core/astro.hpp"
 #include "model/gltf_codecs.hpp"
 #include "model/model_layer.hpp"
 
@@ -27,6 +30,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -612,6 +616,164 @@ int main() {
         for (size_t i = 0; decoded && i < 6; ++i) decoded = opt.primitives[0].indices[i] == idx[i];
         check(decoded, "meshopt-compressed glTF decodes");
 #endif
+    }
+    {
+        Vec3 s = sunDirectionEcef(1718916660.0);
+        check(std::abs(std::asin(s.z) * kRadToDeg - 23.44) < 0.02, "sun declination at the June 2024 solstice");
+        SunMoonTimes london = sunMoonTimes(1718928000.0, 51.5074, -0.1278);
+        check(std::abs(london.sunrise - 1718941380.0) < 180 && std::abs(london.sunset - 1719001260.0) < 180, "London sunrise and sunset 2024-06-21");
+        check(london.nauticalDawn < london.civilDawn && london.civilDawn < london.sunrise && london.sunset < london.civilDusk &&
+                  london.civilDusk < london.nauticalDusk && std::isnan(london.astronomicalDawn),
+              "London twilight order, no astronomical night at midsummer");
+        SunMoonTimes dc = sunMoonTimes(1718856000.0, 38.9072, -77.0369);
+        check(std::abs(dc.sunrise - 1718876520.0) < 180 && std::abs(dc.sunset - 1718930220.0) < 180, "Washington sunrise and sunset 2024-06-20");
+        MoonInfo full = moonPosition(1706205240.0, 0, 0), dark = moonPosition(1704974220.0, 0, 0), quarter = moonPosition(1705549980.0, 0, 0);
+        check(full.illuminatedFraction > 0.99 && dark.illuminatedFraction < 0.01 && std::abs(quarter.illuminatedFraction - 0.5) < 0.03 && quarter.waxing,
+              "moon phases January 2024");
+        CelestialPosition es = sunPosition(1712601720.0, 32.7767, -96.797);
+        MoonInfo em = moonPosition(1712601720.0, 32.7767, -96.797);
+        double sep = std::acos(std::sin(es.elevation * kDegToRad) * std::sin(em.position.elevation * kDegToRad) +
+                               std::cos(es.elevation * kDegToRad) * std::cos(em.position.elevation * kDegToRad) *
+                                   std::cos((es.azimuth - em.position.azimuth) * kDegToRad)) * kRadToDeg;
+        check(sep < 0.5 && es.elevation > 60.0, "sun and moon coincide over Dallas at the 2024-04-08 eclipse");
+        Illuminance noon = groundIlluminance(1718971200.0, 51.5, 0.0), night = groundIlluminance(1704938400.0, 51.5, 0.0);
+        check(noon.sunLux > 50000 && night.totalLux < 0.01 && night.sunLux == 0.0, "ground illuminance day and moonless night");
+    }
+    {
+        UasMetadata m;
+        m.time = 1712601720.25;
+        m.missionId = "MISSION01";
+        m.platformTail = "AF-101";
+        m.platformHeading = 159.9744;
+        m.platformPitch = -0.4315;
+        m.platformRoll = 3.4058;
+        m.sensorLat = 60.1768229;
+        m.sensorLon = 128.4267590;
+        m.sensorAlt = 14190.7;
+        m.hfov = 144.571;
+        m.vfov = 152.643;
+        m.sensorRelAzimuth = 160.719;
+        m.sensorRelElevation = -168.792;
+        m.sensorRelRoll = 176.865;
+        m.slantRange = 68590.98;
+        m.targetWidth = 722.82;
+        m.frameCenterLat = -10.5423886;
+        m.frameCenterLon = 29.1578899;
+        m.frameCenterElevation = 3216.04;
+        std::vector<std::uint8_t> packet = encodeUasKlv(m);
+        std::vector<UasMetadata> back = parseUasKlv(packet.data(), packet.size());
+        bool same = back.size() == 1 && back[0].checksumOk && back[0].missionId == "MISSION01" && back[0].platformTail == "AF-101" &&
+                    std::abs(back[0].time - m.time) < 1e-6 && std::abs(back[0].platformHeading - m.platformHeading) < 0.01 &&
+                    std::abs(back[0].platformPitch - m.platformPitch) < 0.001 && std::abs(back[0].sensorLat - m.sensorLat) < 1e-6 &&
+                    std::abs(back[0].sensorLon - m.sensorLon) < 1e-6 && std::abs(back[0].sensorAlt - m.sensorAlt) < 0.5 &&
+                    std::abs(back[0].sensorRelElevation - m.sensorRelElevation) < 1e-6 && std::abs(back[0].slantRange - m.slantRange) < 0.01 &&
+                    std::abs(back[0].frameCenterLat - m.frameCenterLat) < 1e-6 && std::abs(back[0].frameCenterElevation - m.frameCenterElevation) < 0.5;
+        check(same, "MISB ST 0601 encode and parse round trip");
+        std::vector<std::uint8_t> bad = packet;
+        bad[30] ^= 0x10;
+        back = parseUasKlv(bad.data(), bad.size());
+        check(back.size() == 1 && !back[0].checksumOk, "MISB ST 0601 checksum catches corruption");
+
+        std::vector<std::uint8_t> ts;
+        int cc[0x2000] = {};
+        auto tsPackets = [&](int pid, std::vector<std::uint8_t> payload) {
+            bool first = true;
+            size_t pos = 0;
+            do {
+                std::uint8_t p[188];
+                std::memset(p, 0xFF, sizeof(p));
+                p[0] = 0x47;
+                p[1] = static_cast<std::uint8_t>((first ? 0x40 : 0) | ((pid >> 8) & 0x1F));
+                p[2] = static_cast<std::uint8_t>(pid & 0xFF);
+                p[3] = static_cast<std::uint8_t>(0x10 | (cc[pid]++ & 0x0F));
+                size_t n = std::min<size_t>(184, payload.size() - pos);
+                std::memcpy(p + 4, payload.data() + pos, n);
+                pos += n;
+                first = false;
+                ts.insert(ts.end(), p, p + 188);
+            } while (pos < payload.size());
+        };
+        tsPackets(0, {0x00, 0x00, 0xB0, 13, 0x00, 0x01, 0xC1, 0x00, 0x00, 0x00, 0x01, 0xE1, 0x00, 0, 0, 0, 0});
+        tsPackets(0x100, {0x00, 0x02, 0xB0, 18, 0x00, 0x01, 0xC1, 0x00, 0x00, 0xE1, 0x01, 0xF0, 0x00, 0x15, 0xE1, 0x01, 0xF0, 0x00, 0, 0, 0, 0});
+        tsPackets(0x200, std::vector<std::uint8_t>(300, 0x55));
+        for (int k = 0; k < 3; ++k) {
+            UasMetadata f = m;
+            f.time = m.time + k;
+            f.sensorLat = m.sensorLat + 0.01 * k;
+            f.hfov = 10.0;
+            f.vfov = 8.0;
+            f.sensorRelElevation = -60.0;
+            f.frameCenterElevation = 0.0;
+            std::vector<std::uint8_t> klv = encodeUasKlv(f);
+            std::vector<std::uint8_t> pes = {0x00, 0x00, 0x01, 0xFC, 0x00, 0x00, 0x84, 0x80, 0x05, 0x21, 0x00, 0x01, 0x00, 0x01};
+            pes.insert(pes.end(), klv.begin(), klv.end());
+            tsPackets(0x101, pes);
+        }
+        std::vector<UasMetadata> demuxed = demuxUasMetadata(ts.data(), ts.size());
+        check(demuxed.size() == 3 && demuxed[2].checksumOk && std::abs(demuxed[2].sensorLat - (m.sensorLat + 0.02)) < 1e-6,
+              "MISB KLV demuxed from MPEG-TS via PAT/PMT");
+        ImportResult imported = importBytes(ts, "klv");
+        bool hasTrack = false, hasFootprint = false;
+        for (const Feature& f : imported.data.features) {
+            hasTrack = hasTrack || f.type == "uas-sensor-track";
+            hasFootprint = hasFootprint || f.type == "uas-footprint";
+        }
+        check(imported.data.features.size() >= 3 && hasTrack && hasFootprint && detectFormat(ts, "flight.ts") == "klv", "FMV import gives track and footprint");
+
+        UasMetadata nadir;
+        nadir.sensorLat = 47.0;
+        nadir.sensorLon = -122.0;
+        nadir.sensorAlt = 1000.0;
+        nadir.platformHeading = 0;
+        nadir.platformPitch = 0;
+        nadir.platformRoll = 0;
+        nadir.sensorRelAzimuth = 0;
+        nadir.sensorRelElevation = -90;
+        nadir.sensorRelRoll = 0;
+        nadir.hfov = 10;
+        nadir.vfov = 10;
+        nadir.frameCenterElevation = 0;
+        double la[4], lo[4];
+        bool fp = uasFootprint(nadir, la, lo);
+        double mlat = 0, mlon = 0;
+        for (int c = 0; c < 4 && fp; ++c) {
+            double d = length(geodeticToEcef(la[c], lo[c], 0) - geodeticToEcef(47.0, -122.0, 0));
+            fp = fp && std::abs(d - 1000.0 * std::tan(5.0 * kDegToRad) * std::sqrt(2.0)) < 1.0;
+            mlat += la[c] / 4;
+            mlon += lo[c] / 4;
+        }
+        check(fp && std::abs(mlat - 47.0) < 1e-5 && std::abs(mlon + 122.0) < 1e-5, "sensor footprint from pose and field of view");
+        if (const char* out = std::getenv("OTE_FMV_SAMPLE")) {
+            ts.clear();
+            tsPackets(0, {0x00, 0x00, 0xB0, 13, 0x00, 0x01, 0xC1, 0x00, 0x00, 0x00, 0x01, 0xE1, 0x00, 0, 0, 0, 0});
+            tsPackets(0x100, {0x00, 0x02, 0xB0, 18, 0x00, 0x01, 0xC1, 0x00, 0x00, 0xE1, 0x01, 0xF0, 0x00, 0x15, 0xE1, 0x01, 0xF0, 0x00, 0, 0, 0, 0});
+            for (int k = 0; k < 240; ++k) {
+                double th = k * 1.5 * kDegToRad;
+                UasMetadata f;
+                f.time = 1712601720.0 + k;
+                f.missionId = "ORBIT";
+                f.platformTail = "UAV-7";
+                f.sensorLat = 47.04 + 2000.0 * std::cos(th) / 111180.0;
+                f.sensorLon = -122.90 + 2000.0 * std::sin(th) / (111320.0 * std::cos(47.04 * kDegToRad));
+                f.sensorAlt = 1500.0;
+                f.platformHeading = std::fmod(th * kRadToDeg + 90.0, 360.0);
+                f.platformPitch = 0;
+                f.platformRoll = 0;
+                f.sensorRelAzimuth = 90.0;
+                f.sensorRelElevation = -std::atan2(1500.0, 2000.0) * kRadToDeg;
+                f.sensorRelRoll = 0;
+                f.hfov = 12.0;
+                f.vfov = 9.0;
+                f.frameCenterLat = 47.04;
+                f.frameCenterLon = -122.90;
+                f.frameCenterElevation = 0.0;
+                std::vector<std::uint8_t> klv = encodeUasKlv(f);
+                std::vector<std::uint8_t> pes = {0x00, 0x00, 0x01, 0xFC, 0x00, 0x00, 0x84, 0x80, 0x05, 0x21, 0x00, 0x01, 0x00, 0x01};
+                pes.insert(pes.end(), klv.begin(), klv.end());
+                tsPackets(0x101, pes);
+            }
+            std::ofstream(out, std::ios::binary).write(reinterpret_cast<const char*>(ts.data()), static_cast<std::streamsize>(ts.size()));
+        }
     }
     std::printf("%d failure(s)\n", failures);
     return failures == 0 ? 0 : 1;

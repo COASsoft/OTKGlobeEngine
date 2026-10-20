@@ -68,7 +68,66 @@ void Camera::updateFirstPerson() {
     invert(viewProjRel_, invViewProjRel_);
 }
 
+void Camera::setPose(Vec3 eyeEcef, Vec3 right, Vec3 up, Vec3 back, double tanLeft, double tanRight, double tanUp, double tanDown) {
+    pose_ = true;
+    poseEye_ = eyeEcef;
+    poseRight_ = normalize(right);
+    poseUp_ = normalize(up);
+    poseBack_ = normalize(back);
+    tanLeft_ = tanLeft;
+    tanRight_ = tanRight;
+    tanUp_ = tanUp;
+    tanDown_ = tanDown;
+}
+
+void Camera::updatePose() {
+    eye_ = poseEye_;
+    GeoPoint eg = ecefToGeodetic(eye_);
+    double g = ground(eg);
+    eyeAlt_ = eg.alt;
+    eyeAboveGround_ = std::isfinite(g) ? std::max(eg.alt - g, 0.5) : std::max(eg.alt, 0.5);
+    viewRel_ = Mat4::identity();
+    const Vec3 rows[3] = {poseRight_, poseUp_, poseBack_};
+    for (int r = 0; r < 3; ++r) {
+        viewRel_.at(r, 0) = rows[r].x;
+        viewRel_.at(r, 1) = rows[r].y;
+        viewRel_.at(r, 2) = rows[r].z;
+    }
+    fovY = std::atan(tanUp_) - std::atan(tanDown_);
+    Vec3 forward = -poseBack_;
+    Vec3 e, n, u;
+    enuFrame(eg.lat, eg.lon, e, n, u);
+    tilt = std::acos(std::clamp(dot(forward, -u), -1.0, 1.0)) * kRadToDeg;
+    azimuth = std::atan2(dot(forward, e), dot(forward, n)) * kRadToDeg;
+    focusEcef_ = eye_ + forward * eyeAboveGround_;
+    focus = ecefToGeodetic(focusEcef_);
+    gsd = pixelSizeAt(eyeAboveGround_);
+    double h = std::max(eyeAlt_, 1.0);
+    double horizon = std::sqrt(h * (2.0 * kWgs84A + h)) + std::sqrt(9000.0 * (2.0 * kWgs84A + 9000.0));
+    near_ = std::clamp(eyeAboveGround_ * 0.05, 0.05, 1.0e6);
+    far_ = horizon * 1.05 + 1000.0;
+    proj_ = Mat4{};
+    proj_.at(0, 0) = 2.0 / (tanRight_ - tanLeft_);
+    proj_.at(0, 2) = (tanRight_ + tanLeft_) / (tanRight_ - tanLeft_);
+    proj_.at(1, 1) = 2.0 / (tanUp_ - tanDown_);
+    proj_.at(1, 2) = (tanUp_ + tanDown_) / (tanUp_ - tanDown_);
+    proj_.at(3, 2) = -1.0;
+    if (zeroToOneDepth) {
+        proj_.at(2, 2) = far_ / (near_ - far_);
+        proj_.at(2, 3) = near_ * far_ / (near_ - far_);
+    } else {
+        proj_.at(2, 2) = (far_ + near_) / (near_ - far_);
+        proj_.at(2, 3) = 2.0 * far_ * near_ / (near_ - far_);
+    }
+    viewProjRel_ = proj_ * viewRel_;
+    invert(viewProjRel_, invViewProjRel_);
+}
+
 void Camera::update() {
+    if (pose_) {
+        updatePose();
+        return;
+    }
     if (firstPerson) {
         updateFirstPerson();
         return;

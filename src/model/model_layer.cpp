@@ -189,6 +189,34 @@ int decodeTexture(const cgltf_texture* tex, const cgltf_options& options, const 
     return -1;
 }
 
+int decodeMaterial(const cgltf_material* m, const cgltf_options& options, const std::string& path, const ResourceReader& read, CpuModel& out,
+                   std::map<const cgltf_image*, int>& images, std::map<const cgltf_material*, int>& materials) {
+    if (!m) return -1;
+    auto it = materials.find(m);
+    if (it != materials.end()) return it->second;
+    CpuMaterial mat;
+    const cgltf_pbr_metallic_roughness& pbr = m->pbr_metallic_roughness;
+    for (int k = 0; k < 4; ++k) mat.color[k] = pbr.base_color_factor[k];
+    mat.metallic = m->has_pbr_metallic_roughness ? pbr.metallic_factor : 0.0f;
+    mat.roughness = m->has_pbr_metallic_roughness ? pbr.roughness_factor : 1.0f;
+    const float strength = m->has_emissive_strength ? m->emissive_strength.emissive_strength : 1.0f;
+    for (int k = 0; k < 3; ++k) mat.emissive[k] = m->emissive_factor[k] * strength;
+    mat.unlit = m->unlit != 0;
+    mat.image = decodeTexture(pbr.base_color_texture.texture, options, path, read, out, images);
+    if (!mat.unlit) {
+        mat.normalImage = decodeTexture(m->normal_texture.texture, options, path, read, out, images);
+        mat.normalScale = m->normal_texture.scale;
+        mat.emissiveImage = decodeTexture(m->emissive_texture.texture, options, path, read, out, images);
+        mat.ormImage = decodeTexture(pbr.metallic_roughness_texture.texture, options, path, read, out, images);
+        mat.ormOcclusion = mat.ormImage >= 0 && m->occlusion_texture.texture && pbr.metallic_roughness_texture.texture &&
+                           m->occlusion_texture.texture->image == pbr.metallic_roughness_texture.texture->image;
+    }
+    int index = static_cast<int>(out.materials.size());
+    out.materials.push_back(mat);
+    materials[m] = index;
+    return index;
+}
+
 void applyTextureTransform(std::vector<float>& verts, const cgltf_texture_transform& t) {
     const float c = std::cos(t.rotation), s = std::sin(t.rotation);
     for (size_t i = 0; i + 8 <= verts.size(); i += 8) {
@@ -314,6 +342,8 @@ bool parseGltf(const std::uint8_t* bytes, std::size_t size, const std::string& p
         }
     }
     std::map<const cgltf_image*, int> images;
+    std::map<const cgltf_material*, int> materials;
+    if (data->asset.copyright) out.copyright = data->asset.copyright;
     std::vector<double> pointPositions;
     std::vector<std::uint8_t> pointColors;
     const Mat4 yUp = yUpToZUp();
@@ -395,18 +425,16 @@ bool parseGltf(const std::uint8_t* bytes, std::size_t size, const std::string& p
             for (size_t i = 0; i < n; ++i) {
                 std::memcpy(&p.vertices[i * 8], &pos[i * 3], 12);
                 if (nrm.size() >= (i + 1) * 3) std::memcpy(&p.vertices[i * 8 + 3], &nrm[i * 3], 12);
-                else p.vertices[i * 8 + 4] = 1.0f;
                 if (tex.size() >= (i + 1) * 2) std::memcpy(&p.vertices[i * 8 + 6], &tex[i * 2], 8);
             }
             p.indices = toTriangleList(prim.type, idx);
             p.indices.erase(std::remove_if(p.indices.begin(), p.indices.end(), [n](std::uint32_t v) { return v >= n; }), p.indices.end());
             p.indices.resize(p.indices.size() / 3 * 3);
             if (p.indices.empty()) continue;
-            p.color = base;
-            if (prim.material) {
+            p.material = decodeMaterial(prim.material, options, path, read, out, images, materials);
+            if (p.material >= 0) {
                 const cgltf_texture_view& tv = prim.material->pbr_metallic_roughness.base_color_texture;
-                p.image = decodeTexture(tv.texture, options, path, read, out, images);
-                if (p.image >= 0 && tv.has_transform) applyTextureTransform(p.vertices, tv.transform);
+                if (out.materials[p.material].image >= 0 && tv.has_transform) applyTextureTransform(p.vertices, tv.transform);
             }
             for (int k = 0; k < 16; ++k) p.matrix[k] = world[k];
             p.instances = instanceSet;
@@ -431,11 +459,11 @@ bool parseGltf(const std::uint8_t* bytes, std::size_t size, const std::string& p
 }
 
 void mergePrimitives(CpuModel& model) {
-    using Key = std::tuple<int, int, float, float, float, float>;
+    using Key = std::tuple<int, int>;
     std::vector<CpuPrimitive> merged;
     std::map<Key, size_t> open;
     for (CpuPrimitive& p : model.primitives) {
-        Key key{p.image, p.instances, p.color[0], p.color[1], p.color[2], p.color[3]};
+        Key key{p.material, p.instances};
         auto it = open.find(key);
         bool fits = it != open.end() && (merged[it->second].vertices.size() + p.vertices.size()) / 8 <= kMaxMergedVertices;
         if (fits && merged[it->second].matrix != p.matrix) {
@@ -484,6 +512,8 @@ GpuMesh::~GpuMesh() {
 std::shared_ptr<GpuMesh> ModelLayer::upload(const CpuModel& model) {
     auto mesh = std::make_shared<GpuMesh>();
     mesh->rtc = model.rtc;
+    mesh->materials = model.materials;
+    mesh->copyright = model.copyright;
     mesh->pointsOrigin = model.pointsOrigin;
     mesh->bytes = model.bytes;
     for (const CpuImage& img : model.images) {
@@ -529,9 +559,8 @@ std::shared_ptr<GpuMesh> ModelLayer::upload(const CpuModel& model) {
         ib.data = {c.indices.data(), c.indices.size() * sizeof(std::uint32_t)};
         p.indices = sg_make_buffer(&ib);
         p.count = static_cast<int>(c.indices.size());
-        p.color = c.color;
         p.matrix = c.matrix;
-        p.image = c.image;
+        p.material = c.material;
         p.instances = c.instances;
         mesh->primitives.push_back(p);
     }
@@ -586,6 +615,16 @@ bool ModelLayer::init() {
     sg_view_desc wv{};
     wv.texture.image = white_;
     whiteView_ = sg_make_view(&wv);
+    const std::uint8_t black[4] = {0, 0, 0, 255};
+    wd.data.mip_levels[0] = SG_RANGE(black);
+    black_ = sg_make_image(&wd);
+    wv.texture.image = black_;
+    blackView_ = sg_make_view(&wv);
+    const std::uint8_t flat[4] = {128, 128, 255, 255};
+    wd.data.mip_levels[0] = SG_RANGE(flat);
+    flat_ = sg_make_image(&wd);
+    wv.texture.image = flat_;
+    flatView_ = sg_make_view(&wv);
     auto usable = [](sg_pixel_format f) {
         sg_pixelformat_info i = sg_query_pixelformat(f);
         return i.sample && i.filter;
@@ -607,6 +646,10 @@ void ModelLayer::shutdown() {
         sg_destroy_sampler(sampler_);
         sg_destroy_view(whiteView_);
         sg_destroy_image(white_);
+        sg_destroy_view(blackView_);
+        sg_destroy_image(black_);
+        sg_destroy_view(flatView_);
+        sg_destroy_image(flat_);
         if (frameInstances_.id) sg_destroy_buffer(frameInstances_);
     }
     frameInstances_ = {};
@@ -655,8 +698,18 @@ void ModelLayer::usePipeline(bool instanced) {
     current_ = want;
 }
 
-void ModelLayer::drawPrimitive(const GpuMesh& mesh, const GpuMesh::Primitive& p, sg_buffer instances, int instanceOffset, int instanceCount,
-                               const Mat4& mvp, const Mat4& node, const Mat4& rotation, Vec3 light) {
+void ModelLayer::setSun(bool enabled, Vec3 direction) {
+    sun_ = enabled;
+    sunDir_ = normalize(direction);
+}
+
+void ModelLayer::drawPrimitive(const Camera& cam, const GpuMesh& mesh, const GpuMesh::Primitive& p, sg_buffer instances, int instanceOffset,
+                               int instanceCount, const Mat4& world, const Mat4& node, const Mat4& rotation, Vec3 light, Vec3 up, int lighting) {
+    static const CpuMaterial fallback;
+    const CpuMaterial& mat = p.material >= 0 && p.material < static_cast<int>(mesh.materials.size()) ? mesh.materials[p.material] : fallback;
+    auto view = [&mesh](int image, sg_view otherwise) {
+        return image >= 0 && image < static_cast<int>(mesh.views.size()) ? mesh.views[image] : otherwise;
+    };
     usePipeline(instanceCount > 0);
     sg_bindings b{};
     b.vertex_buffers[0] = p.vertices;
@@ -665,128 +718,147 @@ void ModelLayer::drawPrimitive(const GpuMesh& mesh, const GpuMesh::Primitive& p,
         b.vertex_buffer_offsets[1] = instanceOffset * 64;
     }
     b.index_buffer = p.indices;
-    b.views[VIEW_tex] = p.image >= 0 && p.image < static_cast<int>(mesh.views.size()) ? mesh.views[p.image] : whiteView_;
+    b.views[VIEW_tex] = view(mat.image, whiteView_);
+    b.views[VIEW_nrm_tex] = view(mat.normalImage, flatView_);
+    b.views[VIEW_emi_tex] = view(mat.emissiveImage, whiteView_);
+    b.views[VIEW_orm_tex] = view(mat.ormImage, whiteView_);
     b.samplers[SMP_smp] = sampler_;
     sg_apply_bindings(&b);
     if (instanceCount > 0) {
         model_inst_params_t vs{};
-        toFloat(mvp, vs.mvp);
+        toFloat(cam.viewProjRel(), vs.view_proj);
+        toFloat(world, vs.world);
         toFloat(node, vs.node);
         toFloat(rotation, vs.rotation);
         sg_apply_uniforms(UB_model_inst_params, SG_RANGE(vs));
     } else {
         model_vs_params_t vs{};
-        toFloat(mvp, vs.mvp);
+        toFloat(cam.viewProjRel(), vs.view_proj);
+        toFloat(world, vs.world);
         toFloat(rotation, vs.rotation);
         sg_apply_uniforms(UB_model_vs_params, SG_RANGE(vs));
     }
+    const bool unlit = lighting == 2 || (lighting == 0 && mat.unlit);
+    float intensity = 0.85f;
+    Vec3 l = light;
+    if (sun_) {
+        l = sunDir_;
+        double elevation = std::asin(std::clamp(dot(sunDir_, up), -1.0, 1.0)) * kRadToDeg;
+        intensity *= static_cast<float>(std::clamp((elevation + 2.0) / 7.0, 0.0, 1.0));
+    }
     model_fs_params_t fs{};
-    for (int k = 0; k < 4; ++k) fs.base_color[k] = p.color[k];
-    fs.light[0] = static_cast<float>(light.x);
-    fs.light[1] = static_cast<float>(light.y);
-    fs.light[2] = static_cast<float>(light.z);
+    for (int k = 0; k < 4; ++k) fs.base_color[k] = mat.color[k];
+    fs.light[0] = static_cast<float>(l.x);
+    fs.light[1] = static_cast<float>(l.y);
+    fs.light[2] = static_cast<float>(l.z);
+    fs.light[3] = intensity;
+    for (int k = 0; k < 3; ++k) fs.emissive[k] = mat.emissive[k];
+    fs.emissive[3] = unlit ? 1.0f : 0.0f;
+    fs.material[0] = mat.metallic;
+    fs.material[1] = mat.roughness;
+    fs.material[2] = mat.normalImage >= 0 ? mat.normalScale : 0.0f;
+    fs.material[3] = sun_ ? 0.2f : 0.25f;
+    fs.sky[0] = static_cast<float>(up.x);
+    fs.sky[1] = static_cast<float>(up.y);
+    fs.sky[2] = static_cast<float>(up.z);
+    fs.sky[3] = mat.ormOcclusion ? 1.0f : 0.0f;
     sg_apply_uniforms(UB_model_fs_params, SG_RANGE(fs));
     sg_draw(0, p.count, instanceCount > 0 ? instanceCount : 1);
 }
 
-void ModelLayer::drawMesh(const Camera& cam, const GpuMesh& mesh, const Mat4& model, const Mat4& orientation, Vec3 light) {
+void ModelLayer::drawMesh(const Camera& cam, const GpuMesh& mesh, const Mat4& model, const Mat4& orientation, Vec3 light, int lighting) {
     const Mat4 yUp = yUpToZUp();
-    const Mat4 vp = cam.viewProjRel();
+    const Vec4 origin = model * Vec4{0, 0, 0, 1};
+    const Vec3 up = normalize(Vec3{origin.x, origin.y, origin.z} + cam.eye());
     for (const GpuMesh::Primitive& p : mesh.primitives) {
         Mat4 node;
         node.m = p.matrix;
         if (p.instances < 0 || p.instances >= static_cast<int>(mesh.instances.size()) || mesh.instances[p.instances].count == 0) {
-            drawPrimitive(mesh, p, {}, 0, 0, vp * model * yUp * node, Mat4::identity(), orientation * yUp * node, light);
+            drawPrimitive(cam, mesh, p, {}, 0, 0, model * yUp * node, Mat4::identity(), orientation * yUp * node, light, up, lighting);
             continue;
         }
         const GpuMesh::Instances& set = mesh.instances[p.instances];
-        if (set.local) drawPrimitive(mesh, p, set.buffer, 0, set.count, vp * model * yUp * node, Mat4::identity(), orientation * yUp * node, light);
-        else drawPrimitive(mesh, p, set.buffer, 0, set.count, vp * model, node, orientation, light);
+        if (set.local)
+            drawPrimitive(cam, mesh, p, set.buffer, 0, set.count, model * yUp * node, Mat4::identity(), orientation * yUp * node, light, up, lighting);
+        else drawPrimitive(cam, mesh, p, set.buffer, 0, set.count, model, node, orientation, light, up, lighting);
     }
 }
 
-void ModelLayer::draw(const Camera& cam, const GroundFn& ground) {
+void ModelLayer::draw(const Camera& cam, const GroundFn& ground, bool reuse) {
     if (!ready_ || instances_.empty()) return;
     const Mat4 yUp = yUpToZUp();
-    struct Placed {
-        const GpuMesh* mesh = nullptr;
-        Mat4 base;
-        Mat4 orient;
-        Vec3 light;
-    };
-    std::vector<Placed> placed;
-    placed.reserve(instances_.size());
-    for (auto& [id, inst] : instances_) {
-        const ModelPlacement& pl = inst.placement;
-        double h = pl.position.alt;
-        if (pl.altitudeMode == AltitudeMode::ClampToGround) h = ground(pl.position.lat, pl.position.lon);
-        else if (pl.altitudeMode == AltitudeMode::RelativeToGround) h += ground(pl.position.lat, pl.position.lon);
-        Vec3 origin = geodeticToEcef(pl.position.lat, pl.position.lon, h);
-        Vec3 e, n, u;
-        enuFrame(pl.position.lat, pl.position.lon, e, n, u);
-        Mat4 frame = Mat4::identity();
-        frame.at(0, 0) = e.x; frame.at(1, 0) = e.y; frame.at(2, 0) = e.z;
-        frame.at(0, 1) = n.x; frame.at(1, 1) = n.y; frame.at(2, 1) = n.z;
-        frame.at(0, 2) = u.x; frame.at(1, 2) = u.y; frame.at(2, 2) = u.z;
-        Mat4 orient = frame * rotZ(-pl.heading * kDegToRad) * rotX(pl.pitch * kDegToRad) * rotY(pl.roll * kDegToRad);
-        Mat4 base = translation(origin - cam.eye()) * orient * scaleMat(pl.scale);
-        placed.push_back({inst.mesh.get(), base, orient, normalize(normalize(cam.eye() - origin) + u * 0.8)});
-    }
-    std::stable_sort(placed.begin(), placed.end(), [](const Placed& a, const Placed& b) { return a.mesh < b.mesh; });
-    struct Batch {
-        size_t first;
-        size_t count;
-    };
-    std::vector<Batch> batches;
-    std::vector<float> matrices;
-    for (size_t i = 0; i < placed.size();) {
-        size_t j = i;
-        while (j < placed.size() && placed[j].mesh == placed[i].mesh) ++j;
-        if (j - i >= 2 && placed[i].mesh->instances.empty()) {
-            batches.push_back({i, j - i});
-            for (size_t k = i; k < j; ++k) {
-                float m[16];
-                toFloat(placed[k].base * yUp, m);
-                matrices.insert(matrices.end(), m, m + 16);
+    if (!reuse || placed_.empty()) {
+        frameOrigin_ = cam.eye();
+        placed_.clear();
+        placed_.reserve(instances_.size());
+        for (auto& [id, inst] : instances_) {
+            const ModelPlacement& pl = inst.placement;
+            double h = pl.position.alt;
+            if (pl.altitudeMode == AltitudeMode::ClampToGround) h = ground(pl.position.lat, pl.position.lon);
+            else if (pl.altitudeMode == AltitudeMode::RelativeToGround) h += ground(pl.position.lat, pl.position.lon);
+            Vec3 origin = geodeticToEcef(pl.position.lat, pl.position.lon, h);
+            Vec3 e, n, u;
+            enuFrame(pl.position.lat, pl.position.lon, e, n, u);
+            Mat4 frame = Mat4::identity();
+            frame.at(0, 0) = e.x; frame.at(1, 0) = e.y; frame.at(2, 0) = e.z;
+            frame.at(0, 1) = n.x; frame.at(1, 1) = n.y; frame.at(2, 1) = n.z;
+            frame.at(0, 2) = u.x; frame.at(1, 2) = u.y; frame.at(2, 2) = u.z;
+            Mat4 orient = frame * rotZ(-pl.heading * kDegToRad) * rotX(pl.pitch * kDegToRad) * rotY(pl.roll * kDegToRad);
+            Mat4 base = translation(origin - frameOrigin_) * orient * scaleMat(pl.scale);
+            placed_.push_back({inst.mesh.get(), base, orient, normalize(normalize(cam.eye() - origin) + u * 0.8), u});
+        }
+        std::stable_sort(placed_.begin(), placed_.end(), [](const Placed& a, const Placed& b) { return a.mesh < b.mesh; });
+        batches_.clear();
+        std::vector<float> matrices;
+        for (size_t i = 0; i < placed_.size();) {
+            size_t j = i;
+            while (j < placed_.size() && placed_[j].mesh == placed_[i].mesh) ++j;
+            if (j - i >= 2 && placed_[i].mesh->instances.empty()) {
+                batches_.push_back({i, j - i});
+                for (size_t k = i; k < j; ++k) {
+                    float m[16];
+                    toFloat(placed_[k].base * yUp, m);
+                    matrices.insert(matrices.end(), m, m + 16);
+                }
             }
+            i = j;
         }
-        i = j;
-    }
-    if (!matrices.empty()) {
-        size_t bytes = matrices.size() * sizeof(float);
-        if (bytes > frameInstanceBytes_) {
-            if (frameInstances_.id) sg_destroy_buffer(frameInstances_);
-            frameInstanceBytes_ = std::max(bytes, frameInstanceBytes_ * 2);
-            sg_buffer_desc d{};
-            d.usage.vertex_buffer = true;
-            d.usage.write_transient = true;
-            d.size = frameInstanceBytes_;
-            frameInstances_ = sg_make_buffer(&d);
+        if (!matrices.empty()) {
+            size_t bytes = matrices.size() * sizeof(float);
+            if (bytes > frameInstanceBytes_) {
+                if (frameInstances_.id) sg_destroy_buffer(frameInstances_);
+                frameInstanceBytes_ = std::max(bytes, frameInstanceBytes_ * 2);
+                sg_buffer_desc d{};
+                d.usage.vertex_buffer = true;
+                d.usage.write_transient = true;
+                d.size = frameInstanceBytes_;
+                frameInstances_ = sg_make_buffer(&d);
+            }
+            sg_write_buffer_desc wd{};
+            wd.src.data = {matrices.data(), bytes};
+            wd.dst.buffer = frameInstances_;
+            wd.size = bytes;
+            sg_write_buffer_transient(&wd);
         }
-        sg_write_buffer_desc wd{};
-        wd.src.data = {matrices.data(), bytes};
-        wd.dst.buffer = frameInstances_;
-        wd.size = bytes;
-        sg_write_buffer_transient(&wd);
     }
     begin();
-    const Mat4 vp = cam.viewProjRel();
+    const Mat4 shift = translation(frameOrigin_ - cam.eye());
     size_t batch = 0, offset = 0;
-    for (size_t i = 0; i < placed.size();) {
-        if (batch < batches.size() && batches[batch].first == i) {
-            const Placed& first = placed[i];
+    for (size_t i = 0; i < placed_.size();) {
+        if (batch < batches_.size() && batches_[batch].first == i) {
+            const Placed& first = placed_[i];
             for (const GpuMesh::Primitive& p : first.mesh->primitives) {
                 Mat4 node;
                 node.m = p.matrix;
-                drawPrimitive(*first.mesh, p, frameInstances_, static_cast<int>(offset), static_cast<int>(batches[batch].count), vp, node,
-                              Mat4::identity(), first.light);
+                drawPrimitive(cam, *first.mesh, p, frameInstances_, static_cast<int>(offset), static_cast<int>(batches_[batch].count), shift, node,
+                              Mat4::identity(), first.light, first.up, 0);
             }
-            offset += batches[batch].count;
-            i += batches[batch].count;
+            offset += batches_[batch].count;
+            i += batches_[batch].count;
             ++batch;
             continue;
         }
-        drawMesh(cam, *placed[i].mesh, placed[i].base, placed[i].orient, placed[i].light);
+        drawMesh(cam, *placed_[i].mesh, shift * placed_[i].base, placed_[i].orient, placed_[i].light);
         ++i;
     }
 }

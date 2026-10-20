@@ -75,6 +75,8 @@ struct ViewerState {
     int cacheLimit = 0;
     std::vector<std::string> featureFiles;
     std::vector<std::string> tilesets;
+    double stereo = -1.0;
+    double sunTime = -1.0;
     std::vector<std::string> pointClouds;
     std::vector<std::pair<std::string, ote::ModelPlacement>> models;
     std::string selected;
@@ -255,6 +257,7 @@ void init() {
 
     for (const auto& [path, placement] : state->models) state->engine.addModel(path, placement);
     for (const auto& t : state->tilesets) state->engine.addTileset(t);
+    if (state->sunTime >= 0) state->engine.setSunLighting(true, state->sunTime);
     for (const auto& p : state->pointClouds) state->engine.addPointCloud(p);
     if (state->cacheLimit > 0) state->engine.setCacheLimit(state->cacheLimit);
     state->engine.setGridType(static_cast<ote::GridType>(state->gridType));
@@ -359,7 +362,8 @@ void frame() {
         att.colors[0] = state->shotColorView;
         att.depth_stencil = state->shotDepthView;
         auto benchStart = std::chrono::steady_clock::now();
-        state->engine.frameOffscreen(att, state->width, state->height);
+        if (state->stereo >= 0) state->engine.frameStereoOffscreen(att, state->width, state->height, state->stereo);
+        else state->engine.frameOffscreen(att, state->width, state->height);
         sg_commit();
         double benchMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - benchStart).count();
         ++state->frames;
@@ -428,6 +432,7 @@ void frame() {
                 std::fprintf(f, "timing frame_p50=%.2f frame_p95=%.2f frame_p99=%.2f render_p95=%.2f render_p99=%.2f draws=%d\n", s.frameMsP50,
                              s.frameMsP95, s.frameMsP99, s.renderMsP95, s.renderMsP99, s.drawCalls);
                 std::fprintf(f, "tilesets drawn=%d failed=%d\n", s.tilesetTiles, s.tilesetFailed);
+                for (const std::string& c : state->engine.credits()) std::fprintf(f, "credit %s\n", c.c_str());
                 if (state->scriptFrames > 0)
                     std::fprintf(f, "script frames=%lld incomplete_frames=%lld coarse_frames=%lld max_depth=%lld imagery_loads=%lld\n", state->scriptFrames,
                                  state->scriptIncomplete, state->scriptCoarse, state->scriptMaxDepth, state->scriptLoads);
@@ -485,7 +490,8 @@ void frame() {
         return;
     }
     state->engine.setViewport(sapp_width(), sapp_height(), sapp_dpi_scale());
-    state->engine.frame(sglue_swapchain());
+    if (state->stereo >= 0) state->engine.frameStereo(sglue_swapchain(), state->stereo);
+    else state->engine.frame(sglue_swapchain());
     sg_commit();
     {
         ote::Stats ps = state->engine.stats();
@@ -825,6 +831,11 @@ void parseArgs(int argc, char** argv) {
             state->hasHit = std::sscanf(argv[++i], "%lf,%lf", &state->hitX, &state->hitY) == 2;
         } else if (a == "--las") {
             state->pointClouds.push_back(argv[++i]);
+        } else if (a == "--stereo") {
+            state->stereo = std::max(0.0, std::atof(argv[++i]));
+        } else if (a == "--sun") {
+            std::string v = argv[++i];
+            state->sunTime = v == "now" ? 0.0 : std::atof(v.c_str());
         } else if (a == "--tileset") {
             state->tilesets.push_back(argv[++i]);
         } else if (a == "--model") {

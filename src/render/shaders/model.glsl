@@ -79,7 +79,7 @@ void main() {
         return;
     }
     vec3 V = normalize(-wpos);
-    vec3 N = normalize(n);
+    vec3 N = dot(n, n) > 0.25 ? normalize(n) : normalize(cross(dFdx(wpos), dFdy(wpos)));
     if (dot(N, V) < 0.0) N = -N;
     if (material.z > 0.0) {
         vec3 dp1 = dFdx(wpos);
@@ -99,6 +99,7 @@ void main() {
         }
     }
     vec4 orm = texture(sampler2D(orm_tex, smp), uv);
+    orm.r = mix(1.0, orm.r, sky.w);
     float rough = clamp(material.y * orm.g, 0.05, 1.0);
     float metal = clamp(material.x * orm.b, 0.0, 1.0);
     vec3 albedo = pow(base.rgb, vec3(2.2));
@@ -106,14 +107,14 @@ void main() {
     vec3 H = normalize(L + V);
     float ndl = max(dot(N, L), 0.0);
     float a2 = rough * rough * rough * rough;
-    float shininess = 2.0 / max(a2, 0.0001) - 2.0;
+    float shininess = max(2.0 / max(a2, 0.0001) - 2.0, 1.0);
     vec3 f0 = mix(vec3(0.04), albedo, metal);
     vec3 fresnel = f0 + (1.0 - f0) * pow(1.0 - max(dot(H, V), 0.0), 5.0);
     float spec = pow(max(dot(N, H), 0.0), shininess) * (shininess + 8.0) / 25.13;
     float hemi = mix(0.6, 1.0, dot(N, normalize(sky.xyz)) * 0.5 + 0.5);
     vec3 diffuse = albedo * (1.0 - metal);
     vec3 color = diffuse * (material.w * hemi * orm.r + light.w * ndl) + fresnel * spec * light.w * ndl;
-    color += albedo * metal * material.w * hemi * orm.r * 0.5;
+    color += albedo * metal * 0.8 * (material.w * hemi * orm.r + light.w * ndl);
     color += emissive.rgb * pow(texture(sampler2D(emi_tex, smp), uv).rgb, vec3(2.2));
     frag_color = vec4(pow(color, vec3(1.0 / 2.2)), base.a);
 }

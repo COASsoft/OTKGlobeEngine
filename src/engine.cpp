@@ -24,6 +24,8 @@ namespace ote {
 
 struct Engine::Impl {
     Camera camera;
+    XrAnchor xr;
+    void renderStereo(const sg_swapchain* swapchain, const sg_attachments* attachments, int width, int height, double separation);
     GlobeRenderer globe;
     bool dirty = true;
     bool headingLock = true;
@@ -447,8 +449,21 @@ bool Engine::removeModel(std::uint64_t id) {
 }
 
 std::uint64_t Engine::addTileset(const std::string& path, double maxSse) {
+    TilesetOptions options;
+    options.maxScreenSpaceError = maxSse;
+    return addTileset(path, options);
+}
+
+std::vector<std::string> Engine::credits() const { return impl_->globe.credits(); }
+
+void Engine::setSunLighting(bool enabled, double unixSeconds) {
+    impl_->globe.setSunLighting(enabled, unixSeconds);
+    impl_->dirty = true;
+}
+
+std::uint64_t Engine::addTileset(const std::string& path, const TilesetOptions& options) {
     Vec3 c;
-    std::uint64_t id = impl_->globe.addTileset(path, maxSse, &c);
+    std::uint64_t id = impl_->globe.addTileset(path, options, &c);
     if (id) impl_->tilesetCenters[id] = c;
     impl_->dirty = true;
     return id;
@@ -936,6 +951,104 @@ void Engine::frame(const sg_swapchain& swapchain) {
     impl_->sanity();
     impl_->dirty = false;
     impl_->globe.setCpuMs(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - cpuStart).count());
+}
+
+void Engine::setXrAnchor(const XrAnchor& anchor) {
+    impl_->xr = anchor;
+    if (!(impl_->xr.scale > 0)) impl_->xr.scale = 1.0;
+    impl_->dirty = true;
+}
+
+XrAnchor Engine::xrAnchor() const { return impl_->xr; }
+
+void Engine::frameXr(const XrView* views, const sg_swapchain* targets, int count) {
+    if (!views || !targets || count <= 0) return;
+    impl_->input->update();
+    const XrAnchor& a = impl_->xr;
+    Vec3 origin = geodeticToEcef(a.lat, a.lon, a.alt);
+    Vec3 e, n, u;
+    enuFrame(a.lat, a.lon, e, n, u);
+    double h = a.heading * kDegToRad;
+    Vec3 forward = n * std::cos(h) + e * std::sin(h), right = e * std::cos(h) - n * std::sin(h);
+    auto toWorld = [&](Vec3 v) { return right * v.x + u * v.y - forward * v.z; };
+    auto rotate = [](const double q[4], Vec3 v) {
+        Vec3 qv{q[0], q[1], q[2]};
+        Vec3 t = cross(qv, v) * 2.0;
+        return v + t * q[3] + cross(qv, t);
+    };
+    std::vector<Camera> cams(static_cast<size_t>(count), impl_->camera);
+    std::vector<RenderView> rv(static_cast<size_t>(count));
+    Vec3 center;
+    double tl = 0, tr = 0, tu = 0, td = 0;
+    int maxW = 1, maxH = 1;
+    for (int i = 0; i < count; ++i) {
+        const XrView& v = views[i];
+        Vec3 p = origin + toWorld({v.position[0], v.position[1], v.position[2]}) * a.scale;
+        double l = std::tan(v.angleLeft), r = std::tan(v.angleRight), up = std::tan(v.angleUp), dn = std::tan(v.angleDown);
+        cams[i].setPose(p, toWorld(rotate(v.orientation, {1, 0, 0})), toWorld(rotate(v.orientation, {0, 1, 0})),
+                        toWorld(rotate(v.orientation, {0, 0, 1})), l, r, up, dn);
+        cams[i].width = std::max(1, v.width > 0 ? v.width : targets[i].width);
+        cams[i].height = std::max(1, v.height > 0 ? v.height : targets[i].height);
+        maxW = std::max(maxW, cams[i].width);
+        maxH = std::max(maxH, cams[i].height);
+        center = center + p;
+        tl = i == 0 ? l : std::min(tl, l);
+        tr = i == 0 ? r : std::max(tr, r);
+        tu = i == 0 ? up : std::max(tu, up);
+        td = i == 0 ? dn : std::min(td, dn);
+        bool sameTarget = i > 0 && targets[i].d3d11.render_view == targets[i - 1].d3d11.render_view &&
+                          targets[i].gl.framebuffer == targets[i - 1].gl.framebuffer &&
+                          targets[i].metal.current_drawable == targets[i - 1].metal.current_drawable;
+        rv[i] = {&cams[i], &targets[i], nullptr, v.x, v.y, v.width, v.height, !sameTarget};
+    }
+    Camera select = impl_->camera;
+    const double grow = 1.1;
+    select.setPose(center * (1.0 / count), toWorld(rotate(views[0].orientation, {1, 0, 0})), toWorld(rotate(views[0].orientation, {0, 1, 0})),
+                   toWorld(rotate(views[0].orientation, {0, 0, 1})), tl * grow, tr * grow, tu * grow, td * grow);
+    impl_->globe.render(select, nullptr, nullptr, maxW, maxH, &rv);
+    impl_->dirty = false;
+}
+
+void Engine::Impl::renderStereo(const sg_swapchain* swapchain, const sg_attachments* attachments, int width, int height, double separation) {
+    int half = std::max(1, width / 2);
+    camera.width = half;
+    camera.height = std::max(1, height);
+    sg_backend backend = sg_query_backend();
+    camera.zeroToOneDepth = backend != SG_BACKEND_GLCORE && backend != SG_BACKEND_GLES3;
+    camera.update();
+    double sep = separation > 0 ? separation : camera.eyeAboveGround() / 30.0;
+    double converge = std::max(length(camera.focusEcef() - camera.eye()), 1.0);
+    double ty = std::tan(camera.fovY * 0.5), tx = ty * half / camera.height;
+    std::vector<Camera> cams(2, camera);
+    std::vector<RenderView> rv(2);
+    for (int i = 0; i < 2; ++i) {
+        double offset = (i == 0 ? -0.5 : 0.5) * sep;
+        double shift = offset / converge;
+        cams[i].setPose(camera.eye() + camera.axisRight() * offset, camera.axisRight(), camera.axisUp(), camera.axisBack(), -tx - shift, tx - shift,
+                        ty, -ty);
+        cams[i].width = half;
+        cams[i].height = camera.height;
+        rv[i] = {&cams[i], swapchain, attachments, i * half, 0, half, camera.height, i == 0};
+    }
+    globe.render(camera, nullptr, nullptr, half, camera.height, &rv);
+}
+
+void Engine::frameStereo(const sg_swapchain& swapchain, double eyeSeparation) {
+    impl_->input->update();
+    impl_->animate();
+    impl_->followTerrain();
+    impl_->renderStereo(&swapchain, nullptr, swapchain.width, swapchain.height, eyeSeparation);
+    impl_->sanity();
+    impl_->dirty = false;
+}
+
+void Engine::frameStereoOffscreen(const sg_attachments& attachments, int width, int height, double eyeSeparation) {
+    impl_->input->update();
+    impl_->animate();
+    impl_->followTerrain();
+    impl_->renderStereo(nullptr, &attachments, width, height, eyeSeparation);
+    impl_->sanity();
+    impl_->dirty = false;
 }
 
 void Engine::frameOffscreen(const sg_attachments& attachments, int width, int height) {

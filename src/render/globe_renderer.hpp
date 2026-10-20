@@ -36,6 +36,14 @@ struct QuadKeyHash {
     }
 };
 
+struct RenderView {
+    Camera* cam = nullptr;
+    const sg_swapchain* swapchain = nullptr;
+    const sg_attachments* attachments = nullptr;
+    int x = 0, y = 0, width = 0, height = 0;
+    bool clear = true;
+};
+
 class GlobeRenderer {
 public:
     GlobeRenderer();
@@ -88,13 +96,16 @@ public:
     FeatureLayer& features() { return features_; }
     ModelLayer& models() { return models_; }
     PointCloudLayer& points() { return points_; }
-    std::uint64_t addTileset(const std::string& uri, double maxSse, Vec3* center);
+    std::uint64_t addTileset(const std::string& uri, const TilesetOptions& options, Vec3* center);
+    std::vector<std::string> credits() const;
+    void setSunLighting(bool enabled, double unixSeconds);
     bool removeTileset(std::uint64_t id) { return tilesets_.erase(id) > 0; }
     const FeatureLayer& features() const { return features_; }
     const TileLoader& loader() const { return loader_; }
     void setImageryScale(double s) { imageryScale_ = s; }
     void setDpiScale(double s) { dpiScale_ = s; }
-    void render(Camera& cam, const sg_swapchain* swapchain, const sg_attachments* attachments, int width, int height);
+    void render(Camera& cam, const sg_swapchain* swapchain, const sg_attachments* attachments, int width, int height,
+                const std::vector<RenderView>* views = nullptr);
     bool busy() const { return busy_; }
     Stats stats() const { return stats_; }
     void setCpuMs(double ms) { stats_.cpuMs = ms; }

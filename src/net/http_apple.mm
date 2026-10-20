@@ -4,7 +4,7 @@
 
 namespace ote::net {
 
-Response getBackend(const std::string& url, const std::string& userAgent) {
+Response getBackend(const std::string& url, const std::string& userAgent, const Headers& headers) {
     Response res;
     @autoreleasepool {
         static NSURLSession* session = [] {
@@ -21,6 +21,8 @@ Response getBackend(const std::string& url, const std::string& userAgent) {
         }
         NSMutableURLRequest* req = [NSMutableURLRequest requestWithURL:u];
         [req setValue:[NSString stringWithUTF8String:userAgent.c_str()] forHTTPHeaderField:@"User-Agent"];
+        for (const auto& [name, value] : headers)
+            [req setValue:[NSString stringWithUTF8String:value.c_str()] forHTTPHeaderField:[NSString stringWithUTF8String:name.c_str()]];
         dispatch_semaphore_t done = dispatch_semaphore_create(0);
         __block Response* out = &res;
         NSURLSessionDataTask* task = [session dataTaskWithRequest:req

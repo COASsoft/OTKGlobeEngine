@@ -1,4 +1,5 @@
 #include "ote/ote.h"
+#include "ote/astro.hpp"
 #include "ote/milsym.hpp"
 #include "ote/navigation.hpp"
 
@@ -9,6 +10,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <vector>
 
 struct ote_engine {
     ote::Engine engine;
@@ -136,6 +138,45 @@ void ote_frame_metal(ote_engine* e, int width, int height, void* current_drawabl
 }
 
 int ote_needs_redraw(const ote_engine* e) { return e->engine.needsRedraw() ? 1 : 0; }
+
+void ote_set_xr_anchor(ote_engine* e, double lat, double lon, double alt, double heading_deg, double scale) {
+    ote::XrAnchor a;
+    a.lat = lat;
+    a.lon = lon;
+    a.alt = alt;
+    a.heading = heading_deg;
+    a.scale = scale;
+    e->engine.setXrAnchor(a);
+}
+
+void ote_frame_xr(ote_engine* e, const ote_xr_view* views, int count, int target_width, int target_height, float dpi_scale) {
+    if (!views || count <= 0) return;
+    std::vector<ote::XrView> xr(static_cast<size_t>(count));
+    std::vector<sg_swapchain> targets(static_cast<size_t>(count));
+    for (int i = 0; i < count; ++i) {
+        const ote_xr_view& v = views[i];
+        ote::XrView& x = xr[i];
+        for (int k = 0; k < 3; ++k) x.position[k] = v.position[k];
+        for (int k = 0; k < 4; ++k) x.orientation[k] = v.orientation[k];
+        x.angleLeft = v.angle_left;
+        x.angleRight = v.angle_right;
+        x.angleUp = v.angle_up;
+        x.angleDown = v.angle_down;
+        x.x = v.x;
+        x.y = v.y;
+        x.width = v.width;
+        x.height = v.height;
+        sg_swapchain sc = swapchain(e, target_width, target_height);
+        sc.d3d11.render_view = v.render_view;
+        sc.d3d11.resolve_view = v.resolve_view;
+        sc.d3d11.depth_stencil_view = v.depth_stencil_view;
+        sc.gl.framebuffer = v.gl_framebuffer;
+        targets[i] = sc;
+    }
+    e->engine.setViewport(views[0].width > 0 ? views[0].width : target_width, views[0].height > 0 ? views[0].height : target_height, dpi_scale);
+    e->engine.frameXr(xr.data(), targets.data(), count);
+    sg_commit();
+}
 
 void ote_set_android_vm(void* java_vm) { ote::setAndroidJavaVm(java_vm); }
 
@@ -414,6 +455,42 @@ uint64_t ote_add_tileset(ote_engine* e, const char* path, double max_sse) {
 
 int ote_remove_tileset(ote_engine* e, uint64_t id) { return e->engine.removeTileset(id) ? 1 : 0; }
 
+uint64_t ote_add_tileset_ex(ote_engine* e, const char* path, double max_sse, const char* headers, int lighting, int cache_offline) {
+    ote::TilesetOptions options;
+    options.maxScreenSpaceError = max_sse > 0 ? max_sse : 16.0;
+    options.lighting = lighting == 1 ? ote::TilesetLighting::Lit : lighting == 2 ? ote::TilesetLighting::Unlit : ote::TilesetLighting::Auto;
+    options.cacheOffline = cache_offline != 0;
+    std::string all = headers ? headers : "";
+    size_t pos = 0;
+    while (pos < all.size()) {
+        size_t end = all.find('\n', pos);
+        if (end == std::string::npos) end = all.size();
+        std::string line = all.substr(pos, end - pos);
+        size_t colon = line.find(':');
+        if (colon != std::string::npos) {
+            std::string value = line.substr(colon + 1);
+            value.erase(0, value.find_first_not_of(' '));
+            while (!value.empty() && (value.back() == '\r' || value.back() == ' ')) value.pop_back();
+            options.headers.emplace_back(line.substr(0, colon), value);
+        }
+        pos = end + 1;
+    }
+    return e->engine.addTileset(path ? path : "", options);
+}
+
+int ote_credits(const ote_engine* e, char* buffer, int size) {
+    std::string all;
+    for (const std::string& c : e->engine.credits()) all += (all.empty() ? "" : "\n") + c;
+    if (buffer && size > 0) {
+        size_t n = std::min(all.size(), static_cast<size_t>(size - 1));
+        std::memcpy(buffer, all.data(), n);
+        buffer[n] = 0;
+    }
+    return static_cast<int>(all.size());
+}
+
+void ote_set_sun_lighting(ote_engine* e, int enabled, double unix_seconds) { e->engine.setSunLighting(enabled != 0, unix_seconds); }
+
 uint64_t ote_add_point_cloud(ote_engine* e, const char* path, uint64_t max_points, float size) {
     return e->engine.addPointCloud(path ? path : "", max_points ? static_cast<std::size_t>(max_points) : 4000000, size > 0 ? size : 2.0f);
 }
@@ -448,6 +525,38 @@ void ote_geodesic_direct(double lat, double lon, double bearing, double distance
     ote::Coord c = ote::geodesicDirect({lat, lon, 0}, bearing, distance);
     if (out_lat) *out_lat = c.lat;
     if (out_lon) *out_lon = c.lon;
+}
+
+void ote_sun_moon_at(double unix_seconds, double lat, double lon, ote_sun_moon* out) {
+    if (!out) return;
+    ote::CelestialPosition s = ote::sunPosition(unix_seconds, lat, lon);
+    ote::MoonInfo m = ote::moonPosition(unix_seconds, lat, lon);
+    ote::Illuminance l = ote::groundIlluminance(unix_seconds, lat, lon);
+    out->sun_azimuth = s.azimuth;
+    out->sun_elevation = s.apparentElevation;
+    out->moon_azimuth = m.position.azimuth;
+    out->moon_elevation = m.position.apparentElevation;
+    out->moon_illumination = m.illuminatedFraction;
+    out->moon_phase_angle = m.phaseAngle;
+    out->moon_waxing = m.waxing ? 1 : 0;
+    out->sun_lux = l.sunLux;
+    out->moon_lux = l.moonLux;
+    out->total_lux = l.totalLux;
+}
+
+void ote_sun_moon_times(double start_unix_seconds, double lat, double lon, double hours, ote_twilight* out) {
+    if (!out) return;
+    ote::SunMoonTimes t = ote::sunMoonTimes(start_unix_seconds, lat, lon, hours > 0 ? hours : 24.0);
+    out->astronomical_dawn = t.astronomicalDawn;
+    out->nautical_dawn = t.nauticalDawn;
+    out->civil_dawn = t.civilDawn;
+    out->sunrise = t.sunrise;
+    out->sunset = t.sunset;
+    out->civil_dusk = t.civilDusk;
+    out->nautical_dusk = t.nauticalDusk;
+    out->astronomical_dusk = t.astronomicalDusk;
+    out->moonrise = t.moonrise;
+    out->moonset = t.moonset;
 }
 
 double ote_magnetic_declination(double lat, double lon, double altitude_m, double decimal_year) {

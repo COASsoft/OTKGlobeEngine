@@ -38,6 +38,8 @@
 #include "sky.glsl.h"
 #include "surface.glsl.h"
 
+#include "core/astro.hpp"
+
 #include <algorithm>
 #include <cstdarg>
 #include <cstdio>
@@ -433,8 +435,28 @@ void GlobeRenderer::poolPressure(const char* what) {
          imageryCapacity_);
 }
 
-std::uint64_t GlobeRenderer::addTileset(const std::string& uri, double maxSse, Vec3* center) {
-    auto t = std::make_unique<Tileset3D>(uri, maxSse, cache_.isOpen() ? &cache_ : nullptr, &offline_);
+std::vector<std::string> GlobeRenderer::credits() const {
+    std::vector<std::pair<std::string, int>> all;
+    for (const auto& [id, t] : tilesets_)
+        for (const auto& c : t->credits()) {
+            bool merged = false;
+            for (auto& a : all)
+                if (a.first == c.first) {
+                    a.second += c.second;
+                    merged = true;
+                }
+            if (!merged) all.push_back(c);
+        }
+    std::stable_sort(all.begin(), all.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
+    std::vector<std::string> out;
+    for (const auto& a : all) out.push_back(a.first);
+    return out;
+}
+
+void GlobeRenderer::setSunLighting(bool enabled, double unixSeconds) { models_.setSun(enabled, sunDirectionEcef(unixSeconds)); }
+
+std::uint64_t GlobeRenderer::addTileset(const std::string& uri, const TilesetOptions& options, Vec3* center) {
+    auto t = std::make_unique<Tileset3D>(uri, options, cache_.isOpen() ? &cache_ : nullptr, &offline_);
     if (!t->valid()) return 0;
     if (center) *center = t->center();
     std::uint64_t id = nextTileset_++;
@@ -1626,7 +1648,7 @@ void GlobeRenderer::profileMark(int section) {
 }
 
 void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_attachments* attachments, int width,
-                           int height) {
+                           int height, const std::vector<RenderView>* views) {
     if (!ready_) return;
     lastFrameStart_ = frameStart_;
     frameStart_ = std::chrono::steady_clock::now();
@@ -1671,6 +1693,12 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     cam.zeroToOneDepth = backend != SG_BACKEND_GLCORE && backend != SG_BACKEND_GLES3;
     cam.update();
     eye_ = cam.eye();
+    if (views)
+        for (const RenderView& v : *views) {
+            v.cam->zeroToOneDepth = cam.zeroToOneDepth;
+            v.cam->groundHeight = cam.groundHeight;
+            v.cam->update();
+        }
     if (grid_) {
         double s = cam.gsd * 70.0 * dpiScale_;
         double spacing = s <= 1000.0 ? 1000.0 : s <= 10000.0 ? 10000.0 : s <= 100000.0 ? 100000.0 : 0.0;
@@ -2100,42 +2128,51 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     if (!mipQueue.empty()) generateMips(mipQueue);
 
     profileMark(5);
+    const RenderView* firstView = views && !views->empty() ? &views->front() : nullptr;
+    const Camera& dc = firstView ? *firstView->cam : cam;
+    auto ground = [this](double lat, double lon) { return elevationAt(lat, lon); };
     sg_pass main{};
     main.action.colors[0].load_action = SG_LOADACTION_CLEAR;
     main.action.colors[0].clear_value = {0, 0, 0, 1};
     main.action.depth.load_action = SG_LOADACTION_CLEAR;
     main.action.depth.clear_value = 1.0f;
-    if (swapchain) main.swapchain = *swapchain;
-    if (attachments) main.attachments = *attachments;
+    const sg_swapchain* mainSwapchain = firstView ? firstView->swapchain : swapchain;
+    const sg_attachments* mainAttachments = firstView ? firstView->attachments : attachments;
+    if (mainSwapchain) main.swapchain = *mainSwapchain;
+    if (mainAttachments) main.attachments = *mainAttachments;
     sg_begin_pass(&main);
+    if (firstView && firstView->width > 0) sg_apply_viewport(firstView->x, firstView->y, firstView->width, firstView->height, true);
 
-    sg_apply_pipeline(skyPipeline_);
-    sg_bindings sb{};
-    sb.vertex_buffers[0] = skyBuffer_;
-    sg_apply_bindings(&sb);
-    sky_fs_params_t sky{};
-    toFloat(cam.invViewProjRel(), sky.inv_vp);
-    Vec3 center = -cam.eye();
-    sky.center[0] = static_cast<float>(center.x);
-    sky.center[1] = static_cast<float>(center.y);
-    sky.center[2] = static_cast<float>(center.z);
-    sky.radii[0] = 6356752.0f;
-    sky.radii[1] = 6356752.0f + 100000.0f;
-    sky.radii[2] = cam.eyeAltitude() < 100000.0 ? 1.0f : 0.0f;
-    sky.radii[3] = holeMarker_ ? 1.0f : 0.0f;
-    sg_apply_uniforms(UB_sky_fs_params, SG_RANGE(sky));
-    sg_draw(0, 3, 1);
+    auto drawSky = [&](const Camera& c) {
+        sg_apply_pipeline(skyPipeline_);
+        sg_bindings sb{};
+        sb.vertex_buffers[0] = skyBuffer_;
+        sg_apply_bindings(&sb);
+        sky_fs_params_t sky{};
+        toFloat(c.invViewProjRel(), sky.inv_vp);
+        Vec3 center = -c.eye();
+        sky.center[0] = static_cast<float>(center.x);
+        sky.center[1] = static_cast<float>(center.y);
+        sky.center[2] = static_cast<float>(center.z);
+        sky.radii[0] = 6356752.0f;
+        sky.radii[1] = 6356752.0f + 100000.0f;
+        sky.radii[2] = c.eyeAltitude() < 100000.0 ? 1.0f : 0.0f;
+        sky.radii[3] = holeMarker_ ? 1.0f : 0.0f;
+        sg_apply_uniforms(UB_sky_fs_params, SG_RANGE(sky));
+        sg_draw(0, 3, 1);
+    };
+    drawSky(dc);
 
     bool xray = terrainAlpha_ < 0.999f;
     bool tilesBusy = false;
     stats_.tilesetTiles = 0;
     stats_.tilesetFailed = 0;
     auto drawObjects = [&]() {
-        models_.draw(cam, [this](double lat, double lon) { return elevationAt(lat, lon); });
-        points_.draw(cam, dpiScale_);
+        models_.draw(dc, ground);
+        points_.draw(dc, dpiScale_);
         for (auto& [id, t] : tilesets_) {
             t->update(cam, frustum_, frame_);
-            t->draw(cam, models_, points_, dpiScale_);
+            t->draw(dc, models_, points_, dpiScale_);
             tilesBusy = tilesBusy || t->busy();
             stats_.tilesetTiles += t->drawnTiles();
             stats_.tilesetFailed += t->failedTiles();
@@ -2225,6 +2262,16 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     for (auto& dt : tiles) drawn_[dt.key] = frame_;
     if (drawn_.size() > 20000)
         for (auto it = drawn_.begin(); it != drawn_.end();) it = it->second + 2 < frame_ ? drawn_.erase(it) : std::next(it);
+    struct TerrainDraw {
+        sg_buffer vbuf;
+        sg_view view;
+        sg_view view2;
+        globe_vs_params_t vsp;
+        Vec3 center;
+        float blend;
+    };
+    std::vector<TerrainDraw> terrainDraws;
+    if (views && views->size() > 1) terrainDraws.reserve(tiles.size());
     std::unordered_map<QuadKey, const TerrainTile*, QuadKeyHash> drawnNow;
     drawnNow.reserve(tiles.size() * 2);
     for (auto& dt : tiles) drawnNow[dt.key] = &terrain(dt.key);
@@ -2321,7 +2368,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             ++invalidResources_;
             view2 = view;
         }
-        Mat4 mvp = cam.viewProjRel() * translation(tt.center - cam.eye());
+        Mat4 mvp = dc.viewProjRel() * translation(tt.center - dc.eye());
         globe_vs_params_t vsp{};
         toFloat(mvp, vsp.mvp);
         std::memcpy(vsp.uv_xform, uvx, sizeof(uvx));
@@ -2333,6 +2380,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         vsp.center[1] = static_cast<float>(tt.center.y);
         vsp.center[2] = static_cast<float>(tt.center.z);
         gfs.flags[2] = blend;
+        if (views && views->size() > 1) terrainDraws.push_back({tt.vbuf, view, view2, vsp, tt.center, blend});
         sg_apply_uniforms(UB_globe_fs_params, SG_RANGE(gfs));
         sg_bindings bind{};
         bind.vertex_buffers[0] = tt.vbuf;
@@ -2371,9 +2419,48 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             }
         }
     }
-    features_.drawOverlay(cam, [this](double lat, double lon) { return elevationAt(lat, lon); }, dpiScale_, flipSurface_,
-                          &vectorLabels);
+    features_.drawOverlay(dc, ground, dpiScale_, flipSurface_, &vectorLabels);
     sg_end_pass();
+    if (views)
+        for (size_t vi = 1; vi < views->size(); ++vi) {
+            const RenderView& v = (*views)[vi];
+            const Camera& vc = *v.cam;
+            sg_pass pass{};
+            pass.action.colors[0].load_action = v.clear ? SG_LOADACTION_CLEAR : SG_LOADACTION_LOAD;
+            pass.action.colors[0].clear_value = {0, 0, 0, 1};
+            pass.action.depth.load_action = v.clear ? SG_LOADACTION_CLEAR : SG_LOADACTION_LOAD;
+            pass.action.depth.clear_value = 1.0f;
+            if (v.swapchain) pass.swapchain = *v.swapchain;
+            if (v.attachments) pass.attachments = *v.attachments;
+            sg_begin_pass(&pass);
+            if (v.width > 0) sg_apply_viewport(v.x, v.y, v.width, v.height, true);
+            drawSky(vc);
+            auto objects = [&]() {
+                models_.draw(vc, ground, true);
+                points_.draw(vc, dpiScale_);
+                for (auto& [id, t] : tilesets_) t->draw(vc, models_, points_, dpiScale_);
+            };
+            if (xray) objects();
+            sg_apply_pipeline(xray ? globeBlendPipeline_ : globePipeline_);
+            for (const TerrainDraw& td : terrainDraws) {
+                globe_vs_params_t vsp = td.vsp;
+                toFloat(vc.viewProjRel() * translation(td.center - vc.eye()), vsp.mvp);
+                gfs.flags[2] = td.blend;
+                sg_apply_uniforms(UB_globe_fs_params, SG_RANGE(gfs));
+                sg_bindings bind{};
+                bind.vertex_buffers[0] = td.vbuf;
+                bind.index_buffer = indexBuffer_;
+                bind.views[VIEW_tex] = td.view;
+                bind.views[VIEW_tex2] = td.view2;
+                bind.samplers[SMP_smp] = sampler_;
+                sg_apply_bindings(&bind);
+                sg_apply_uniforms(UB_globe_vs_params, SG_RANGE(vsp));
+                sg_draw(0, xray ? kGrid * kGrid * 6 : kIndexCount, 1);
+            }
+            if (!xray) objects();
+            features_.drawOverlay(vc, ground, dpiScale_, flipSurface_, &vectorLabels);
+            sg_end_pass();
+        }
 
     bool pending = false;
     for (const Need& n : needs_)

@@ -365,7 +365,7 @@ std::string stripCredentials(const std::string& url) {
     size_t q = url.find('?');
     if (q == std::string::npos) return url;
     static const char* const secret[] = {"key", "apikey", "api_key", "api-key", "access_token", "accesstoken", "token",
-                                         "subscription-key", "x-api-key", "client_secret", "signature", "sig"};
+                                         "subscription-key", "x-api-key", "client_secret", "signature", "sig", "session"};
     std::string out = url.substr(0, q);
     std::string kept;
     size_t pos = q + 1;

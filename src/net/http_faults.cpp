@@ -8,7 +8,7 @@
 
 namespace ote::net {
 
-Response getBackend(const std::string& url, const std::string& userAgent);
+Response getBackend(const std::string& url, const std::string& userAgent, const Headers& headers);
 
 namespace {
 
@@ -54,9 +54,9 @@ double roll() {
 
 }
 
-Response faulted(const std::string& url, const std::string& userAgent) {
+Response faulted(const std::string& url, const std::string& userAgent, const Headers& headers) {
     const Faults& f = faults();
-    if (!f.any) return getBackend(url, userAgent);
+    if (!f.any) return getBackend(url, userAgent, headers);
     double wait = f.delayMs + f.jitterMs * roll();
     if (wait > 0) std::this_thread::sleep_for(std::chrono::microseconds(static_cast<long long>(wait * 1000.0)));
     Response out;
@@ -83,20 +83,20 @@ Response faulted(const std::string& url, const std::string& userAgent) {
         return out;
     }
     r -= f.missingRate;
-    out = getBackend(url, userAgent);
+    out = getBackend(url, userAgent, headers);
     if (r < f.corruptRate && out.status == 200) {
         for (size_t i = 0; i < out.body.size(); ++i) out.body[i] = static_cast<std::uint8_t>(roll() * 256.0);
     }
     return out;
 }
 
-Response get(const std::string& url, const std::string& userAgent) {
+Response get(const std::string& url, const std::string& userAgent, const Headers& headers) {
     if (!admit(url)) {
         Response out;
         out.error = "host unreachable";
         return out;
     }
-    Response out = faulted(url, userAgent);
+    Response out = faulted(url, userAgent, headers);
     report(url, out.status);
     return out;
 }

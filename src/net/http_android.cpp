@@ -38,7 +38,7 @@ bool check(JNIEnv* e) {
 
 void setJavaVm(void* vm) { javaVm = static_cast<JavaVM*>(vm); }
 
-Response getBackend(const std::string& url, const std::string& userAgent) {
+Response getBackend(const std::string& url, const std::string& userAgent, const Headers& headers) {
     Response res;
     thread_local Env holder;
     JNIEnv* e = holder.env;
@@ -62,6 +62,9 @@ Response getBackend(const std::string& url, const std::string& userAgent) {
     e->CallVoidMethod(conn, e->GetMethodID(connClass, "setReadTimeout", "(I)V"), 20000);
     e->CallVoidMethod(conn, e->GetMethodID(connClass, "setRequestProperty", "(Ljava/lang/String;Ljava/lang/String;)V"),
                       e->NewStringUTF("User-Agent"), e->NewStringUTF(userAgent.c_str()));
+    for (const auto& [name, value] : headers)
+        e->CallVoidMethod(conn, e->GetMethodID(connClass, "setRequestProperty", "(Ljava/lang/String;Ljava/lang/String;)V"),
+                          e->NewStringUTF(name.c_str()), e->NewStringUTF(value.c_str()));
     jint code = e->CallIntMethod(conn, e->GetMethodID(connClass, "getResponseCode", "()I"));
     if (!check(e)) {
         res.error = "request failed";

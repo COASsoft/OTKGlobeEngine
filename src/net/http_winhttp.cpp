@@ -46,7 +46,7 @@ struct Handle {
 
 }
 
-Response getBackend(const std::string& url, const std::string& userAgent) {
+Response getBackend(const std::string& url, const std::string& userAgent, const Headers& headers) {
     Response res;
     HINTERNET s = session(userAgent);
     if (!s) {
@@ -81,7 +81,10 @@ Response getBackend(const std::string& url, const std::string& userAgent) {
         res.error = "open request failed";
         return res;
     }
-    if (!WinHttpSendRequest(req.h, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) ||
+    std::wstring extraHeaders;
+    for (const auto& [name, value] : headers) extraHeaders += widen(name) + L": " + widen(value) + L"\r\n";
+    if (!WinHttpSendRequest(req.h, extraHeaders.empty() ? WINHTTP_NO_ADDITIONAL_HEADERS : extraHeaders.c_str(),
+                            extraHeaders.empty() ? 0 : static_cast<DWORD>(-1L), WINHTTP_NO_REQUEST_DATA, 0, 0, 0) ||
         !WinHttpReceiveResponse(req.h, nullptr)) {
         res.error = "request failed " + std::to_string(GetLastError());
         return res;

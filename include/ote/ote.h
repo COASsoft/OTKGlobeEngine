@@ -52,6 +52,20 @@ OTE_API void ote_frame_metal(ote_engine* e, int width, int height, void* current
                              void* msaa_color_texture, float dpi_scale);
 OTE_API int ote_needs_redraw(const ote_engine* e);
 
+typedef struct ote_xr_view {
+    double position[3];
+    double orientation[4];
+    double angle_left, angle_right, angle_up, angle_down;
+    int x, y, width, height;
+    void* render_view;
+    void* resolve_view;
+    void* depth_stencil_view;
+    uint32_t gl_framebuffer;
+} ote_xr_view;
+
+OTE_API void ote_set_xr_anchor(ote_engine* e, double lat, double lon, double alt, double heading_deg, double scale);
+OTE_API void ote_frame_xr(ote_engine* e, const ote_xr_view* views, int count, int target_width, int target_height, float dpi_scale);
+
 OTE_API void ote_set_android_vm(void* java_vm);
 OTE_API void ote_set_cache_directory(ote_engine* e, const char* dir);
 OTE_API void ote_set_offline(ote_engine* e, int offline);
@@ -155,6 +169,10 @@ OTE_API uint64_t ote_hit_test(const ote_engine* e, double sx, double sy, double 
 OTE_API uint64_t ote_add_model(ote_engine* e, const char* path, double lat, double lon, double heading, double scale);
 OTE_API void ote_set_grid(ote_engine* e, int enabled);
 OTE_API uint64_t ote_add_tileset(ote_engine* e, const char* path_or_url, double max_sse);
+OTE_API uint64_t ote_add_tileset_ex(ote_engine* e, const char* path_or_url, double max_sse, const char* headers, int lighting,
+                                    int cache_offline);
+OTE_API int ote_credits(const ote_engine* e, char* buffer, int size);
+OTE_API void ote_set_sun_lighting(ote_engine* e, int enabled, double unix_seconds);
 OTE_API int ote_remove_tileset(ote_engine* e, uint64_t id);
 OTE_API uint64_t ote_add_point_cloud(ote_engine* e, const char* las_path, uint64_t max_points, float point_size_px);
 OTE_API uint64_t ote_viewshed(ote_engine* e, double lat, double lon, double height, double radius);
@@ -178,6 +196,20 @@ typedef enum ote_grid_type { OTE_GRID_MGRS = 0, OTE_GRID_LATLON = 1, OTE_GRID_GA
 OTE_API double ote_geodesic_inverse(double lat1, double lon1, double lat2, double lon2, double* initial_bearing, double* final_bearing);
 OTE_API void ote_geodesic_direct(double lat, double lon, double bearing, double distance, double* out_lat, double* out_lon);
 OTE_API double ote_magnetic_declination(double lat, double lon, double altitude_m, double decimal_year);
+
+typedef struct ote_sun_moon {
+    double sun_azimuth, sun_elevation;
+    double moon_azimuth, moon_elevation, moon_illumination, moon_phase_angle;
+    int moon_waxing;
+    double sun_lux, moon_lux, total_lux;
+} ote_sun_moon;
+
+typedef struct ote_twilight {
+    double astronomical_dawn, nautical_dawn, civil_dawn, sunrise, sunset, civil_dusk, nautical_dusk, astronomical_dusk, moonrise, moonset;
+} ote_twilight;
+
+OTE_API void ote_sun_moon_at(double unix_seconds, double lat, double lon, ote_sun_moon* out);
+OTE_API void ote_sun_moon_times(double start_unix_seconds, double lat, double lon, double hours, ote_twilight* out);
 OTE_API double ote_grid_convergence(double lat, double lon);
 OTE_API double ote_bearing_from_true(double true_bearing, double lat, double lon, ote_north_reference reference);
 OTE_API int ote_format_coordinate(double lat, double lon, ote_coordinate_format format, int precision, char* out, int capacity);

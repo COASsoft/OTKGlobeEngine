@@ -3,12 +3,14 @@
 #include "core/camera.hpp"
 #include "model/model_layer.hpp"
 #include "model/pointcloud.hpp"
+#include "ote/engine.hpp"
 
 #include <array>
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -22,7 +24,7 @@ class TileCache;
 
 class Tileset3D {
 public:
-    Tileset3D(const std::string& uri, double maxSse, TileCache* cache = nullptr, const std::atomic<bool>* offline = nullptr);
+    Tileset3D(const std::string& uri, const TilesetOptions& options, TileCache* cache = nullptr, const std::atomic<bool>* offline = nullptr);
     ~Tileset3D();
 
     bool valid() const { return root_ != nullptr; }
@@ -33,6 +35,7 @@ public:
     int drawnTiles() const { return static_cast<int>(draw_.size()); }
     int failedTiles() const { return failed_; }
     Vec3 center() const;
+    const std::vector<std::pair<std::string, int>>& credits() const { return credits_; }
 
     struct Implicit;
     struct Subtree;
@@ -46,6 +49,7 @@ private:
         bool add = false;
         std::string content;
         std::string base;
+        std::string query;
         std::vector<std::unique_ptr<Node>> children;
         std::vector<std::shared_ptr<GpuMesh>> meshes;
         std::atomic<int> state{0};
@@ -80,7 +84,7 @@ private:
         bool transient = false;
     };
 
-    std::unique_ptr<Node> parse(const void* json, const Mat4& parent, const std::string& base, bool parentAdd);
+    std::unique_ptr<Node> parse(const void* json, const Mat4& parent, const std::string& base, const std::string& query, bool parentAdd);
     std::unique_ptr<Node> implicitNode(const std::shared_ptr<const Implicit>& im, int level, std::uint32_t x, std::uint32_t y, std::uint32_t z) const;
     void expand(Node* n);
     void select(Node* n, const Camera& cam, const std::array<double, 16>& frustum, std::uint64_t frame);
@@ -89,10 +93,16 @@ private:
     void request(Node* n, double priority);
     void run();
     void evict(std::uint64_t frame);
+    std::string contentPath(const Node* n, const std::string& rel) const;
+    void collectCredits();
 
     std::shared_ptr<TileSource> source_;
     std::unique_ptr<Node> root_;
     double maxSse_;
+    int lighting_ = 0;
+    bool remote_ = false;
+    std::vector<std::string> attributions_;
+    std::vector<std::pair<std::string, int>> credits_;
     std::vector<Node*> draw_;
     std::vector<Job> wanted_;
     std::vector<Node*> loaded_;
