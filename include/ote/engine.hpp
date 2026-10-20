@@ -216,6 +216,7 @@ public:
     void setLayerVisible(int index, bool visible);
     void setImageryScale(double scale);
     void setCacheDirectory(const std::string& dir);
+    void setCacheEnabled(bool enabled);
     std::string cacheDirectory() const;
     void setCacheLimit(int megabytes);
     std::int64_t cacheBytes() const;
@@ -254,6 +255,7 @@ public:
     InputController& input();
     void tiltBy(double degrees);
     void flyTo(const View& target, double seconds = 2.0);
+    void stopAnimation();
     void setFirstPerson(bool enabled, double heightAboveGround = 2.0);
     bool firstPerson() const;
     void walk(double forwardMeters, double rightMeters);

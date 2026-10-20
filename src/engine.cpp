@@ -33,6 +33,7 @@ struct Engine::Impl {
     std::unique_ptr<InputController> input;
     std::unordered_map<std::uint64_t, Vec3> tilesetCenters;
     bool flying = false;
+    bool cacheDisabled = false;
     View flyFrom, flyTo;
     double flyDuration = 0;
     double flyPeak = 0;
@@ -302,7 +303,7 @@ Engine::~Engine() { shutdown(); }
 bool Engine::init() {
     impl_->camera.groundHeight = [this](double lat, double lon) { return impl_->globe.elevationAt(lat, lon); };
     impl_->camera.update();
-    if (impl_->globe.cacheDirectory().empty()) {
+    if (impl_->globe.cacheDirectory().empty() && !impl_->cacheDisabled) {
         std::string dir = defaultCacheDirectory();
         std::error_code ec;
         if (!dir.empty()) {
@@ -1135,6 +1136,10 @@ void Engine::flyTo(const View& target, double seconds) {
 }
 
 bool Engine::animating() const { return impl_->flying; }
+
+void Engine::stopAnimation() { impl_->flying = false; }
+
+void Engine::setCacheEnabled(bool enabled) { impl_->cacheDisabled = !enabled; }
 
 void Engine::setElevationHeatmap(bool enabled, double minHeight, double maxHeight, float opacity) {
     impl_->globe.setHeatmap(enabled, minHeight, maxHeight, opacity);
