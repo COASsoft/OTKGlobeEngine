@@ -5,6 +5,7 @@
 #include "net/http.hpp"
 
 #include <json.hpp>
+#include "raster/pmtiles.hpp"
 #include "raster/tile_cache.hpp"
 
 #include <algorithm>
@@ -428,6 +429,132 @@ public:
         return r;
     }
 };
+
+class PmTilesProvider : public TileProvider {
+public:
+    explicit PmTilesProvider(const ImageryLayer& layer) {
+        archive_ = PmTilesArchive::open(layer.path);
+        if (archive_) {
+            const auto& h = archive_->header();
+            int size = layer.tileSize != 256 ? layer.tileSize : archive_->tileSize();
+            matrix_ = TileMatrix::webMercator(h.minZoom, h.maxZoom, size);
+        } else {
+            matrix_ = TileMatrix::webMercator(0, 0, 256);
+        }
+    }
+    bool vector() const override { return archive_ && archive_->vector(); }
+    FetchResult fetch(int z, int x, int y) override {
+        FetchResult r;
+        r.status = archive_ ? archive_->status(z, x, y, r.data) : 404;
+        if (r.status != 200) r.data.clear();
+        return r;
+    }
+
+private:
+    std::shared_ptr<PmTilesArchive> archive_;
+};
+
+class HostProvider : public TileProvider {
+public:
+    HostProvider(const ImageryLayer& layer, TileCache* cache, std::atomic<bool>* offline)
+        : source_(layer.source), cache_(cache), offline_(offline),
+          ua_(layer.userAgent.empty() ? std::string("OpenTAKEngine/0.1") : layer.userAgent) {
+        matrix_ = layer.srid == 4326 ? TileMatrix::geographic(layer.minZoom, layer.maxZoom, layer.tileSize)
+                                     : TileMatrix::webMercator(layer.minZoom, layer.maxZoom, layer.tileSize);
+        useCache_ = layer.cache;
+    }
+    bool remote() const override { return source_->remote(); }
+    bool placeholderCheck() const override { return false; }
+    bool vector() const override { return source_->vector(); }
+    bool fetchLocal(int z, int x, int y, FetchResult& out) override {
+        if (source_->remote()) return false;
+        out = fetch(z, x, y);
+        return true;
+    }
+    FetchResult fetch(int z, int x, int y) override {
+        FetchResult r;
+        TileData d;
+        UrlFetch fetcher = [this](const std::string& url, std::vector<std::uint8_t>& body, const FetchOptions& o) {
+            FetchOptions opts = o;
+            opts.cache = opts.cache && useCache_;
+            return fetchUrl(url, body, opts, cache_, offline_, ua_);
+        };
+        r.status = source_->tile(z, x, y, d, fetcher);
+        if (r.status != 200) return r;
+        if (!d.rgba.empty() && d.width > 0 && d.height > 0 &&
+            d.rgba.size() == static_cast<size_t>(d.width) * static_cast<size_t>(d.height) * 4) {
+            r.raw = true;
+            r.width = d.width;
+            r.height = d.height;
+            r.data = std::move(d.rgba);
+        } else if (!d.bytes.empty()) {
+            r.data = std::move(d.bytes);
+        } else {
+            r.status = 204;
+        }
+        return r;
+    }
+
+private:
+    std::shared_ptr<TileSource> source_;
+    TileCache* cache_;
+    std::atomic<bool>* offline_;
+    std::string ua_;
+    bool useCache_ = true;
+};
+
+}
+
+int fetchUrl(const std::string& url, std::vector<std::uint8_t>& body, const FetchOptions& options, TileCache* cache,
+             std::atomic<bool>* offline, const std::string& userAgent) {
+    body.clear();
+    if (url.rfind("file://", 0) == 0) {
+        std::string path = url.substr(7);
+        if (path.size() > 2 && path[0] == '/' && path[2] == ':') path = path.substr(1);
+        FILE* f = std::fopen(path.c_str(), "rb");
+        if (!f) return 404;
+        std::fseek(f, 0, SEEK_END);
+        long n = std::ftell(f);
+        std::fseek(f, 0, SEEK_SET);
+        body.resize(n > 0 ? static_cast<size_t>(n) : 0);
+        bool ok = std::fread(body.data(), 1, body.size(), f) == body.size();
+        std::fclose(f);
+        return ok ? 200 : 500;
+    }
+    const bool useCache = options.cache && cache && cache->isOpen();
+    const std::string key = "url|" + stripCredentials(url);
+    std::int64_t expires = 0;
+    std::vector<std::uint8_t> cached;
+    bool have = useCache && cache->get(key, 0, 0, 0, cached, expires);
+    bool isOffline = offline && offline->load();
+    if (have && (expires > TileCache::now() || isOffline)) {
+        body = std::move(cached);
+        return 200;
+    }
+    if (isOffline) return -2;
+    if (!net::hostAvailable(url)) {
+        if (have) {
+            body = std::move(cached);
+            return 200;
+        }
+        return -3;
+    }
+    net::Response res = net::get(url, userAgent, options.headers);
+    if (res.status == 200 && !res.body.empty()) {
+        if (useCache) {
+            std::int64_t ttl = options.expirySeconds < 0 ? kNeverExpires : options.expirySeconds > 0 ? options.expirySeconds : kMinExpirySeconds;
+            cache->put(key, 0, 0, 0, res.body, TileCache::now() + ttl);
+        }
+        body = std::move(res.body);
+        return 200;
+    }
+    if (have) {
+        body = std::move(cached);
+        return 200;
+    }
+    int status = res.status == 200 ? 204 : res.status;
+    if (status <= 0 && !net::hostAvailable(url)) status = -3;
+    return status;
 }
 
 std::shared_ptr<TileProvider> makeProvider(const ImageryLayer& layer, TileCache* cache, std::atomic<bool>* offline) {
@@ -443,6 +570,11 @@ std::shared_ptr<TileProvider> makeProvider(const ImageryLayer& layer, TileCache*
         return std::make_shared<GeoPackageProvider>(layer);
     case SourceType::Osmdroid:
         return std::make_shared<OsmdroidProvider>(layer);
+    case SourceType::PMTiles:
+        return std::make_shared<PmTilesProvider>(layer);
+    case SourceType::Host:
+        if (layer.source) return std::make_shared<HostProvider>(layer, cache, offline);
+        return std::make_shared<NullProvider>();
     default:
         return std::make_shared<HttpProvider>(layer, cache, offline);
     }
