@@ -124,6 +124,8 @@ bool GlobeRenderer::init() {
     sg_backend backend = sg_query_backend();
     holeMarker_ = std::getenv("OTE_HOLES") != nullptr;
     if (const char* v = std::getenv("OTE_LOD_BLEND")) lodBlend_ = std::atoi(v) != 0;
+    if (const char* v = std::getenv("OTE_UPGRADE_FADE")) fadeUpgrades_ = std::atoi(v) != 0;
+    busyLog_ = std::getenv("OTE_BUSY_LOG") != nullptr;
     if (const char* v = std::getenv("OTE_MARGIN")) marginPrefetch_ = std::max(1.0, std::atof(v));
     if (std::getenv("OTE_DIAG")) diagnostics_ = true;
     if (const char* pp = std::getenv("OTE_PROFILE")) {
@@ -307,6 +309,8 @@ void GlobeRenderer::shutdown() {
         for (auto& [k, t] : terrain_) sg_destroy_buffer(t.vbuf);
         for (auto& [k, s] : surface_) dropSurface(s);
         for (auto& s : freeSurfaces_) dropSurface(s);
+        for (auto& [k, r] : retiring_) dropSurface(r.first);
+        retiring_.clear();
         for (auto& [k, t] : imagery_) dropImagery(t);
         sg_destroy_pipeline(globePipeline_);
         sg_destroy_pipeline(globeBlendPipeline_);
@@ -836,6 +840,18 @@ void GlobeRenderer::dropSurface(SurfaceTile& s) {
 GlobeRenderer::SurfaceTile* GlobeRenderer::acquireSurface(const QuadKey& k) {
     auto it = surface_.find(k);
     if (it != surface_.end()) return &it->second;
+    SurfaceTile s = freshSurface();
+    s.complete = false;
+    s.version = -1;
+    return &surface_.emplace(k, s).first->second;
+}
+
+void GlobeRenderer::recycleSurface(SurfaceTile& s) {
+    if (freeSurfaces_.size() < freeSurfacePool_) freeSurfaces_.push_back(s);
+    else dropSurface(s);
+}
+
+GlobeRenderer::SurfaceTile GlobeRenderer::freshSurface() {
     SurfaceTile s;
     if (!freeSurfaces_.empty()) {
         s = freeSurfaces_.back();
@@ -865,9 +881,7 @@ GlobeRenderer::SurfaceTile* GlobeRenderer::acquireSurface(const QuadKey& k) {
         t.texture.image = s.image;
         s.texture = sg_make_view(&t);
     }
-    s.complete = false;
-    s.version = -1;
-    return &surface_.emplace(k, s).first->second;
+    return s;
 }
 
 GlobeRenderer::NodeInfo GlobeRenderer::info(const Camera& cam, const QuadKey& k) const {
@@ -1342,6 +1356,7 @@ void GlobeRenderer::requestBase() {
     double t = now();
     for (int l = 0; l < static_cast<int>(matrices_.size()); ++l) {
         if (l < static_cast<int>(layers_.size()) && !shown(l)) continue;
+        if (l != baseLayer_ && !(l < static_cast<int>(layers_.size()) && layers_[l].polarFill)) continue;
         const TileMatrix& m = matrices_[l];
         const int top = std::min(kBaseZoom, static_cast<int>(m.levels.size()) - 1);
         for (int z = 0; z <= top; ++z) {
@@ -1483,9 +1498,11 @@ bool GlobeRenderer::buildSurfaceJob(const QuadKey& k, double priority, SurfaceJo
                 }
                 if (!tex) {
                     if (!missing) unavailable = true;
-                    else if (job && !layers_[l].polarFill && !(l < static_cast<int>(vectorLayers_.size()) && vectorLayers_[l])) ++job->hollow;
+                    else if (job && l == baseLayer_ && !layers_[l].polarFill && !(l < static_cast<int>(vectorLayers_.size()) && vectorLayers_[l]))
+                        ++job->hollow;
                     continue;
                 }
+                if (missing && l != baseLayer_ && !layers_[l].polarFill && src.z < id.z - 2) continue;
                 if (job && !missing && src.z < id.z) job->degraded = true;
                 tex->used = frame_;
                 if (!job) continue;
@@ -2100,6 +2117,25 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             surface_.erase(job.key);
             continue;
         }
+        if (fadeUpgrades_ && s->version >= 0) {
+            auto dr = drawn_.find(job.key);
+            if (dr != drawn_.end() && dr->second + 1 >= frame_) {
+                SurfaceTile fresh = freshSurface();
+                if (sg_query_view_state(fresh.texture) == SG_RESOURCESTATE_VALID) {
+                    auto old = retiring_.find(job.key);
+                    if (old != retiring_.end()) {
+                        recycleSurface(old->second.first);
+                        retiring_.erase(old);
+                    }
+                    retiring_.emplace(job.key, std::make_pair(*s, now()));
+                    s->image = fresh.image;
+                    s->attachment = fresh.attachment;
+                    s->texture = fresh.texture;
+                    s->levels = fresh.levels;
+                    s->sources = fresh.sources;
+                }
+            }
+        }
         s->used = frame_;
         bool jobComplete = job.complete;
         sg_pass pass{};
@@ -2334,6 +2370,14 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         }
     }
     for (auto& dt : tiles) drawn_[dt.key] = frame_;
+    for (auto it = retiring_.begin(); it != retiring_.end();) {
+        if (tnow - it->second.second > 0.35) {
+            recycleSurface(it->second.first);
+            it = retiring_.erase(it);
+        } else {
+            ++it;
+        }
+    }
     if (drawn_.size() > 20000)
         for (auto it = drawn_.begin(); it != drawn_.end();) it = it->second + 2 < frame_ ? drawn_.erase(it) : std::next(it);
     struct TerrainDraw {
@@ -2408,13 +2452,30 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 }
             }
         }
+        bool upgrading = false;
+        if (blend >= 1.0f && src.level == dt.key.level) {
+            auto rt = retiring_.find(dt.key);
+            if (rt != retiring_.end()) {
+                double t = (tnow - rt->second.second) / 0.25;
+                if (t < 1.0 && sg_query_view_state(rt->second.first.texture) == SG_RESOURCESTATE_VALID) {
+                    view2 = rt->second.first.texture;
+                    uvx2[0] = 1.0f;
+                    uvx2[1] = 1.0f;
+                    uvx2[2] = 0.0f;
+                    uvx2[3] = 0.0f;
+                    blend = static_cast<float>(t * t * (3 - 2 * t));
+                    fading = true;
+                    upgrading = true;
+                }
+            }
+        }
         int coarser[4];
         double skirtLen = seamSkirt(dt.key, tt, drawnNow, coarser);
         int lodUp = 0;
         for (int e = 0; e < 4; ++e)
             if (coarser[e] > 0) lodUp = lodUp == 0 ? coarser[e] : std::min(lodUp, coarser[e]);
         float lodEdges[4] = {0, 0, 0, 0};
-        if (lodBlend_ && lodUp > 0 && src.level == dt.key.level) {
+        if (lodBlend_ && lodUp > 0 && src.level == dt.key.level && !upgrading) {
             QuadKey got = src;
             if (blend >= 1.0f) {
                 sg_view pv = view2;
@@ -2598,6 +2659,10 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     }
     viewComplete_ = incomplete == 0;
     busy_ = pending || fading || tilesBusy || stats_.pendingRequests > 0 || renders > 0 || builds > 0 || elevationChanged;
+    if (busyLog_ && busy_ && frame_ % 30 == 0)
+        std::fprintf(stderr, "[ote] busy frame %llu pending %d fading %d tiles %d requests %d renders %d builds %d elevation %d needs %zu\n",
+                     static_cast<unsigned long long>(frame_), pending ? 1 : 0, fading ? 1 : 0, tilesBusy ? 1 : 0, stats_.pendingRequests, renders, builds,
+                     elevationChanged ? 1 : 0, needs_.size());
     if (trace_) {
         int waitImagery = 0, waitTerrain = 0, unrendered = 0;
         for (auto& dt : tiles) {
