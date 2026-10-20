@@ -5,12 +5,14 @@
 #include "net/http.hpp"
 
 #include <json.hpp>
+#include <miniz.h>
 #include "raster/pmtiles.hpp"
 #include "raster/tile_cache.hpp"
 
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
+#include <cstring>
 #include <mutex>
 
 namespace ote {
@@ -471,11 +473,30 @@ public:
         matrix_ = layer.srid == 4326 ? TileMatrix::geographic(layer.minZoom, layer.maxZoom, layer.tileSize)
                                      : TileMatrix::webMercator(layer.minZoom, layer.maxZoom, layer.tileSize);
         useCache_ = layer.cache;
+        std::string identity = source_->identity();
+        if (!identity.empty() && useCache_) key_ = "host|" + identity;
+        expiry_ = layer.expirySeconds < 0 ? kNeverExpires : layer.expirySeconds > 0 ? layer.expirySeconds : kMinExpirySeconds;
     }
     bool remote() const override { return source_->remote(); }
     bool placeholderCheck() const override { return false; }
+    int maxConcurrent() const override { return source_->maxConcurrent(); }
     bool vector() const override { return source_->vector(); }
+    std::string cacheKey() const override { return outputCached() ? key_ : std::string(); }
+    bool cached(int z, int x, int y) override { return outputCached() && cache_->has(key_, z, x, y); }
+    void invalidate(int z, int x, int y) override {
+        if (outputCached()) cache_->remove(key_, z, x, y);
+    }
     bool fetchLocal(int z, int x, int y, FetchResult& out) override {
+        if (outputCached()) {
+            std::vector<std::uint8_t> data;
+            std::int64_t expires = 0;
+            if (cache_->get(key_, z, x, y, data, expires) && (expires > TileCache::now() || (offline_ && offline_->load()) || !source_->remote())) {
+                if (unpack(data, out)) {
+                    out.fromCache = true;
+                    return true;
+                }
+            }
+        }
         if (source_->remote()) return false;
         out = fetch(z, x, y);
         return true;
@@ -489,7 +510,18 @@ public:
             return fetchUrl(url, body, opts, cache_, offline_, ua_);
         };
         r.status = source_->tile(z, x, y, d, fetcher);
-        if (r.status != 200) return r;
+        if (r.status != 200) {
+            if (outputCached()) {
+                std::vector<std::uint8_t> data;
+                std::int64_t expires = 0;
+                if (cache_->get(key_, z, x, y, data, expires) && unpack(data, r)) {
+                    r.status = 200;
+                    r.fromCache = true;
+                    r.stale = true;
+                }
+            }
+            return r;
+        }
         if (!d.rgba.empty() && d.width > 0 && d.height > 0 &&
             d.rgba.size() == static_cast<size_t>(d.width) * static_cast<size_t>(d.height) * 4) {
             r.raw = true;
@@ -501,14 +533,66 @@ public:
         } else {
             r.status = 204;
         }
+        if (r.status == 200 && outputCached()) {
+            std::vector<std::uint8_t> packed;
+            if (pack(r, packed)) cache_->put(key_, z, x, y, packed, TileCache::now() + expiry_);
+        }
         return r;
     }
 
 private:
+    bool outputCached() const { return !key_.empty() && cache_ && cache_->isOpen(); }
+
+    static bool pack(const FetchResult& r, std::vector<std::uint8_t>& out) {
+        if (!r.raw) {
+            out = r.data;
+            return !out.empty();
+        }
+        mz_ulong bound = mz_compressBound(static_cast<mz_ulong>(r.data.size()));
+        out.assign(16 + bound, 0);
+        std::memcpy(out.data(), "OTERGBA1", 8);
+        for (int i = 0; i < 4; ++i) {
+            out[8 + i] = static_cast<std::uint8_t>((r.width >> (8 * i)) & 0xFF);
+            out[12 + i] = static_cast<std::uint8_t>((r.height >> (8 * i)) & 0xFF);
+        }
+        mz_ulong size = bound;
+        if (mz_compress2(out.data() + 16, &size, r.data.data(), static_cast<mz_ulong>(r.data.size()), 1) != MZ_OK) return false;
+        out.resize(16 + size);
+        return true;
+    }
+
+    static bool unpack(const std::vector<std::uint8_t>& data, FetchResult& out) {
+        out = FetchResult{};
+        if (data.size() >= 16 && std::memcmp(data.data(), "OTERGBA1", 8) == 0) {
+            int w = 0, h = 0;
+            for (int i = 0; i < 4; ++i) {
+                w |= data[8 + i] << (8 * i);
+                h |= data[12 + i] << (8 * i);
+            }
+            if (w <= 0 || h <= 0 || w > 8192 || h > 8192) return false;
+            out.data.resize(static_cast<size_t>(w) * h * 4);
+            mz_ulong size = static_cast<mz_ulong>(out.data.size());
+            if (mz_uncompress(out.data.data(), &size, data.data() + 16, static_cast<mz_ulong>(data.size() - 16)) != MZ_OK ||
+                size != out.data.size())
+                return false;
+            out.status = 200;
+            out.raw = true;
+            out.width = w;
+            out.height = h;
+            return true;
+        }
+        if (data.empty()) return false;
+        out.status = 200;
+        out.data = data;
+        return true;
+    }
+
     std::shared_ptr<HostTileSource> source_;
     TileCache* cache_;
     std::atomic<bool>* offline_;
     std::string ua_;
+    std::string key_;
+    std::int64_t expiry_ = kMinExpirySeconds;
     bool useCache_ = true;
 };
 

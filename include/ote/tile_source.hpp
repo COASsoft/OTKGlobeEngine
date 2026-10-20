@@ -32,6 +32,7 @@ public:
     virtual bool remote() const { return true; }
     virtual bool vector() const { return false; }
     virtual std::string identity() const { return {}; }
+    virtual int maxConcurrent() const { return 0; }
 };
 
 }

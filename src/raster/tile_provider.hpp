@@ -34,6 +34,7 @@ public:
     }
     virtual bool remote() const { return false; }
     virtual bool placeholderCheck() const { return remote(); }
+    virtual int maxConcurrent() const { return 0; }
     virtual bool cached(int, int, int) { return false; }
     virtual void invalidate(int, int, int) {}
     virtual bool vector() const { return false; }

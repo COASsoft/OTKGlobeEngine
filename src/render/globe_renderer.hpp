@@ -172,6 +172,7 @@ private:
         int imageryZ = -1;
         int sourceZ = -1;
         bool degraded = false;
+        bool overlaysOmitted = false;
     };
     struct ImageryTexture {
         sg_image image{};
@@ -224,6 +225,7 @@ private:
         int featureCount = 0;
         bool complete = false;
         bool degraded = false;
+        bool standIn = false;
         int hollow = 0;
         int imageryZ = -1;
         int sourceZ = 99;
@@ -249,11 +251,14 @@ private:
     TerrainTile& terrain(const QuadKey& k);
     void buildTerrain(const QuadKey& k, TerrainTile& t, double priority);
     SurfaceTile* acquireSurface(const QuadKey& k);
+    SurfaceTile freshSurface();
+    void recycleSurface(SurfaceTile& s);
     static void dropSurface(SurfaceTile& s);
     void processLoads();
     void evict();
     bool buildSurfaceJob(const QuadKey& k, double priority, SurfaceJob* job, std::vector<float>* verts,
-                         std::vector<float>* fverts = nullptr, double texelDeg = 0);
+                         std::vector<float>* fverts = nullptr, double texelDeg = 0, bool standIn = false);
+    bool standIn(const Camera& cam, const QuadKey& k) const;
     static void dropImagery(ImageryTexture& t);
     void requestBase();
     void want(const TileId& id, double priority);
@@ -269,8 +274,13 @@ private:
     double elapsedMs() const { return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - frameStart_).count(); }
 
     TileCache cache_;
+#if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
     TileLoader loader_{3, 8};
     ElevationManager elevation_{4};
+#else
+    TileLoader loader_{4, 24};
+    ElevationManager elevation_{8};
+#endif
     FeatureLayer features_;
     ModelLayer models_;
     PointCloudLayer points_;
@@ -280,6 +290,9 @@ private:
     std::uint64_t netEpoch_ = 0;
     int gridType_ = 0;
     int baseLayer_ = 0;
+    bool fadeUpgrades_ = true;
+    bool busyLog_ = false;
+    std::unordered_map<QuadKey, std::pair<SurfaceTile, double>, QuadKeyHash> retiring_;
     bool slope_ = false;
     float slopeOpacity_ = 0.6f;
     double slopeMax_ = 45.0;

@@ -1514,7 +1514,7 @@ bool GlobeRenderer::buildSurfaceJob(const QuadKey& k, double priority, SurfaceJo
                         ++job->hollow;
                     continue;
                 }
-                if (missing && l != baseLayer_ && !layers_[l].polarFill && src.z < id.z - 2) continue;
+                if (missing && l != baseLayer_ && !layers_[l].polarFill && src.z < id.z - 1) continue;
                 if (job && !missing && src.z < id.z) job->degraded = true;
                 tex->used = frame_;
                 if (!job) continue;
