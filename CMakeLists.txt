@@ -118,7 +118,7 @@ if(WIN32 AND OTE_BUILD_VIEWER)
     target_compile_definitions(ote_capi_d3d11 PRIVATE OTE_SHARED)
 endif()
 
-option(OTE_BUILD_TESTS "Build unit tests" ON)
+option(OTE_BUILD_TESTS "Build unit tests" ${PROJECT_IS_TOP_LEVEL})
 if(OTE_BUILD_TESTS AND NOT ANDROID AND NOT IOS)
     enable_testing()
     add_executable(ote_unit tests/unit.cpp)
