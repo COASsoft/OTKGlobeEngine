@@ -28,6 +28,7 @@ constexpr int kDotRadius = 10;
 constexpr double kOverviewMeters = 15000.0;
 constexpr double kCoarseMeters = 2000.0;
 constexpr double kCountyMeters = 500.0;
+constexpr double kStateMeters = 6500.0;
 constexpr int kOverviewClass = 18;
 constexpr float kEmToLine = 1.1719f;
 constexpr int kMaxLabels = 600;
