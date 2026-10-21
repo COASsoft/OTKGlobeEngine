@@ -669,7 +669,7 @@ std::vector<std::uint8_t> colladaToGlb(const std::string& text, const AssetReade
                     prim.uv.insert(prim.uv.end(), {static_cast<float>(tex->data[ti * tex->stride]), static_cast<float>(1.0 - tex->data[ti * tex->stride + 1])});
                 else
                     prim.uv.insert(prim.uv.end(), {0.0f, 0.0f});
-                prim.seen[key] = id;
+                seen[key] = id;
                 ++totalVertices;
                 return id;
             };
