@@ -134,6 +134,39 @@ int main() {
     check(decoded && std::abs(grid.sample(-122.0, 47.0) - expect) < 2.0, "quantized mesh decode");
 
     {
+        std::vector<std::uint8_t> hm(65 * 65 * 2 + 2, 0);
+        for (int r = 0; r < 65; ++r)
+            for (int c = 0; c < 65; ++c) {
+                std::uint16_t v = static_cast<std::uint16_t>((1000.0 + 10.0 * c + 100.0 * r) * 5.0);
+                std::memcpy(hm.data() + (static_cast<size_t>(r) * 65 + c) * 2, &v, 2);
+            }
+        HeightGrid hg;
+        bool ok = decodeHeightmapTerrain(hm, 10.0, 40.0, 11.0, 41.0, hg);
+        double center = hg.sample(10.5, 40.5);
+        check(ok && hg.width == 64 && std::abs(center - (10.0 * 32 + 100.0 * 32)) < 1.0, "cesium heightmap-1.0 decode");
+        check(std::abs(hg.sample(10.0 + 0.5 / 64, 41.0 - 0.5 / 64) - 55.0) < 1.0, "cesium heightmap-1.0 north-west first");
+    }
+
+    {
+        ImageryLayer l;
+        l.url = "https://h/{z}/{reverseY}/{x}?bbox={bbox-epsg-4326}&w={westDegrees}&r={reverseX}&q={quadkey}&s={width}x{height}{r}";
+        l.maxZoom = 10;
+        TileMatrix m = TileMatrix::webMercator(0, 10, 256);
+        std::string u = tileUrl(l, m, 2, 1, 0);
+        check(u == "https://h/2/3/1?bbox=-90,0,0,85.0511287798&w=-90&r=2&q=01&s=256x256", ("cesium and maplibre url placeholders " + u).c_str());
+        l.url = "https://h/export?bbox={bbox-epsg-3857}&size={width},{height}";
+        std::string e = tileUrl(l, m, 1, 0, 0);
+        check(e.find("bbox=-20037508.34") != std::string::npos && e.find(",0,0,20037508.34") != std::string::npos, "bbox-epsg-3857 placeholder");
+    }
+
+    {
+        std::string wms = "<customWmsMapSource><name>W</name><url>https://h/wms</url><layers>a</layers></customWmsMapSource>";
+        check(detectFormat(std::vector<std::uint8_t>(wms.begin(), wms.end()), "w.xml") == "mobac", "mobac wms source detection");
+        std::string lj = "{\"tilejson\":\"2.1.0\",\"format\":\"quantized-mesh-1.0\",\"tiles\":[\"{z}/{x}/{y}.terrain\"]}";
+        check(detectFormat(std::vector<std::uint8_t>(lj.begin(), lj.end()), "layer.json") == "quantized-mesh", "cesium layer.json detection");
+    }
+
+    {
         double t = parseIsoTime("2026-10-19T12:34:56.789Z");
         check(formatIsoTime(t) == "2026-10-19T12:34:56.789Z", "iso time round trip");
         check(std::abs(parseIsoTime("2026-10-19T14:34:56.789+02:00") - t) < 1e-6, "iso time offset");
