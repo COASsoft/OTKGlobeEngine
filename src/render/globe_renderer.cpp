@@ -1071,6 +1071,7 @@ GlobeRenderer::NodeInfo GlobeRenderer::info(const Camera& cam, const QuadKey& k)
     int top = maxRefine();
     ni.refine = k.level < kMinLevel || (k.level < top && visits_ < 20000 && (ratio > 1.0 || (sticky && ratio > 0.8)));
     ni.nearRefine = k.level < top && ratio > 0.7;
+    ni.ratio = ratio;
     return ni;
 }
 
