@@ -548,6 +548,10 @@ void GlobeRenderer::setLayers(const std::vector<ImageryLayer>& layers) {
         same = same && from[i] == static_cast<int>(i);
     }
     layers_ = layers;
+    std::vector<float> opacity(layers.size(), -1.0f);
+    for (size_t i = 0; i < layers.size(); ++i)
+        if (from[i] >= 0 && from[i] < static_cast<int>(layerOpacity_.size())) opacity[i] = layerOpacity_[from[i]];
+    layerOpacity_ = std::move(opacity);
     if (!same) {
         loader_.setLayers(layers, from);
         matrices_ = loader_.matrices();
