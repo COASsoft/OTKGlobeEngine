@@ -41,6 +41,15 @@ jobs:
           name: opentakengine-linux
           path: build/apps/viewer/ote_viewer
 
+  kernel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build libcurl4-openssl-dev
+      - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DOTE_ENGINE=OFF
+      - run: cmake --build build
+      - run: ctest --test-dir build --output-on-failure
+
   bsd:
     runs-on: ubuntu-latest
     strategy:
