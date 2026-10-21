@@ -25,7 +25,7 @@ Formats are detected from content first and extension second: zip archives are t
 * `NetworkLink` documents are fetched from local paths, KMZ entries or HTTP(S). `viewRefreshMode` `onStop` and `onRegion` links get the current view as a `BBOX` (or their own `viewFormat`), and `httpQuery` is appended. A file loads at most 64 links, nested at most four deep.
 * `Model` placemarks load COLLADA (`.dae`), OBJ or glTF models from the KMZ or beside the file, with `Location`, `Orientation`, `Scale` and `altitudeMode`.
 * `extrude` draws walls under lines and polygons and stalks under points when they are not clamped to the ground.
-* Remote `Icon` hrefs are downloaded once and cached.
+* `Icon` and `Model` hrefs may be HTTP(S) URLs.
 
 ## CoT and ATAK
 
