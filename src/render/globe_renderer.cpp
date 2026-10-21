@@ -126,6 +126,7 @@ bool GlobeRenderer::init() {
     if (const char* v = std::getenv("OTE_LOD_BLEND")) lodBlend_ = std::atoi(v) != 0;
     if (const char* v = std::getenv("OTE_UPGRADE_FADE")) fadeUpgrades_ = std::atoi(v) != 0;
     busyLog_ = std::getenv("OTE_BUSY_LOG") != nullptr;
+    if (const char* v = std::getenv("OTE_MAX_DIVE")) maxDive_ = std::atoi(v);
     if (const char* v = std::getenv("OTE_MARGIN")) marginPrefetch_ = std::max(1.0, std::atof(v));
     if (std::getenv("OTE_DIAG")) diagnostics_ = true;
     if (const char* pp = std::getenv("OTE_PROFILE")) {
@@ -1094,6 +1095,12 @@ bool GlobeRenderer::wasRefined(const QuadKey& k) const {
     return it != refined_.end() && it->second + 2 >= frame_;
 }
 
+int GlobeRenderer::readyGap(const QuadKey& k) const {
+    for (int up = 1; up <= k.level; ++up)
+        if (presentable({k.level - up, k.x >> up, k.y >> up})) return up;
+    return k.level + 1;
+}
+
 bool GlobeRenderer::presentable(const QuadKey& k) const {
     auto s = surface_.find(k);
     if (s == surface_.end() || !(s->second.complete || (s->second.version >= 0 && s->second.presentable)))
@@ -1147,13 +1154,15 @@ void GlobeRenderer::traverse(const Camera& cam, const QuadKey& k, std::vector<Dr
     for (int i = 0; i < 4; ++i) kids[i] = {k.level + 1, k.x * 2 + (i & 1), k.y * 2 + (i >> 1)};
     if (ni.refine) {
         bool allReady = true;
+        bool anyReady = false;
         bool allDrawable = true;
         NodeInfo ci[4];
         for (int i = 0; i < 4; ++i) {
             ci[i] = info(cam, kids[i]);
             if (!ci[i].visible) continue;
             need(kids[i], ci[i].distance * 2.0);
-            if (!presentable(kids[i])) allReady = false;
+            if (presentable(kids[i])) anyReady = true;
+            else allReady = false;
             if (terrain_.find(kids[i]) == terrain_.end()) allDrawable = false;
         }
         if (k.level < kMinLevel) {
@@ -1176,7 +1185,7 @@ void GlobeRenderer::traverse(const Camera& cam, const QuadKey& k, std::vector<Dr
                 terrain(kids[i]).used = frame_;
             }
         }
-        if (allDrawable && (allReady || !presentable(k) || sticky)) {
+        if (allDrawable && (allReady || sticky || (!presentable(k) && (anyReady || maxDive_ <= 0 || readyGap(k) < maxDive_)))) {
             if (!prefetching_) refined_[k] = frame_;
             for (int i = 0; i < 4; ++i) traverse(cam, kids[i], out);
             return;
@@ -1244,8 +1253,9 @@ void GlobeRenderer::processLoads() {
     auto taken = loader_.take(kUploadsPerFrame);
     int uploaded = 0;
     size_t keep = taken.size();
+    const double uploadBudget = taken.size() >= kUploadsPerFrame / 2 ? budgetMs * 0.75 : budgetMs * 0.3;
     for (size_t i = 0; i < taken.size(); ++i) {
-        if (uploaded >= 4 && elapsedMs() > budgetMs * 0.3) {
+        if (uploaded >= 4 && elapsedMs() > uploadBudget) {
             keep = i;
             break;
         }
@@ -1524,7 +1534,8 @@ bool GlobeRenderer::buildSurfaceJob(const QuadKey& k, double priority, SurfaceJo
                 if (missing) {
                     complete = false;
                     if (job) job->missing.push_back(id);
-                    if (job && (l == baseLayer_ || layers_[l].polarFill || !tex || src.z < id.z - 1)) job->presentable = false;
+                    const bool backingOff = failed_.count(id) > 0;
+                    if (job && ((l == baseLayer_ || layers_[l].polarFill) ? !backingOff : (!tex || src.z < id.z - 1))) job->presentable = false;
                 }
                 if (!tex) {
                     if (!missing) unavailable = true;
