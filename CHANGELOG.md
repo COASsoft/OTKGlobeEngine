@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.1.1
+
+### Renamed
+- The project is now OTKGlobeEngine (formerly OpenTAKEngine). The repositories are github.com/grangedevgroup-code/OTKGlobeEngine and gitlab.com/grangedevgroup/OTKGlobeEngine, and the website is https://grangedevgroup-code.github.io/OTKGlobeEngine/.
+- The code prefix follows the name: namespace `otk`, C ABI `otk_*` in `otk/otk.h`, headers under `include/otk`, CMake options and environment variables `OTK_*`, libraries `otkglobeengine` and `otkglobeengine_c`, CMake package `OTKGlobeEngine`, pkg-config `otkglobeengine`, Android package `com.otkglobeengine`, .NET package and namespace `OTKGlobeEngine`, Swift `OTKGlobeView` with module `OTKGlobeEngineC`.
+- An existing tile cache moves to the new cache directory on first use. CoT and GML files written by 0.1.0 still import with their attributes.
+
+### Kernel and engine
+- The GPU-free kernel (`otk_kernel`) is a separate library: formats, import planning (`planImport`), feature queries (`FeatureQuery`), elevation queries, line of sight and profiles (`ElevationService`), coordinates, geodesy, magnetic model, geoid, sun and moon, 2525 symbol images, tile archives, cache and network. `-DOTK_ENGINE=OFF` builds the kernel alone with no graphics dependencies.
+- `Engine::open` loads any file or folder `planImport` understands. `loadData` returns the features, overlays and models a file added with their extent, and `featuresRegion`, `tilesetRegion`, `pointCloudRegion` and `viewForRegion` zoom to content (C ABI `otk_open`, `otk_view_for_region`, `otk_load_features_region`, `otk_tileset_region`, `otk_point_cloud_region`).
+- `Engine::queryFeatures` and `elevationLayers`.
+
+### Compatibility
+- Request headers on imagery and elevation layers; Cesium, MapLibre and Leaflet URL placeholders (`{reverseY}`, `{westDegrees}`, `{bbox-epsg-3857}`, `{quadkey}`, `{r}` and more).
+- Cesium terrain from `layer.json`, Cesium ion and local terrain folders; quantized-mesh and heightmap tiles, tile availability and extents.
+- RMaps/BigPlanet and OsmAnd SQLite archives; PMTiles detected by content.
+- KML NetworkLink with view-based refresh and HTTP, Model (COLLADA, OBJ, glTF), extrude, remote icons.
+- OBJ/MTL and COLLADA models.
+- ATAK iconsets and `usericon`, range-and-bearing lines, dashed and dotted strokes.
+- Shapefiles reprojected from their `.prj` (UTM and other Transverse Mercator, State Plane, Albers, Mercator, Web Mercator).
+- `.gltf` files are no longer detected as GeoJSON.
+
+### Viewer
+- Files and folders open when dropped on the window or passed as arguments, and the view flies to them.
+
+### Platforms and packages
+- Raspberry Pi 4 and 5: OpenGL ES 3 build (`-DOTK_GLES=ON`) and `raspberrypi-arm64` packages.
+
+### Website
+- Charcoal theme; the documentation, changelog, security policy and license open on the website.
+
 ## 0.1.0
 
 First release.
@@ -21,5 +52,5 @@ First release.
 
 ### Platforms and packages
 - Windows, Linux, macOS, iOS, Android, FreeBSD, OpenBSD and NetBSD.
-- C ABI (`otk.h`) as a shared library with CMake package config and pkg-config; .NET (NuGet), Android (AAR), Apple (XCFramework) and Swift bindings.
+- C ABI (`ote.h`) as a shared library with CMake package config and pkg-config; .NET (NuGet), Android (AAR), Apple (XCFramework) and Swift bindings.
 - Apache License 2.0.
