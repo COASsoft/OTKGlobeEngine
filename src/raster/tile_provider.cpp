@@ -177,7 +177,7 @@ private:
     std::vector<std::uint8_t> network(int z, int x, int y, bool pin, int& status) {
         if (!resolved_) resolveTileJson();
         std::string url = tileUrl(layer_, matrix_, z, x, y);
-        net::Response res = net::get(url, ua_);
+        net::Response res = net::get(url, ua_, layer_.headers);
         if (res.status == 200 && !res.body.empty()) {
             if (useCache()) cache_->put(key_, z, x, y, res.body, TileCache::now() + expiry_, pin);
             status = 200;
