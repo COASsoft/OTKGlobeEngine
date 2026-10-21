@@ -39,7 +39,7 @@ Formats are detected from content first and extension second: zip archives are t
 * KML: Placemark `id`, `ExtendedData` (`Data` and `SchemaData`), `TimeStamp`, `TimeSpan`, styles, altitude mode.
 * GeoJSON: `id`, every property (non-string values kept as JSON text), simplestyle colours.
 * GPX: name, description, type, symbol, comment, waypoint time, track start and end.
-* Shapefile: every DBF field.
+* Shapefile: every DBF field. Coordinates are reprojected to WGS84 from the `.prj`: geographic, Transverse Mercator (UTM, Gauss-Kruger), Lambert conformal conic (1SP and 2SP, State Plane), Albers equal area, Mercator and Web Mercator are handled natively in metres, feet or US survey feet; other projections go through GDAL when it is available.
 * CoT: uid, type, how, time/start/stale, ce/le, callsign, remarks, colours, drawn shapes, and the raw `<detail>` block, which is written back unchanged so CoT round-trips are lossless. Non-CoT attributes ride in a private `<__ote_attributes>` element that TAK clients ignore.
 * CSV: all columns that are not coordinates, name, description, uid, type or time become attributes.
 * GML: feature `gml:id`, simple property elements, WGS84 geometry with the correct EPSG:4326 axis order.
