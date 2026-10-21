@@ -123,7 +123,7 @@ public:
     FeatureLayer& features() { return features_; }
     ModelLayer& models() { return models_; }
     PointCloudLayer& points() { return points_; }
-    std::uint64_t addTileset(const std::string& uri, const TilesetOptions& options, Vec3* center);
+    std::uint64_t addTileset(const std::string& uri, const TilesetOptions& options, Vec3* center, double* radius = nullptr);
     std::vector<std::string> credits() const;
     void setSunLighting(bool enabled, double unixSeconds);
     bool removeTileset(std::uint64_t id) { return tilesets_.erase(id) > 0; }

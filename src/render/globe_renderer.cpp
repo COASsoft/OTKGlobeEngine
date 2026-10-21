@@ -481,10 +481,11 @@ std::vector<std::string> GlobeRenderer::credits() const {
 
 void GlobeRenderer::setSunLighting(bool enabled, double unixSeconds) { models_.setSun(enabled, sunDirectionEcef(unixSeconds)); }
 
-std::uint64_t GlobeRenderer::addTileset(const std::string& uri, const TilesetOptions& options, Vec3* center) {
+std::uint64_t GlobeRenderer::addTileset(const std::string& uri, const TilesetOptions& options, Vec3* center, double* radius) {
     auto t = std::make_unique<Tileset3D>(uri, options, cache_.isOpen() ? &cache_ : nullptr, &offline_);
     if (!t->valid()) return 0;
     if (center) *center = t->center();
+    if (radius) *radius = t->radius();
     std::uint64_t id = nextTileset_++;
     tilesets_[id] = std::move(t);
     busy_ = true;
