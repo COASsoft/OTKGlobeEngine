@@ -18,6 +18,15 @@ Website and downloads: https://grangedevgroup-code.github.io/OpenTAKEngine/
 | **2525 units, contours, bullseye, R&B** | **Terrain slope** | **Airgapped, empty cache** |
 | ![](screenshots/opentakengine/19_mil_symbols_contours_bullseye.png) | ![](screenshots/opentakengine/20_terrain_slope.png) | ![](screenshots/opentakengine/21_airgapped_empty_cache.png) |
 
+## Kernel and engine
+
+The project builds two libraries, matching the split between the TAK kernel and the TAK map engine:
+
+- **Kernel** (`ote_kernel`): GPU-free geospatial and data services that servers, tools and headless hosts can use without a display. Format detection, import and export (KML/KMZ, GeoJSON, GPX, Shapefile, CoT, CSV, WKT, GML, TAK data packages, ATAK iconsets, KLV); import planning (`planImport` decides how any file or folder should be loaded); feature queries by region, radius, CoT type, name, attributes and time (`FeatureQuery`); elevation queries, line of sight and profiles from any elevation source (`ElevationService`); MGRS, UTM, UPS, GARS and coordinate parsing; Vincenty geodesics and range-and-bearing shapes; WMM magnetic model; EGM96 geoid; sun and moon; MIL-STD-2525 symbol images; tile cache, offline mode and network access; tile archives (MBTiles, PMTiles, GeoPackage, osmdroid/RMaps/OsmAnd); OBJ and COLLADA to glTF conversion.
+- **Engine** (`opentakengine`): the renderer on top of the kernel: globe, imagery, terrain, features, labels, models, 3D Tiles, point clouds, grids, input, plus `Engine::open` to load anything `planImport` understands and zoom-to-content helpers.
+
+`-DOTE_ENGINE=OFF` builds only the kernel and its tests, with no graphics dependencies (Linux needs only libcurl).
+
 ## Features
 
 **Globe and camera**
