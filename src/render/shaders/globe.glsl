@@ -75,6 +75,7 @@ in float elev;
 in float lodw;
 in float morphw;
 in float sgain;
+in vec3 lows;
 out vec4 frag_color;
 
 vec3 ramp(float x) {
