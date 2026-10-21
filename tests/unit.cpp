@@ -284,7 +284,7 @@ int main() {
              "PARAMETER[\"False_Easting\",1640416.667],PARAMETER[\"False_Northing\",0.0],PARAMETER[\"Central_Meridian\",-120.5],"
              "PARAMETER[\"Standard_Parallel_1\",47.3333333333333],PARAMETER[\"Standard_Parallel_2\",45.8333333333333],"
              "PARAMETER[\"Latitude_Of_Origin\",45.3333333333333],UNIT[\"US survey foot\",0.304800609601219]]",
-             1041929.2727991173, 630713.8292937042, 47.0379, -122.9007},
+             1041925.6491431455, 630715.9771515217, 47.0379, -122.9007},
             {"conus albers",
              "PROJCS[\"NAD_1983_Contiguous_USA_Albers\",GEOGCS[\"GCS_North_American_1983\",DATUM[\"D_North_American_1983\",SPHEROID[\"GRS_1980\",6378137.0,298.257222101]],"
              "PRIMEM[\"Greenwich\",0.0],UNIT[\"Degree\",0.0174532925199433]],PROJECTION[\"Albers\"],PARAMETER[\"False_Easting\",0.0],PARAMETER[\"False_Northing\",0.0],"
