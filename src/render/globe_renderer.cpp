@@ -332,6 +332,9 @@ void GlobeRenderer::shutdown() {
         sg_destroy_pipeline(surfacePipeline_);
         sg_destroy_pipeline(skyPipeline_);
         sg_destroy_pipeline(mipPipeline_);
+        sg_destroy_pipeline(snapshotPipeline_);
+        sg_destroy_shader(snapshotShader_);
+        dropSnapshotTarget();
         sg_destroy_pipeline(vfillPipeline_);
         sg_destroy_pipeline(vlinePipeline_);
         sg_destroy_shader(vfillShader_);
