@@ -52,6 +52,7 @@ Round trips through GeoJSON, KML, GML, CSV, CoT and TAK data packages are covere
 * Archive entries with absolute paths, drive letters or `..` are skipped.
 * XML is parsed without DTD processing, so external entities are never fetched.
 * Feature counts are capped at five million per import.
+* KML network links are capped at 64 per file, four levels of nesting and 64 MiB per download; KML models at 256 per file; converted models at 20 million vertices.
 
 ## Compatibility matrix
 
