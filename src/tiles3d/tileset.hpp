@@ -37,6 +37,7 @@ public:
     int drawnTiles() const { return static_cast<int>(draw_.size()); }
     int failedTiles() const { return failed_; }
     Vec3 center() const;
+    double radius() const;
     const std::vector<std::pair<std::string, int>>& credits() const { return credits_; }
 
     struct Implicit;
