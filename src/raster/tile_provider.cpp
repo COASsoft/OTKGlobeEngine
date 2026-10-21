@@ -397,7 +397,9 @@ std::string layerIdentity(const ImageryLayer& l) {
     char buf[160];
     std::snprintf(buf, sizeof(buf), "|%d|%d|%d|%d|%.17g|%d|%d|%d|%d|%p", l.minZoom, l.maxZoom, l.srid, l.tileSize, l.level0Resolution,
                   l.tms ? 1 : 0, l.cache ? 1 : 0, l.expirySeconds, l.polarFill ? 1 : 0, static_cast<const void*>(l.source.get()));
-    return id + buf + "|" + l.wmsLayers + "|" + l.wmsStyles + "|" + l.wmsFormat + "|" + l.wmsVersion + "|" + l.wmsExtra + "|" + l.userAgent;
+    id += buf + std::string("|") + l.wmsLayers + "|" + l.wmsStyles + "|" + l.wmsFormat + "|" + l.wmsVersion + "|" + l.wmsExtra + "|" + l.userAgent;
+    for (const auto& [name, value] : l.headers) id += "|" + name + ":" + value;
+    return id;
 }
 
 std::string tileUrl(const ImageryLayer& layer, const TileMatrix& m, int z, int x, int y) {
