@@ -715,11 +715,16 @@ void addElevation(const ote::ElevationLayer& layer) {
     state->engine.setElevation(state->elevation);
 }
 
+std::string utf8(const std::filesystem::path& p) {
+    auto s = p.u8string();
+    return std::string(s.begin(), s.end());
+}
+
 void openPath(const std::string& path) {
     ote::Engine& eng = state->engine;
     std::error_code ec;
     const std::filesystem::path p = std::filesystem::u8path(path);
-    const std::string name = p.filename().u8string();
+    const std::string name = utf8(p.filename());
     const bool folder = std::filesystem::is_directory(p, ec);
     std::string id;
     if (folder) {
@@ -781,7 +786,7 @@ void openPath(const std::string& path) {
     } else if (id == "dted" || id == "hgt") {
         ote::ElevationLayer d;
         d.type = ote::ElevationType::Directory;
-        d.path = folder ? path : p.parent_path().u8string();
+        d.path = folder ? path : utf8(p.parent_path());
         d.maxZoom = 14;
         addElevation(d);
         showStatus("Elevation folder " + d.path + " added");
@@ -793,7 +798,7 @@ void openPath(const std::string& path) {
         addElevation(q);
         showStatus("Cesium terrain " + name + " added");
     } else if (id == "3dtiles") {
-        std::uint64_t tid = eng.addTileset(folder ? (p / "tileset.json").u8string() : path);
+        std::uint64_t tid = eng.addTileset(folder ? utf8(p / "tileset.json") : path);
         ote::Region r;
         if (tid && eng.tilesetRegion(tid, r)) zoomTo(r, 45.0);
         showStatus(tid ? "3D Tiles " + name + " added" : "Could not open " + name);
