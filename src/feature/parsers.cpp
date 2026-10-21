@@ -2,6 +2,7 @@
 
 #include "core/prj.hpp"
 #include "gdal/gdal_sources.hpp"
+#include "model/model_convert.hpp"
 #include "net/http.hpp"
 
 #include <json.hpp>
