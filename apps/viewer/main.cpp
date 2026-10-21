@@ -994,6 +994,8 @@ void parseArgs(int argc, char** argv) {
             state->xray = static_cast<float>(std::atof(argv[++i]));
         } else if (a == "--grid") {
             state->grid = std::atoi(argv[++i]) != 0;
+        } else if (a == "--labels") {
+            state->labels = std::atoi(argv[++i]) != 0;
         } else if (a == "--grid-type") {
             state->gridType = std::clamp(std::atoi(argv[++i]), 0, 2);
         } else if (a == "--slope") {
