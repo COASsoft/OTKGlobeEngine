@@ -156,7 +156,7 @@ int main() {
         check(u == "https://h/2/3/1?bbox=-90,66.51326044,0,85.05112878&w=-90&r=2&q=01&s=256x256", ("cesium and maplibre url placeholders " + u).c_str());
         l.url = "https://h/export?bbox={bbox-epsg-3857}&size={width},{height}";
         std::string e = tileUrl(l, m, 1, 0, 0);
-        check(e.find("bbox=-20037508.34") != std::string::npos && e.find(",0,0,20037508.34") != std::string::npos, "bbox-epsg-3857 placeholder");
+        check(e.find("bbox=-20037508.34") != std::string::npos && e.find(",0,0,20037508.34") != std::string::npos, ("bbox-epsg-3857 placeholder " + e).c_str());
     }
 
     {
