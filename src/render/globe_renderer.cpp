@@ -2528,7 +2528,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         }
     }
     for (auto& dt : tiles) drawn_[dt.key] = frame_;
-    if (switchHold_) {
+    if (snapshotShown_ && snapshotFade_ < 0.0) {
         bool ready = true;
         for (const auto& dt : tiles) {
             auto s = surface_.find(dt.key);
@@ -2537,10 +2537,11 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 break;
             }
         }
-        if (ready || tnow - switchStart_ > 2.5) {
-            switchHold_ = false;
-            for (auto& [k, r] : retiring_)
-                if (std::isinf(r.second)) r.second = tnow;
+        const bool moved = length(cam.eye() - snapshotEye_) > std::max(0.05, cam.gsd * 0.5) ||
+                           std::abs(cam.azimuth - snapshotAzimuth_) > 0.01 || std::abs(cam.tilt - snapshotTilt_) > 0.01;
+        if (ready || moved || tnow - snapshotStart_ > 1.5) {
+            snapshotFade_ = tnow;
+            snapshotFadeLength_ = moved ? 0.15 : 0.4;
         }
     }
     for (auto it = retiring_.begin(); it != retiring_.end();) {
