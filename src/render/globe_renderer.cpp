@@ -2705,7 +2705,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 morphing = morphBlend && got.level == want.level && (ancestor->second.complete || ancestor->second.presentable);
                 spatial = edgeBlend || morphing;
             }
-            if (got.level != want.level && blendParents_.size() < 256) blendParents_.push_back({want, dt.distance * 2.0});
+            if ((got.level != want.level || !sameLayers) && blendParents_.size() < 256) blendParents_.push_back({want, dt.distance * 2.0});
         }
         if (sg_query_buffer_state(tt.vbuf) != SG_RESOURCESTATE_VALID) {
             ++invalidResources_;
