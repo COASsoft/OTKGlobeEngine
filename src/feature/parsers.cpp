@@ -1,6 +1,7 @@
 #include "ote/features.hpp"
 
 #include "gdal/gdal_sources.hpp"
+#include "net/http.hpp"
 
 #include <json.hpp>
 #include "ote/image.hpp"
