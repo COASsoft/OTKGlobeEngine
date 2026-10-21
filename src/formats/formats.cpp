@@ -233,7 +233,13 @@ std::string detectFormat(const std::vector<std::uint8_t>& b, const std::string& 
     while (i < b.size() && std::isspace(b[i])) ++i;
     if (i < b.size() && b[i] == '{') {
         std::string head(b.begin() + static_cast<std::ptrdiff_t>(i), b.begin() + static_cast<std::ptrdiff_t>(std::min(b.size(), i + 4096)));
-        if (head.find("\"asset\"") != std::string::npos && head.find("\"root\"") != std::string::npos) return "3dtiles";
+        if (head.find("\"asset\"") != std::string::npos) {
+            if (head.find("\"root\"") != std::string::npos) return "3dtiles";
+            if (ext == ".gltf" || head.find("\"meshes\"") != std::string::npos || head.find("\"nodes\"") != std::string::npos ||
+                head.find("\"scenes\"") != std::string::npos || head.find("\"buffers\"") != std::string::npos)
+                return "gltf";
+            return "3dtiles";
+        }
         if (head.find("\"tiles\"") != std::string::npos &&
             (head.find("quantized-mesh-1.0") != std::string::npos || head.find("heightmap-1.0") != std::string::npos))
             return "quantized-mesh";
