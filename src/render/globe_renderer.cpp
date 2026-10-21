@@ -2695,7 +2695,9 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             const bool ancestorCurrent = ancestor != surface_.end() && ancestor->second.version >= switchVersion_;
             const bool sameGeneration = ancestor != surface_.end() && ancestorCurrent == (shownVersion >= switchVersion_) &&
                                         (!retiringShown || ancestorCurrent == (rt->second.first.version >= switchVersion_));
-            if (got.level >= 0 && got.level < src.level && sameGeneration) {
+            const bool sameLayers = ancestor != surface_.end() && own != surface_.end() &&
+                                    ancestor->second.overlaysOmitted == own->second.overlaysOmitted;
+            if (got.level >= 0 && got.level < src.level && sameGeneration && sameLayers) {
                 view3 = pv;
                 std::memcpy(uvx3, pu, sizeof(pu));
                 if (edgeBlend)
