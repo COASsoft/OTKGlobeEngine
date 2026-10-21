@@ -357,18 +357,10 @@ void LabelLayer::drawSurface(const GeoRect& tile, double texelDeg, double dpi, i
     for (const auto& [tier, cell] : scratchKeys_) {
         Batch* b = batch(tier, cell, false);
         if (!b || b->count <= 0 || sg_query_buffer_state(b->buffer) != SG_RESOURCESTATE_VALID) continue;
-        const double x0 = (std::max(b->west, tile.west) - tile.west) / span * size;
-        const double x1 = (std::min(b->east, tile.east) - tile.west) / span * size;
-        const double y0 = (tile.north - std::min(b->north, tile.north)) / span * size;
-        const double y1 = (tile.north - std::max(b->south, tile.south)) / span * size;
-        const int sx = static_cast<int>(std::lround(x0)), sy = static_cast<int>(std::lround(y0));
-        const int sw = static_cast<int>(std::lround(x1)) - sx, sh = static_cast<int>(std::lround(y1)) - sy;
-        if (sw <= 0 || sh <= 0) continue;
         if (!applied) {
             sg_apply_pipeline(linePipeline_);
             applied = true;
         }
-        sg_apply_scissor_rect(sx, sy, sw, sh, true);
         sg_bindings bind{};
         bind.vertex_buffers[0] = quad_;
         bind.vertex_buffers[1] = b->buffer;
