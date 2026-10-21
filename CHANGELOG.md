@@ -3,7 +3,7 @@
 ## Unreleased
 
 ### Labels
-- Built-in world labels drawn like a satellite map with labels: solid country borders, dotted state and province lines, dashed county lines draped on the terrain, and the names of countries, states, provinces, counties, cities, towns and villages worldwide with city dots, chosen by importance and spacing and decluttered against each other. Shown by default; one switch turns all of it on or off (`Engine::setLabelsEnabled`, `otk_set_labels`, Android `OTKGlobeView.setLabels`, .NET `Labels`, Swift `labels`, viewer key `I` and `--labels 0|1`).
+- Built-in world labels drawn like a satellite map with labels: solid country borders, dashed state, province and county lines with a dark edge, draped on the terrain at a constant on-screen width, and the names of countries, states, provinces, counties, cities, towns and villages worldwide with city dots, chosen by importance and spacing and decluttered against each other. Shown by default; one switch turns all of it on or off (`Engine::setLabelsEnabled`, `otk_set_labels`, Android `OTKGlobeView.setLabels`, .NET `Labels`, Swift `labels`, viewer key `I` and `--labels 0|1`).
 - Works offline: the boundaries (geoBoundaries), place names (GeoNames) and country labels (Natural Earth) are embedded in the kernel, about 9.5 MB; `-DOTK_LABELS=OFF` builds without them. `scripts/make_labels.py` rebuilds the data from the sources.
 - Kernel: `otk::placesNear` returns nearby towns, states or countries from the same data.
 
