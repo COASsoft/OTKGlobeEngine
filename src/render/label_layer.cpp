@@ -37,16 +37,17 @@ constexpr std::size_t kMaxCandidates = 8000;
 enum Tier { Fine = 0, Coarse = 1, Overview = 2 };
 
 struct BorderStyle {
-    float width, on, off;
+    float width, casing, on, off;
     float color[4];
 };
 
 constexpr BorderStyle kLines[4] = {
-    {1.3f, 0.0f, 0.0f, {1.0f, 1.0f, 1.0f, 0.85f}},
-    {1.2f, 4.0f, 3.0f, {1.0f, 1.0f, 1.0f, 0.7f}},
-    {1.1f, 2.5f, 2.5f, {1.0f, 1.0f, 1.0f, 0.75f}},
-    {1.0f, 2.0f, 3.0f, {1.0f, 1.0f, 1.0f, 0.45f}},
+    {2.0f, 1.0f, 0.0f, 0.0f, {1.0f, 1.0f, 1.0f, 0.95f}},
+    {1.8f, 0.9f, 5.0f, 4.0f, {1.0f, 1.0f, 1.0f, 0.9f}},
+    {1.6f, 0.9f, 4.0f, 3.0f, {1.0f, 1.0f, 1.0f, 0.9f}},
+    {1.3f, 0.8f, 3.5f, 3.0f, {0.92f, 0.92f, 0.92f, 0.8f}},
 };
+constexpr float kShade[4] = {0.0f, 0.0f, 0.0f, 0.4f};
 
 struct LabelVertex {
     float x, y, u, v;
