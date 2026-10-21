@@ -485,6 +485,10 @@ std::vector<std::string> GlobeRenderer::credits() const {
     std::stable_sort(all.begin(), all.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
     std::vector<std::string> out;
     for (const auto& a : all) out.push_back(a.first);
+    if (labelsOn_) {
+        out.push_back("Boundaries: geoBoundaries (CC BY 4.0)");
+        out.push_back("Places: GeoNames (CC BY 4.0), Natural Earth");
+    }
     return out;
 }
 
