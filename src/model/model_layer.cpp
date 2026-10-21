@@ -662,6 +662,13 @@ std::shared_ptr<GpuMesh> ModelLayer::load(const std::string& path) {
     std::filesystem::path p = std::filesystem::u8path(path);
     std::vector<std::uint8_t> bytes = readFile(p);
     if (bytes.empty()) return nullptr;
+    std::string ext = p.extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (ext == ".obj" || ext == ".dae") {
+        std::filesystem::path dir = p.parent_path();
+        bytes = modelToGlb(path, bytes, [dir](const std::string& f) { return readFile(dir / std::filesystem::u8path(f)); });
+        if (bytes.empty()) return nullptr;
+    }
     CpuModel cpu;
     ResourceReader read = [](const std::string& f) { return readFile(std::filesystem::u8path(f)); };
     if (!parseGltf(bytes.data(), bytes.size(), path, read, cpu) || cpu.primitives.empty()) return nullptr;
