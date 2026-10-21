@@ -43,7 +43,7 @@ Website and downloads: https://grangedevgroup-code.github.io/OpenTAKEngine/
 - CoT with ATAK iconsets (`usericon`), range and bearing lines, dashed and dotted strokes
 - Ground-clamped lines and polygons draped into the terrain texture, 3D lines, extruded walls and raised polygons, icons, SDF labels with decluttering, hit testing
 - MGRS/UTM conversions and a draped MGRS grid
-- glTF/GLB models, OGC 3D Tiles 1.0/1.1 (tileset.json, .3tz, URLs, external and implicit tilesets, b3dm, i3dm, pnts, cmpt, glb/glTF; Draco, meshopt and KTX2 compression; GPU instancing), LAS point clouds (WGS84 and UTM natively, any CRS through the GDAL module)
+- glTF/GLB, OBJ/MTL and COLLADA models, OGC 3D Tiles 1.0/1.1 (tileset.json, .3tz, URLs, external and implicit tilesets, b3dm, i3dm, pnts, cmpt, glb/glTF; Draco, meshopt and KTX2 compression; GPU instancing), LAS point clouds (WGS84 and UTM natively, any CRS through the GDAL module)
 - Photorealistic 3D Tiles from Google and Cesium ion (`ion://` URIs, token refresh, on-screen credits) or your own photogrammetry; metallic-roughness materials with normal, emissive and occlusion maps, unlit photogrammetry, lighting by the real sun for a given time
 - VR and AR hosts: `frameXr` renders any number of OpenXR-style eye views with one tile update per frame, table-top scale, side-by-side stereo ([docs/XR.md](docs/XR.md))
 
