@@ -2660,6 +2660,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 bind.index_buffer = indexBuffer_;
                 bind.views[VIEW_tex] = td.view;
                 bind.views[VIEW_tex2] = td.view2;
+                bind.views[VIEW_tex3] = td.view3;
                 bind.samplers[SMP_smp] = sampler_;
                 sg_apply_bindings(&bind);
                 sg_apply_uniforms(UB_globe_vs_params, SG_RANGE(vsp));
