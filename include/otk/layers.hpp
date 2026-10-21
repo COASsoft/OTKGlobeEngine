@@ -38,6 +38,7 @@ struct ImageryLayer {
     std::string userAgent;
     std::vector<std::pair<std::string, std::string>> headers;
     bool visible = true;
+    bool labels = false;
     std::shared_ptr<HostTileSource> source;
 };
 
