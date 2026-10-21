@@ -34,8 +34,9 @@ void main() {
     float mw = 0.0;
     if (morph.w > 0.5) {
         vec3 rel = position + eyerel.xyz;
-        float d = max(length(rel), 1.0);
-        float facing = max(abs(dot(rel / d, normalize(center.xyz + position))), 0.35);
+        float len = max(length(rel), 1.0);
+        float facing = max(abs(dot(rel / len, normalize(center.xyz + position))), 0.35);
+        float d = max(len - eyerel.w, 1.0);
         mw = clamp((morph.y - morph.x * facing / d) / morph.z, 0.0, 1.0);
     }
     morphw = mw;
