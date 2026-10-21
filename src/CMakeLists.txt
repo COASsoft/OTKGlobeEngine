@@ -15,6 +15,7 @@ add_library(opentakengine STATIC
     core/image.cpp
     core/camera.cpp
     core/mgrs.cpp
+    core/prj.cpp
     core/navigation.cpp
     core/astro.cpp
     core/wmm.cpp
