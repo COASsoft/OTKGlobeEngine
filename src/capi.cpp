@@ -667,6 +667,27 @@ void ote_view_for_region(const ote_engine* e, double west, double south, double 
     out->tilt = v.tilt;
 }
 
+int ote_open(ote_engine* e, const char* path, ote_open_result* out) {
+    ote::OpenResult r = e->engine.open(path ? path : "");
+    if (out) {
+        *out = {};
+        out->ok = r.ok ? 1 : 0;
+        out->target = static_cast<ote_import_target>(static_cast<int>(r.plan.target));
+        out->items = r.plan.target == ote::ImportTarget::Features
+                         ? static_cast<int>(r.data.features.size() + r.data.overlays.size() + r.data.models.size())
+                     : r.plan.target == ote::ImportTarget::Imagery   ? static_cast<int>(r.plan.imagery.size())
+                     : r.plan.target == ote::ImportTarget::Elevation ? static_cast<int>(r.plan.elevation.size())
+                                                                     : (r.ok ? 1 : 0);
+        out->has_region = r.hasRegion ? 1 : 0;
+        out->west = r.region.west;
+        out->south = r.region.south;
+        out->east = r.region.east;
+        out->north = r.region.north;
+        out->id = r.tileset ? r.tileset : r.pointCloud ? r.pointCloud : r.model;
+    }
+    return r.ok ? 1 : 0;
+}
+
 int ote_load_features_region(ote_engine* e, const char* path, double* west, double* south, double* east, double* north) {
     ote::LoadedData d = e->engine.loadData(path ? path : "");
     writeRegion(d.hasRegion, d.region, west, south, east, north);
