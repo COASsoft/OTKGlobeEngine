@@ -230,6 +230,7 @@ private:
         bool complete = false;
         bool degraded = false;
         bool standIn = false;
+        bool overlaysOmitted = false;
         bool presentable = true;
         int hollow = 0;
         int imageryZ = -1;
