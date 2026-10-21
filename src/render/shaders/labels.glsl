@@ -18,11 +18,13 @@ in vec4 seg;
 in vec2 info;
 
 out vec4 color;
+out vec4 edge;
 out vec4 dist;
 out vec2 dash;
 
 void main() {
     vec4 sel = vec4(equal(vec4(floor(info.y + 0.5)), vec4(0.0, 1.0, 2.0, 3.0)));
+    edge = shade;
     float w = dot(sel, width) * frame.z;
     float c = dot(sel, casing) * frame.z;
     vec2 a = vec2(seg.x * frame.x, seg.y);
