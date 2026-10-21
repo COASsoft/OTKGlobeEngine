@@ -15,6 +15,32 @@ Two APIs are available:
 
 The graphics backend is chosen at build time: Direct3D 11 on Windows, Metal on macOS and iOS, OpenGL 4.1 on Linux, OpenGL ES 3 on Android.
 
+## Kernel only (no GPU)
+
+Servers, converters and other headless programs link the `ote_kernel` target (add the repository with `add_subdirectory` or `FetchContent`, optionally with `-DOTE_ENGINE=OFF`). Everything in it works without a window or graphics driver:
+
+```cpp
+#include "ote/elevation.hpp"
+#include "ote/feature_query.hpp"
+#include "ote/formats.hpp"
+#include "ote/importer.hpp"
+
+ote::ImportPlan plan = ote::planImport("survey.kmz");
+ote::ImportResult data = ote::importData(plan.path);
+
+ote::FeatureQuery near;
+near.useRadius = true;
+near.center = {47.0359, -122.9049, 0};
+near.radiusMeters = 500;
+for (std::size_t i : ote::queryFeatures(data.data.features, near)) { /* ... */ }
+
+ote::ElevationService elevation;
+elevation.setCacheDirectory(ote::defaultCacheDirectory());
+elevation.setSources(ote::defaultElevation());
+double msl = elevation.heightMsl(46.8529, -121.7604);
+ote::LineOfSight los = elevation.lineOfSight({46.85, -121.76, 0}, 2.0, {46.90, -121.70, 0}, 2.0);
+```
+
 ## Android (GLSurfaceView, Kotlin + JNI)
 
 ```kotlin
