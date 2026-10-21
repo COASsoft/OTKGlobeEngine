@@ -244,6 +244,7 @@ private:
     bool ready(const QuadKey& k) const;
     bool presentable(const QuadKey& k) const;
     int readyGap(const QuadKey& k) const;
+    bool sparseLayer(int l) const;
     bool progressed(const SurfaceTile& s) const;
     void need(const QuadKey& k, double priority);
     void prefetch(const QuadKey& k, double priority) {
