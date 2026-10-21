@@ -176,7 +176,7 @@ std::string detectFormat(const std::vector<std::uint8_t>& b, const std::string& 
         mz_zip_archive zip{};
         std::string kind = "tak-package";
         if (mz_zip_reader_init_mem(&zip, b.data(), b.size(), 0)) {
-            bool manifest = false, kml = false;
+            bool manifest = false, kml = false, iconset = false;
             mz_uint count = std::min<mz_uint>(mz_zip_reader_get_num_files(&zip), 20000);
             for (mz_uint i = 0; i < count; ++i) {
                 char name[512];
@@ -184,9 +184,11 @@ std::string detectFormat(const std::vector<std::uint8_t>& b, const std::string& 
                 std::string l = lowerCopy(name);
                 manifest = manifest || l == "manifest/manifest.xml" || l == "manifest.xml";
                 kml = kml || l == "doc.kml" || (l.size() > 4 && l.substr(l.size() - 4) == ".kml" && l.find('/') == std::string::npos);
+                iconset = iconset || l == "iconset.xml" || (l.size() > 12 && l.substr(l.size() - 12) == "/iconset.xml");
             }
             mz_zip_reader_end(&zip);
             if (!manifest && kml) kind = "kmz";
+            else if (!manifest && iconset) kind = "iconset";
         }
         return kind;
     }
