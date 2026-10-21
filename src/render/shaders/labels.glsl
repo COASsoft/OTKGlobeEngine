@@ -89,7 +89,7 @@ out vec4 frag_color;
 
 void main() {
     float d = texture(sampler2D(tex, smp), uv).r;
-    float w = max(fwidth(d), 1e-4);
+    float w = max(length(vec2(dFdx(d), dFdy(d))), 1e-4);
     float px = (d - 0.5 + params.y) / w;
     float a = clamp(px + 0.5, 0.0, 1.0);
     float h = clamp(px + params.x + 0.5, 0.0, 1.0);
