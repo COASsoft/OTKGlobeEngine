@@ -46,6 +46,7 @@
 #include "core/astro.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
@@ -397,7 +398,7 @@ void GlobeRenderer::setCacheDirectory(const std::string& dir) {
     cacheDir_ = dir;
     if (cache_.open(path)) {
         loader_.setCache(&cache_);
-        if (!layers_.empty()) setLayers(std::vector<ImageryLayer>(layers_));
+        if (!layers_.empty()) applyLayers();
         if (!elevation_.sources().empty()) setElevation(std::vector<ElevationLayer>(elevation_.sources()));
     }
 }
@@ -488,6 +489,7 @@ std::vector<std::string> GlobeRenderer::credits() const {
     if (labelsOn_) {
         out.push_back("Boundaries: geoBoundaries (CC BY 4.0)");
         out.push_back("Places: GeoNames (CC BY 4.0), Natural Earth");
+        if (overlayLayer_ >= 0) out.push_back("Roads and places: OpenFreeMap, (c) OpenMapTiles, (c) OpenStreetMap contributors");
     }
     return out;
 }
@@ -546,6 +548,48 @@ void GlobeRenderer::retryUnavailable() {
 }
 
 void GlobeRenderer::setLayers(const std::vector<ImageryLayer>& layers) {
+    userLayers_ = layers;
+    applyLayers();
+}
+
+void GlobeRenderer::setLabelsSource(const std::string& source) {
+    if (labelsSource_ == source) return;
+    labelsSource_ = source;
+    applyLayers();
+}
+
+void GlobeRenderer::applyLayers() {
+    std::vector<ImageryLayer> all = userLayers_;
+    overlayLayer_ = -1;
+    if (labelsOn_ && !labelsSource_.empty()) {
+        ImageryLayer l;
+        l.name = "Labels";
+        l.labels = true;
+        l.minZoom = 0;
+        l.maxZoom = 14;
+        std::string lower = labelsSource_;
+        std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        auto ends = [&](const char* suffix) {
+            const size_t n = std::strlen(suffix);
+            return lower.size() >= n && lower.compare(lower.size() - n, n, suffix) == 0;
+        };
+        if (ends(".mbtiles")) {
+            l.type = SourceType::MBTiles;
+            l.path = labelsSource_;
+        } else if (ends(".pmtiles")) {
+            l.type = SourceType::PMTiles;
+            l.path = labelsSource_;
+        } else {
+            l.type = SourceType::Mvt;
+            l.url = labelsSource_;
+        }
+        overlayLayer_ = static_cast<int>(all.size());
+        all.push_back(std::move(l));
+    }
+    setLayerList(all);
+}
+
+void GlobeRenderer::setLayerList(const std::vector<ImageryLayer>& layers) {
     std::vector<int> from(layers.size(), -1);
     std::vector<bool> taken(layers_.size(), false);
     std::vector<std::string> oldIds;
@@ -602,7 +646,7 @@ void GlobeRenderer::setLayers(const std::vector<ImageryLayer>& layers) {
     }
     baseLayer_ = -1;
     for (int l = 0; l < static_cast<int>(layers_.size()); ++l)
-        if (shown(l) && !layers_[l].polarFill) {
+        if (shown(l) && !layers_[l].polarFill && !layers_[l].labels) {
             baseLayer_ = l;
             break;
         }
@@ -635,7 +679,7 @@ double GlobeRenderer::gridStep(const Camera& cam, int type) const {
 }
 
 int GlobeRenderer::maxRefine() const {
-    bool needsDetail = !features_.empty() || anyGrid() || !overlays_.empty();
+    bool needsDetail = !features_.empty() || anyGrid() || !overlays_.empty() || labelsOn_;
     return needsDetail ? kMaxLevel : usefulLevel_;
 }
 
@@ -670,6 +714,7 @@ void GlobeRenderer::markDirty(const GeoRect& rect) {
 void GlobeRenderer::setLabels(bool enabled) {
     if (labelsOn_ == enabled) return;
     labelsOn_ = enabled;
+    applyLayers();
     markDirty({-180, -90, 180, 90});
 }
 
@@ -1415,10 +1460,19 @@ void GlobeRenderer::processLoads() {
                 tex.line = sg_make_buffer(&d);
                 tex.lineCount = static_cast<int>(t.vector->lineVertices.size() / 10);
             }
+            if (!t.vector->roads.empty()) {
+                sg_buffer_desc d{};
+                d.usage.vertex_buffer = true;
+                d.data = {t.vector->roads.data(), t.vector->roads.size() * sizeof(float)};
+                tex.roads = sg_make_buffer(&d);
+                tex.roadCount = static_cast<int>(t.vector->roads.size() / 6);
+            }
             t.vector->fillVertices.clear();
             t.vector->fillVertices.shrink_to_fit();
             t.vector->lineVertices.clear();
             t.vector->lineVertices.shrink_to_fit();
+            t.vector->roads.clear();
+            t.vector->roads.shrink_to_fit();
             auto old = imagery_.find(t.id);
             if (old != imagery_.end()) dropImagery(old->second);
             imagery_[t.id] = tex;
@@ -1613,6 +1667,7 @@ void GlobeRenderer::dropImagery(ImageryTexture& t) {
     }
     if (t.fill.id) sg_destroy_buffer(t.fill);
     if (t.line.id) sg_destroy_buffer(t.line);
+    if (t.roads.id) sg_destroy_buffer(t.roads);
     t = ImageryTexture{};
 }
 
@@ -1684,7 +1739,8 @@ bool GlobeRenderer::buildSurfaceJob(const QuadKey& k, double priority, SurfaceJo
                     complete = false;
                     if (job) job->missing.push_back(id);
                     const bool backingOff = failed_.count(id) > 0;
-                    if (job && ((l == baseLayer_ || layers_[l].polarFill) ? !backingOff : (!tex || src.z < id.z - 1))) job->presentable = false;
+                    if (job && l != overlayLayer_ && ((l == baseLayer_ || layers_[l].polarFill) ? !backingOff : (!tex || src.z < id.z - 1)))
+                        job->presentable = false;
                 }
                 if (!tex) {
                     if (!missing) unavailable = true;
@@ -2405,6 +2461,16 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         if (labelsOn_) {
             Bounds lb = bounds(job.key);
             double unit = jobLabel.count(job.key) ? jobLabel[job.key] : (lb.north - lb.south) / kSurfaceSize;
+            std::vector<RoadBatch> roads;
+            for (const VectorDraw& vd : job.vectors)
+                if (vd.tile->roadCount > 0) {
+                    RoadBatch rb;
+                    rb.buffer = vd.tile->roads;
+                    rb.count = vd.tile->roadCount;
+                    std::memcpy(rb.xform, vd.xform, sizeof(rb.xform));
+                    roads.push_back(rb);
+                }
+            labels_.drawRoads(roads, {lb.west, lb.south, lb.east, lb.north}, unit, dpiScale_);
             labels_.drawSurface({lb.west, lb.south, lb.east, lb.north}, unit, dpiScale_);
         }
         if (job.featureCount > 0 && (job.featureFirst + job.featureCount) * 6 * sizeof(float) <= kSurfaceBufferBytes)
@@ -2858,13 +2924,32 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         }
     }
     std::vector<GeoRect> visibleRects;
+    std::vector<const VectorTile*> overlayTiles;
     if (labelsOn_) {
         visibleRects.reserve(tiles.size());
+        std::unordered_set<const VectorTile*> seenOverlay;
         for (const auto& dt : tiles) {
             Bounds b = bounds(dt.key);
             visibleRects.push_back({b.west, b.south, b.east, b.north});
+            if (overlayLayer_ < 0 || overlayLayer_ >= static_cast<int>(matrices_.size())) continue;
+            const TileMatrix& m = matrices_[overlayLayer_];
+            const double target = (b.north - b.south) / kSurfaceSize * m.unitsPerDegree();
+            const int z = m.bestLevel(target);
+            if (z < 0) continue;
+            const double maxLat = maxLatitude(m.srid);
+            const double s = std::max(b.south, -maxLat), n = std::min(b.north, maxLat);
+            if (s >= n) continue;
+            for (const TileRange& r : regionRanges(m, {b.west, s, b.east, n}, z, z))
+                for (int ty = r.y0; ty <= r.y1; ++ty)
+                    for (int tx = r.x0; tx <= r.x1; ++tx)
+                        for (int up = 0; up <= 3 && z - up >= 0; ++up) {
+                            auto it = imagery_.find(TileId{overlayLayer_, z - up, tx >> up, ty >> up});
+                            if (it == imagery_.end() || !it->second.vector) continue;
+                            if (seenOverlay.insert(it->second.vector.get()).second) overlayTiles.push_back(it->second.vector.get());
+                            break;
+                        }
         }
-        labels_.drawLabels(dc, ground, dpiScale_, visibleRects, 0);
+        labels_.drawLabels(dc, ground, dpiScale_, visibleRects, overlayTiles, 0);
     }
     features_.drawOverlay(dc, ground, dpiScale_, flipSurface_, &vectorLabels);
     if (!capture && snapshotShown_) {
@@ -2931,7 +3016,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 sg_draw(0, xray ? kGrid * kGrid * 6 : kIndexCount, 1);
             }
             if (!xray) objects();
-            if (labelsOn_) labels_.drawLabels(vc, ground, dpiScale_, visibleRects, static_cast<int>(vi));
+            if (labelsOn_) labels_.drawLabels(vc, ground, dpiScale_, visibleRects, overlayTiles, static_cast<int>(vi));
             features_.drawOverlay(vc, ground, dpiScale_, flipSurface_, &vectorLabels);
             sg_end_pass();
         }
