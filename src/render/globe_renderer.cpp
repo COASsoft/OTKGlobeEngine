@@ -2103,7 +2103,10 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 QuadKey k{level, x, y};
                 auto sf = surface_.find(k);
                 if (sf != surface_.end() && sf->second.complete) sf->second.used = frame_;
-                else needs_.push_back({k, 1e12 * (1 + level), true});
+                else {
+                    const bool stale = switchVersion_ > 0 && (sf == surface_.end() || sf->second.version < switchVersion_);
+                    needs_.push_back({k, stale ? 1e-3 * level - 1.0 : 1e12 * (1 + level), true});
+                }
             }
     std::sort(needs_.begin(), needs_.end(), [](const Need& a, const Need& b) {
         if (!(a.key == b.key)) {
