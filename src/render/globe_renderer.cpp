@@ -126,8 +126,6 @@ bool GlobeRenderer::init() {
     if (const char* v = std::getenv("OTE_LOD_BLEND")) lodBlend_ = std::atoi(v) != 0;
     if (const char* v = std::getenv("OTE_UPGRADE_FADE")) fadeUpgrades_ = std::atoi(v) != 0;
     busyLog_ = std::getenv("OTE_BUSY_LOG") != nullptr;
-    gateAll_ = std::getenv("OTE_GATE_ALL") != nullptr;
-    lookahead_ = std::getenv("OTE_NO_LOOKAHEAD") == nullptr;
     if (const char* v = std::getenv("OTE_MARGIN")) marginPrefetch_ = std::max(1.0, std::atof(v));
     if (std::getenv("OTE_DIAG")) diagnostics_ = true;
     if (const char* pp = std::getenv("OTE_PROFILE")) {
@@ -1098,7 +1096,7 @@ bool GlobeRenderer::wasRefined(const QuadKey& k) const {
 
 bool GlobeRenderer::presentable(const QuadKey& k) const {
     auto s = surface_.find(k);
-    if (s == surface_.end() || !(s->second.complete || (!gateAll_ && s->second.version >= 0 && s->second.presentable)))
+    if (s == surface_.end() || !(s->second.complete || (s->second.version >= 0 && s->second.presentable)))
         return false;
     auto t = terrain_.find(k);
     return t != terrain_.end() && t->second.complete;
@@ -1178,12 +1176,12 @@ void GlobeRenderer::traverse(const Camera& cam, const QuadKey& k, std::vector<Dr
                 terrain(kids[i]).used = frame_;
             }
         }
-        if (allDrawable && (allReady || !presentable(k) || sticky || skipGate_)) {
+        if (allDrawable && (allReady || !presentable(k) || sticky)) {
             if (!prefetching_) refined_[k] = frame_;
             for (int i = 0; i < 4; ++i) traverse(cam, kids[i], out);
             return;
         }
-        if (lookahead_ && !prefetching_)
+        if (!prefetching_)
             for (int i = 0; i < 4; ++i) {
                 if (!ci[i].visible || !ci[i].refine || presentable(kids[i])) continue;
                 for (int j = 0; j < 4; ++j) {
@@ -1981,7 +1979,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 QuadKey k{level, x, y};
                 auto sf = surface_.find(k);
                 if (sf != surface_.end() && sf->second.complete) sf->second.used = frame_;
-                else needs_.push_back({k, 1e-3 * level, true});
+                else needs_.push_back({k, 1e12 * (1 + level), true});
             }
     std::sort(needs_.begin(), needs_.end(), [](const Need& a, const Need& b) {
         if (!(a.key == b.key)) {
@@ -2713,9 +2711,9 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             if (tf == terrain_.end() || !tf->second.complete) ++waitTerrain;
         }
         std::fprintf(trace_,
-                     "frame %llu tiles %zu needs %zu work %zu renders %d builds %d loader %d elev %d incomplete %d "
+                     "t %.3f frame %llu tiles %zu needs %zu work %zu renders %d builds %d loader %d elev %d incomplete %d "
                      "waitimg %d unrendered %d waitterrain %d L%d gsd %.1f\n",
-                     static_cast<unsigned long long>(frame_), tiles.size(), needs_.size(), work.size(), renders, builds,
+                     now(), static_cast<unsigned long long>(frame_), tiles.size(), needs_.size(), work.size(), renders, builds,
                      loader_.pending(), elevation_.pending(), incomplete, waitImagery, unrendered, waitTerrain, maxLevel,
                      cam.gsd);
         if (std::getenv("OTE_TRACE_TILES")) {

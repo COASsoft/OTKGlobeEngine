@@ -173,6 +173,7 @@ private:
         int sourceZ = -1;
         bool degraded = false;
         bool overlaysOmitted = false;
+        bool presentable = false;
     };
     struct ImageryTexture {
         sg_image image{};
@@ -226,6 +227,7 @@ private:
         bool complete = false;
         bool degraded = false;
         bool standIn = false;
+        bool presentable = true;
         int hollow = 0;
         int imageryZ = -1;
         int sourceZ = 99;
@@ -236,6 +238,7 @@ private:
     double seamSkirt(const QuadKey& k, const TerrainTile& t, const std::unordered_map<QuadKey, const TerrainTile*, QuadKeyHash>& drawn,
                      int coarser[4]) const;
     bool ready(const QuadKey& k) const;
+    bool presentable(const QuadKey& k) const;
     bool progressed(const SurfaceTile& s) const;
     void need(const QuadKey& k, double priority);
     void prefetch(const QuadKey& k, double priority) {

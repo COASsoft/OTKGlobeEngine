@@ -1,5 +1,7 @@
 #include "raster/tile_loader.hpp"
 
+#include <map>
+
 #if defined(__ANDROID__)
 #include <android/log.h>
 #endif
@@ -145,6 +147,12 @@ std::string TileLoader::debug() const {
     std::string s = "queue " + std::to_string(queue_.size()) + " net " + std::to_string(netQueue_.size()) + " netwanted " +
                     std::to_string(netWanted) + " inflight " + std::to_string(inflight_.size()) + " wanted " +
                     std::to_string(wanted_.size()) + " done " + std::to_string(done_.size());
+    std::map<int, int> queued;
+    for (const TileId& t : netQueue_) ++queued[t.layer];
+    s += " layers";
+    for (const auto& [layer, n] : queued) s += " " + std::to_string(layer) + ":q" + std::to_string(n);
+    for (const auto& [layer, n] : netLayerBusy_)
+        if (n > 0) s += " " + std::to_string(layer) + ":b" + std::to_string(n);
     int shown = 0;
     for (const TileId& t : inflight_) {
         if (shown++ >= 4) break;
