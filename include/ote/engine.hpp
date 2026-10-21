@@ -286,6 +286,7 @@ public:
     bool feature(std::uint64_t id, Feature& out) const;
     std::vector<std::uint64_t> featureIds() const;
     std::vector<std::uint64_t> loadFeatures(const std::string& path);
+    LoadedData loadData(const std::string& path);
     ExportResult exportFeatures(const std::vector<std::uint64_t>& ids, const std::string& path, const std::string& format = {}) const;
     std::uint64_t hitTest(double sx, double sy, double radiusPx = 16.0) const;
 
