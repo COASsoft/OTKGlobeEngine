@@ -312,6 +312,10 @@ JNIEXPORT void JNICALL OTK_FN(nativeSetGrid)(JNIEnv*, jclass, jlong h, jboolean 
 
 JNIEXPORT void JNICALL OTK_FN(nativeSetLabels)(JNIEnv*, jclass, jlong h, jboolean v) { otk_set_labels(E(h), v ? 1 : 0); }
 
+JNIEXPORT void JNICALL OTK_FN(nativeSetLabelsSource)(JNIEnv* env, jclass, jlong h, jstring source) {
+    otk_set_labels_source(E(h), str(env, source).c_str());
+}
+
 JNIEXPORT jstring JNICALL OTK_FN(nativeToMgrs)(JNIEnv* env, jclass, jdouble lat, jdouble lon, jint digits) {
     char buf[64];
     otk_to_mgrs(lat, lon, digits, buf, sizeof buf);
