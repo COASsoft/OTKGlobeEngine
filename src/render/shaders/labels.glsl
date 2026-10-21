@@ -3,12 +3,14 @@ layout(binding=0) uniform bline_params {
     vec4 xform;
     vec4 frame;
     vec4 width;
+    vec4 casing;
     vec4 dash_on;
     vec4 dash_off;
     vec4 color0;
     vec4 color1;
     vec4 color2;
     vec4 color3;
+    vec4 shade;
 };
 
 in vec2 corner;
@@ -16,41 +18,50 @@ in vec4 seg;
 in vec2 info;
 
 out vec4 color;
-out vec3 dist;
+out vec4 dist;
 out vec2 dash;
 
 void main() {
     vec4 sel = vec4(equal(vec4(floor(info.y + 0.5)), vec4(0.0, 1.0, 2.0, 3.0)));
     float w = dot(sel, width) * frame.z;
+    float c = dot(sel, casing) * frame.z;
     vec2 a = vec2(seg.x * frame.x, seg.y);
     vec2 b = vec2(seg.z * frame.x, seg.w);
     vec2 d = b - a;
     float len = length(d);
     vec2 dir = len > 0.0 ? d / len : vec2(1.0, 0.0);
     vec2 n = vec2(-dir.y, dir.x);
-    float half_px = w * 0.5 + 1.0;
+    float half_px = w * 0.5 + c + 1.0;
     vec2 p = mix(a, b, corner.x) + n * (corner.y * half_px * frame.y);
     p.x /= frame.x;
     gl_Position = w > 0.0 ? vec4(p * xform.xy + xform.zw, 0.0, 1.0) : vec4(2.0, 2.0, 2.0, 1.0);
     color = sel.x * color0 + sel.y * color1 + sel.z * color2 + sel.w * color3;
-    dist = vec3(corner.y * half_px, (info.x + corner.x * len) / frame.y, w * 0.5);
+    dist = vec4(corner.y * half_px, (info.x + corner.x * len) / frame.y, w * 0.5, c);
     dash = vec2(dot(sel, dash_on), dot(sel, dash_off)) * frame.z;
 }
 @end
 
 @fs bline_fs
+layout(binding=1) uniform bline_shade {
+    vec4 tint;
+};
+
 in vec4 color;
-in vec3 dist;
+in vec4 dist;
 in vec2 dash;
 out vec4 frag_color;
 
 void main() {
-    float a = clamp(dist.z + 0.5 - abs(dist.x), 0.0, 1.0);
+    float d = abs(dist.x);
+    float inner = color.a * clamp(dist.z + 0.5 - d, 0.0, 1.0);
+    float outer = tint.a * clamp(dist.z + dist.w + 0.5 - d, 0.0, 1.0);
+    float a = inner + outer * (1.0 - inner);
+    vec3 rgb = a > 0.0 ? (color.rgb * inner + tint.rgb * outer * (1.0 - inner)) / a : color.rgb;
     if (dash.x > 0.0) {
         float t = mod(dist.y, dash.x + dash.y);
         a *= clamp(min(t, dash.x - t) + 0.5, 0.0, 1.0);
     }
-    frag_color = vec4(color.rgb, color.a * a);
+    frag_color = vec4(rgb, a);
 }
 @end
 
