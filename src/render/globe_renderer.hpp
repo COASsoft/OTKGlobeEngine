@@ -441,6 +441,7 @@ private:
     int snapshotHeight_ = 0;
     bool snapshotWanted_ = false;
     double lastIncompleteFraction_ = 1.0;
+    std::vector<float> layerOpacity_;
     bool snapshotShown_ = false;
     double snapshotStart_ = 0.0;
     double snapshotFade_ = -1.0;
