@@ -319,6 +319,7 @@ namespace OTKGlobeEngine
             get => Native.otk_labels(Handle) != 0;
             set => Native.otk_set_labels(Handle, value ? 1 : 0);
         }
+        public string LabelsSource { set => Native.otk_set_labels_source(Handle, value ?? ""); }
 
         public View View
         {
