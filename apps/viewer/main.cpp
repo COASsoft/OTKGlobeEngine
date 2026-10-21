@@ -675,9 +675,155 @@ bool mapKey(sapp_keycode k, ote::Key& out) {
     }
 }
 
+std::vector<ote::ImageryLayer> withAdded(std::vector<ote::ImageryLayer> layers) {
+    layers.insert(layers.end(), state->addedLayers.begin(), state->addedLayers.end());
+    return layers;
+}
+
+void showStatus(const std::string& s) {
+    state->status = s;
+    state->statusTime = 8.0;
+    state->titleTimer = 1.0;
+    std::printf("%s\n", s.c_str());
+    std::fflush(stdout);
+}
+
+void zoomTo(const ote::Region& region, double tilt) {
+    if (state->viewGiven) return;
+    ote::View v = state->engine.viewForRegion(region);
+    v.tilt = tilt;
+    if (state->shotPath.empty()) state->engine.flyTo(v, 2.5);
+    else state->engine.setView(v);
+}
+
+bool nameHas(const std::string& name, std::initializer_list<const char*> words) {
+    std::string l = name;
+    std::transform(l.begin(), l.end(), l.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    for (const char* w : words)
+        if (l.find(w) != std::string::npos) return true;
+    return false;
+}
+
+void addImagery(const std::vector<ote::ImageryLayer>& layers) {
+    state->addedLayers.insert(state->addedLayers.end(), layers.begin(), layers.end());
+    state->engine.setLayers(withAdded(state->customLayers.empty() ? preset(state->preset) : state->customLayers));
+}
+
+void addElevation(const ote::ElevationLayer& layer) {
+    state->elevation.insert(state->elevation.begin(), layer);
+    state->engine.setElevation(state->elevation);
+}
+
+void openPath(const std::string& path) {
+    ote::Engine& eng = state->engine;
+    std::error_code ec;
+    const std::filesystem::path p = std::filesystem::u8path(path);
+    const std::string name = p.filename().u8string();
+    const bool folder = std::filesystem::is_directory(p, ec);
+    std::string id;
+    if (folder) {
+        if (std::filesystem::exists(p / "layer.json", ec)) id = "quantized-mesh";
+        else if (std::filesystem::exists(p / "tileset.json", ec)) id = "3dtiles";
+        else id = "dted";
+    } else {
+        id = ote::detectFormat(path);
+    }
+    const ote::FormatInfo* info = ote::findFormat(id);
+    const bool elevationName = nameHas(name, {"dem", "dtm", "dsm", "terrain", "elev", "height", "srtm"});
+    if (id == "iconset") {
+        std::string uid = ote::registerIconset(path);
+        showStatus(uid.empty() ? "Could not read " + name : "Iconset " + uid + " registered");
+    } else if (id == "mbtiles" || id == "gpkg-tiles" || id == "osmdroid" || (id == "pmtiles" && !elevationName)) {
+        ote::ImageryLayer l;
+        l.type = id == "mbtiles"      ? ote::SourceType::MBTiles
+                 : id == "gpkg-tiles" ? ote::SourceType::GeoPackage
+                 : id == "osmdroid"   ? ote::SourceType::Osmdroid
+                                      : ote::SourceType::PMTiles;
+        l.path = path;
+        l.name = name;
+        addImagery({l});
+        showStatus("Map layer " + name + " added");
+    } else if (id == "pmtiles") {
+        ote::ElevationLayer e;
+        e.type = ote::ElevationType::PMTiles;
+        e.path = path;
+        e.name = name;
+        addElevation(e);
+        showStatus("Elevation " + name + " added");
+    } else if (id == "mobac") {
+        std::vector<ote::ImageryLayer> layers = ote::loadMobac(path);
+        addImagery(layers);
+        showStatus(std::to_string(layers.size()) + " map source(s) from " + name);
+    } else if (id == "geotiff" || id == "dem" || id == "ogr") {
+        if (!ote::gdalAvailable()) {
+            showStatus(name + " needs the GDAL module");
+        } else if (id == "ogr") {
+            std::vector<std::uint64_t> ids = eng.loadFeatures(path);
+            ote::Region r;
+            if (eng.featuresRegion(ids, r)) zoomTo(r, 0.0);
+            showStatus(std::to_string(ids.size()) + " features from " + name);
+        } else if (elevationName) {
+            ote::ElevationLayer g;
+            g.type = ote::ElevationType::Gdal;
+            g.path = path;
+            g.name = name;
+            addElevation(g);
+            showStatus("Elevation " + name + " added");
+        } else {
+            ote::ImageryLayer l;
+            l.type = ote::SourceType::Gdal;
+            l.path = path;
+            l.name = name;
+            addImagery({l});
+            showStatus("Map layer " + name + " added");
+        }
+    } else if (id == "dted" || id == "hgt") {
+        ote::ElevationLayer d;
+        d.type = ote::ElevationType::Directory;
+        d.path = folder ? path : p.parent_path().u8string();
+        d.maxZoom = 14;
+        addElevation(d);
+        showStatus("Elevation folder " + d.path + " added");
+    } else if (id == "quantized-mesh") {
+        ote::ElevationLayer q;
+        q.type = ote::ElevationType::QuantizedMesh;
+        q.path = path;
+        q.maxZoom = 16;
+        addElevation(q);
+        showStatus("Cesium terrain " + name + " added");
+    } else if (id == "3dtiles") {
+        std::uint64_t tid = eng.addTileset(folder ? (p / "tileset.json").u8string() : path);
+        ote::Region r;
+        if (tid && eng.tilesetRegion(tid, r)) zoomTo(r, 45.0);
+        showStatus(tid ? "3D Tiles " + name + " added" : "Could not open " + name);
+    } else if (id == "las") {
+        std::uint64_t pid = eng.addPointCloud(path);
+        ote::Region r;
+        if (pid && eng.pointCloudRegion(pid, r)) zoomTo(r, 45.0);
+        showStatus(pid ? "Point cloud " + name + " added" : "Could not open " + name);
+    } else if (id == "gltf" || id == "obj" || id == "collada") {
+        ote::View v = eng.view();
+        ote::ModelPlacement m;
+        m.position = {v.lat, v.lon, 0};
+        std::uint64_t mid = eng.addModel(path, m);
+        if (mid) zoomTo({v.lon, v.lat, v.lon, v.lat}, 60.0);
+        showStatus(mid ? "Model " + name + " placed at the view centre" : "Could not open " + name);
+    } else if (info && (info->kind == ote::DataKind::Vector || id == "tak-package")) {
+        std::vector<std::uint64_t> ids = eng.loadFeatures(path);
+        ote::Region r;
+        if (eng.featuresRegion(ids, r)) zoomTo(r, 0.0);
+        showStatus(std::to_string(ids.size()) + " features from " + name);
+    } else {
+        showStatus(name + (info ? ": " + info->name + " cannot be opened in the viewer" : ": unknown format"));
+    }
+}
+
 void event(const sapp_event* e) {
     ote::Engine& eng = state->engine;
     switch (e->type) {
+    case SAPP_EVENTTYPE_FILES_DROPPED:
+        for (int i = 0; i < sapp_get_num_dropped_files(); ++i) openPath(sapp_get_dropped_file_path(i));
+        break;
     case SAPP_EVENTTYPE_MOUSE_DOWN:
         if (!state->mouseDown) {
             state->mouseDown = true;
