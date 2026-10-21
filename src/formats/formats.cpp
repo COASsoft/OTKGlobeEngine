@@ -332,7 +332,7 @@ ImportResult importData(const std::string& path, const std::string& formatId, co
         res.error = err;
         return res;
     }
-    if (f == "kml") {
+    if (f == "kml" || f == "kmz") {
         res.data = parseFile(path);
         res.ok = true;
         return res;
