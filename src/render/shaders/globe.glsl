@@ -33,7 +33,7 @@ void main() {
     uv2 = texcoord0 * uv_xform2.xy + uv_xform2.zw;
     uv3 = texcoord0 * uv_xform3.xy + uv_xform3.zw;
     float mw = 0.0;
-    if (morph.w > 0.0) {
+    if (morph.x > 0.0 && morph.w > 0.0) {
         vec3 rel = position + eyerel.xyz;
         float len = max(length(rel), 1.0);
         float facing = max(abs(dot(rel / len, normalize(center.xyz + position))), 0.35);
