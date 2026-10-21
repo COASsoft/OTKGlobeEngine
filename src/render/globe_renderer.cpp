@@ -2514,31 +2514,36 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         sg_view view2 = view;
         float uvx2[4] = {uvx[0], uvx[1], uvx[2], uvx[3]};
         float blend = 1.0f;
+        int shownVersion = -1;
+        if (src.level >= 0) {
+            auto shown = surface_.find(src);
+            if (shown != surface_.end()) shownVersion = shown->second.version;
+        }
+        bool retiringShown = false;
+        auto rt = retiring_.find(dt.key);
+        if (rt != retiring_.end()) {
+            double t = std::max(0.0, (tnow - rt->second.second) / 0.35);
+            if (t < 1.0 && sg_query_view_state(rt->second.first.texture) == SG_RESOURCESTATE_VALID) {
+                view2 = rt->second.first.texture;
+                uvx2[0] = 1.0f;
+                uvx2[1] = 1.0f;
+                uvx2[2] = 0.0f;
+                uvx2[3] = 0.0f;
+                blend = static_cast<float>(t * t * (3 - 2 * t));
+                fading = true;
+                retiringShown = true;
+            }
+        }
         auto fd = fades_.find(dt.key);
         if (fd != fades_.end()) {
             double t = (tnow - fd->second.start) / 0.35;
             if (t >= 1.0 || src.level < 0) {
                 fades_.erase(fd);
-            } else {
+            } else if (!retiringShown) {
                 QuadKey from = fd->second.from;
                 int up = dt.key.level - from.level;
                 QuadKey got = source(dt.key, up, view2, uvx2);
                 if (got.level >= 0 && got.level < src.level) {
-                    blend = static_cast<float>(t * t * (3 - 2 * t));
-                    fading = true;
-                }
-            }
-        }
-        if (blend >= 1.0f && src.level == dt.key.level) {
-            auto rt = retiring_.find(dt.key);
-            if (rt != retiring_.end()) {
-                double t = std::max(0.0, (tnow - rt->second.second) / 0.35);
-                if (t < 1.0 && sg_query_view_state(rt->second.first.texture) == SG_RESOURCESTATE_VALID) {
-                    view2 = rt->second.first.texture;
-                    uvx2[0] = 1.0f;
-                    uvx2[1] = 1.0f;
-                    uvx2[2] = 0.0f;
-                    uvx2[3] = 0.0f;
                     blend = static_cast<float>(t * t * (3 - 2 * t));
                     fading = true;
                 }
