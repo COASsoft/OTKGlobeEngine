@@ -275,11 +275,50 @@ private:
 class OsmdroidProvider : public SqliteProvider {
 public:
     explicit OsmdroidProvider(const ImageryLayer& layer) {
+        int minZ = layer.minZoom, maxZ = layer.maxZoom;
         openDb(layer.path);
-        if (db_.isOpen()) tile_ = db_.prepare("SELECT tile FROM tiles WHERE key=?");
-        matrix_ = TileMatrix::webMercator(layer.minZoom, layer.maxZoom, layer.tileSize);
+        if (db_.isOpen()) {
+            bool xyz = false;
+            auto cols = db_.prepare("PRAGMA table_info(tiles)");
+            while (cols.valid() && cols.step()) xyz = xyz || cols.text(1) == "image";
+            if (xyz) {
+                rmaps_ = true;
+                bool hasNumbering = false, hasInverted = false;
+                auto info = db_.prepare("PRAGMA table_info(info)");
+                while (info.valid() && info.step()) {
+                    hasNumbering = hasNumbering || info.text(1) == "tilenumbering";
+                    hasInverted = hasInverted || info.text(1) == "inverted_y";
+                }
+                bigPlanet_ = true;
+                if (hasNumbering) {
+                    auto st = db_.prepare("SELECT tilenumbering FROM info LIMIT 1");
+                    if (st.valid() && st.step() && !st.isNull(0)) {
+                        std::string v = st.text(0);
+                        std::transform(v.begin(), v.end(), v.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                        bigPlanet_ = v == "bigplanet";
+                    } else {
+                        bigPlanet_ = false;
+                    }
+                }
+                if (hasInverted) {
+                    auto st = db_.prepare("SELECT inverted_y FROM info LIMIT 1");
+                    invertedY_ = st.valid() && st.step() && !st.isNull(0) && st.integer(0) == 1;
+                }
+                auto range = db_.prepare("SELECT MIN(z), MAX(z) FROM tiles");
+                if (range.valid() && range.step() && !range.isNull(0)) {
+                    int a = range.integer(0), b = range.integer(1);
+                    minZ = bigPlanet_ ? 17 - b : a;
+                    maxZ = bigPlanet_ ? 17 - a : b;
+                }
+                tile_ = db_.prepare("SELECT image FROM tiles WHERE z=? AND x=? AND y=? ORDER BY s LIMIT 1");
+            } else {
+                tile_ = db_.prepare("SELECT tile FROM tiles WHERE key=?");
+            }
+        }
+        matrix_ = TileMatrix::webMercator(std::max(0, minZ), std::max(std::max(0, minZ), maxZ), layer.tileSize);
     }
     FetchResult fetch(int z, int x, int y) override {
+        if (rmaps_) return query(tile_, bigPlanet_ ? 17 - z : z, x, invertedY_ ? (1 << z) - 1 - y : y);
         std::lock_guard lock(mutex_);
         FetchResult r;
         r.status = 404;
@@ -297,6 +336,9 @@ public:
 
 private:
     db::Statement tile_;
+    bool rmaps_ = false;
+    bool bigPlanet_ = true;
+    bool invertedY_ = false;
 };
 
 class GeoPackageProvider : public SqliteProvider {
