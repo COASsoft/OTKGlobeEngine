@@ -295,6 +295,10 @@ public:
     bool removeTileset(std::uint64_t id);
     bool setTilesetOpacity(std::uint64_t id, float opacity);
     bool tilesetCenter(std::uint64_t id, double& lat, double& lon, double& alt) const;
+    bool tilesetRegion(std::uint64_t id, Region& out) const;
+    bool pointCloudRegion(std::uint64_t id, Region& out) const;
+    bool featuresRegion(const std::vector<std::uint64_t>& ids, Region& out) const;
+    View viewForRegion(const Region& region) const;
 
     void setGridEnabled(bool enabled);
     void setGridType(GridType type);
