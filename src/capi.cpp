@@ -453,6 +453,10 @@ uint64_t otk_add_model(otk_engine* e, const char* path, double lat, double lon, 
 
 void otk_set_grid(otk_engine* e, int enabled) { e->engine.setGridEnabled(enabled != 0); }
 
+void otk_set_labels(otk_engine* e, int enabled) { e->engine.setLabelsEnabled(enabled != 0); }
+
+int otk_labels(const otk_engine* e) { return e->engine.labelsEnabled() ? 1 : 0; }
+
 uint64_t otk_add_tileset(otk_engine* e, const char* path, double max_sse) {
     return e->engine.addTileset(path ? path : "", max_sse > 0 ? max_sse : 16.0);
 }
