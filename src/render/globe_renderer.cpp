@@ -126,6 +126,7 @@ bool GlobeRenderer::init() {
     if (const char* v = std::getenv("OTE_LOD_BLEND")) lodBlend_ = std::atoi(v) != 0;
     if (const char* v = std::getenv("OTE_UPGRADE_FADE")) fadeUpgrades_ = std::atoi(v) != 0;
     busyLog_ = std::getenv("OTE_BUSY_LOG") != nullptr;
+    gateAll_ = std::getenv("OTE_GATE_ALL") != nullptr;
     if (const char* v = std::getenv("OTE_MARGIN")) marginPrefetch_ = std::max(1.0, std::atof(v));
     if (std::getenv("OTE_DIAG")) diagnostics_ = true;
     if (const char* pp = std::getenv("OTE_PROFILE")) {
@@ -1094,6 +1095,14 @@ bool GlobeRenderer::wasRefined(const QuadKey& k) const {
     return it != refined_.end() && it->second + 2 >= frame_;
 }
 
+bool GlobeRenderer::presentable(const QuadKey& k) const {
+    auto s = surface_.find(k);
+    if (s == surface_.end() || !(s->second.complete || (!gateAll_ && s->second.version >= 0 && s->second.presentable)))
+        return false;
+    auto t = terrain_.find(k);
+    return t != terrain_.end() && t->second.complete;
+}
+
 bool GlobeRenderer::ready(const QuadKey& k) const {
     auto s = surface_.find(k);
     if (s == surface_.end() || !s->second.complete) return false;
@@ -1145,7 +1154,7 @@ void GlobeRenderer::traverse(const Camera& cam, const QuadKey& k, std::vector<Dr
             ci[i] = info(cam, kids[i]);
             if (!ci[i].visible) continue;
             need(kids[i], ci[i].distance * 2.0);
-            if (!ready(kids[i])) allReady = false;
+            if (!presentable(kids[i])) allReady = false;
             if (terrain_.find(kids[i]) == terrain_.end()) allDrawable = false;
         }
         if (k.level < kMinLevel) {
@@ -1168,12 +1177,12 @@ void GlobeRenderer::traverse(const Camera& cam, const QuadKey& k, std::vector<Dr
                 terrain(kids[i]).used = frame_;
             }
         }
-        if (allDrawable && (allReady || !ready(k) || sticky)) {
+        if (allDrawable && (allReady || !presentable(k) || sticky)) {
             if (!prefetching_) refined_[k] = frame_;
             for (int i = 0; i < 4; ++i) traverse(cam, kids[i], out);
             return;
         }
-    } else if (!ready(k) && k.level < maxRefine()) {
+    } else if (!presentable(k) && k.level < maxRefine()) {
         if (!prefetching_ && wasRefined(k)) {
             bool drawable = true;
             NodeInfo kin[4];
@@ -1203,7 +1212,7 @@ void GlobeRenderer::traverse(const Camera& cam, const QuadKey& k, std::vector<Dr
             ci[i] = info(cam, kids[i]);
             if (!ci[i].visible) continue;
             any = true;
-            if (!ready(kids[i])) kidsReady = false;
+            if (!presentable(kids[i])) kidsReady = false;
         }
         if (any && kidsReady) {
             need(k, ni.distance);
@@ -1218,7 +1227,7 @@ void GlobeRenderer::traverse(const Camera& cam, const QuadKey& k, std::vector<Dr
         prefetch(parent, ni.distance * 3.0);
         if (k.level > kMinLevel + 1) prefetch({k.level - 2, k.x / 4, k.y / 4}, ni.distance * 6.0);
     }
-    if (ni.nearRefine && ready(k))
+    if (ni.nearRefine && presentable(k))
         for (int i = 0; i < 4; ++i) prefetch(kids[i], ni.distance * 4.0);
     out.push_back({k, ni.distance, retaining_ > 0 ? 2 : 0});
 }
@@ -1507,6 +1516,7 @@ bool GlobeRenderer::buildSurfaceJob(const QuadKey& k, double priority, SurfaceJo
                 if (missing) {
                     complete = false;
                     if (job) job->missing.push_back(id);
+                    if (job && (l == baseLayer_ || layers_[l].polarFill || !tex || src.z < id.z - 1)) job->presentable = false;
                 }
                 if (!tex) {
                     if (!missing) unavailable = true;
@@ -2220,6 +2230,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             s->sourceZ = job.sourceZ;
             s->degraded = job.degraded;
             s->overlaysOmitted = job.standIn;
+            s->presentable = job.presentable;
             continue;
         }
         for (int level = 0; level < kMips; ++level) {
@@ -2250,6 +2261,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         s->sourceZ = job.sourceZ;
         s->degraded = job.degraded;
         s->overlaysOmitted = job.standIn;
+        s->presentable = job.presentable;
     }
 
     if (!mipQueue.empty()) generateMips(mipQueue);
@@ -2680,6 +2692,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         std::fprintf(stderr, "[ote] busy frame %llu pending %d fading %d tiles %d requests %d renders %d builds %d elevation %d needs %zu\n",
                      static_cast<unsigned long long>(frame_), pending ? 1 : 0, fading ? 1 : 0, tilesBusy ? 1 : 0, stats_.pendingRequests, renders, builds,
                      elevationChanged ? 1 : 0, needs_.size());
+    if (busyLog_ && busy_ && frame_ % 30 == 0) std::fprintf(stderr, "[ote]   t %.2f base %d %s\n", now(), baseLayer_, loader_.debug().c_str());
     if (trace_) {
         int waitImagery = 0, waitTerrain = 0, unrendered = 0;
         for (auto& dt : tiles) {
