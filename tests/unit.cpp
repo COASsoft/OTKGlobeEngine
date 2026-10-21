@@ -1,6 +1,7 @@
 #include "core/camera.hpp"
 #include "core/geo.hpp"
 #include "core/geoid.hpp"
+#include "core/prj.hpp"
 #include "elevation/quantized_mesh.hpp"
 #include "ote/features.hpp"
 #include "ote/astro.hpp"
