@@ -194,6 +194,38 @@ int main() {
     }
 
     {
+        auto dir = std::filesystem::temp_directory_path() / "ote_netlink";
+        std::filesystem::remove_all(dir);
+        std::filesystem::create_directories(dir / "sub");
+        auto write = [](const std::filesystem::path& p, const std::string& s) { std::ofstream(p, std::ios::binary) << s; };
+        write(dir / "sub" / "data.kml",
+              "<kml><Document><Placemark><name>Inner</name><Point><coordinates>10,20</coordinates></Point></Placemark></Document></kml>");
+        write(dir / "root.kml",
+              "<kml><Document><Placemark><name>Outer</name><Point><coordinates>1,2</coordinates></Point></Placemark>"
+              "<NetworkLink><Link><href>sub/data.kml</href></Link></NetworkLink></Document></kml>");
+        ImportResult local = importData((dir / "root.kml").string());
+        bool inner = false;
+        for (const auto& f : local.data.features) inner = inner || f.name == "Inner";
+        check(local.data.features.size() == 2 && inner, "kml network link to a local file");
+        std::string wrapper = "<kml><NetworkLink><Link><href>sub/data.kml</href></Link></NetworkLink></kml>";
+        std::filesystem::remove(dir / "wrapper.kmz");
+        mz_zip_add_mem_to_archive_file_in_place((dir / "wrapper.kmz").string().c_str(), "doc.kml", wrapper.data(), wrapper.size(), nullptr, 0,
+                                                MZ_BEST_COMPRESSION);
+        ImportResult kmz = importData((dir / "wrapper.kmz").string());
+        check(kmz.data.features.size() == 1 && kmz.data.features[0].name == "Inner", "kmz network link to a file beside it");
+        if (const char* base = std::getenv("OTE_TEST_HTTP")) {
+            write(dir / "remote.kml", std::string("<kml><NetworkLink><Link><href>") + base + "/remote/doc.kml</href></Link></NetworkLink></kml>");
+            ImportResult remote = importData((dir / "remote.kml").string());
+            bool nested = false, icon = false;
+            for (const auto& f : remote.data.features) {
+                nested = nested || f.name == "Nested";
+                icon = icon || (f.style.iconImage && f.style.iconImage->width == 16);
+            }
+            check(remote.data.features.size() == 3 && nested && icon, "kml network links over http with relative links and icons");
+        }
+    }
+
+    {
         std::string wms = "<customWmsMapSource><name>W</name><url>https://h/wms</url><layers>a</layers></customWmsMapSource>";
         check(detectFormat(std::vector<std::uint8_t>(wms.begin(), wms.end()), "w.xml") == "mobac", "mobac wms source detection");
         std::string lj = "{\"tilejson\":\"2.1.0\",\"format\":\"quantized-mesh-1.0\",\"tiles\":[\"{z}/{x}/{y}.terrain\"]}";
