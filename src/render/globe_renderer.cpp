@@ -2688,7 +2688,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 std::memcpy(uvx3, pu, sizeof(pu));
                 if (edgeBlend)
                     for (int e = 0; e < 4; ++e) lodEdges[e] = coarser[e] > 0 ? 1.0f : 0.0f;
-                morphing = morphBlend && got.level == want.level && ancestor->second.complete;
+                morphing = morphBlend && got.level == want.level && (ancestor->second.complete || ancestor->second.presentable);
                 spatial = edgeBlend || morphing;
             }
             if (got.level != want.level && blendParents_.size() < 256) blendParents_.push_back({want, dt.distance * 2.0});
