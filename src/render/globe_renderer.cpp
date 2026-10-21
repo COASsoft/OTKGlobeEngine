@@ -2195,9 +2195,10 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             if (visibleDone < 0) visibleDone = elapsedMs();
         }
         double specBudget = prefetchBudgetMs * (urgentPrefetch_ ? 3.0 : 1.0);
-        bool overBudget = renders > 0 && (elapsedMs() > budgetMs || (speculative && elapsedMs() - visibleDone > specBudget));
+        const bool holding = snapshotShown_ && snapshotFade_ < 0.0;
+        bool overBudget = renders > 0 && (elapsedMs() > budgetMs * (holding ? 2.5 : 1.0) || (speculative && elapsedMs() - visibleDone > specBudget));
         const bool placeholder = standIn(cam, needs_[i].key);
-        if (!w.render || renders >= kSurfaceRendersPerFrame || verts.size() * sizeof(float) > kSurfaceBufferBytes / 2 || overBudget) {
+        if (!w.render || renders >= kSurfaceRendersPerFrame * (holding ? 2 : 1) || verts.size() * sizeof(float) > kSurfaceBufferBytes / 2 || overBudget) {
             buildSurfaceJob(needs_[i].key, needs_[i].priority, nullptr, nullptr, nullptr, 0, placeholder);
             continue;
         }
