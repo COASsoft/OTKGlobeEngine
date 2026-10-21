@@ -412,10 +412,10 @@ void parseKmzDocument(const std::vector<std::uint8_t>& bytes, const Resolver& ou
         size_t size = 0;
         void* data = mz_zip_reader_extract_to_heap(&zip, static_cast<mz_uint>(index), &size, 0);
         if (data) {
-            Resolver resolve = [&zip](const std::string& href) {
+            Resolver resolve = [&zip, &outer](const std::string& href) {
                 std::vector<std::uint8_t> r;
                 int i = mz_zip_reader_locate_file(&zip, href.c_str(), nullptr, 0);
-                if (i < 0) return r;
+                if (i < 0) return outer ? outer(href) : r;
                 size_t n = 0;
                 void* p = mz_zip_reader_extract_to_heap(&zip, static_cast<mz_uint>(i), &n, 0);
                 if (p) {
@@ -425,11 +425,18 @@ void parseKmzDocument(const std::vector<std::uint8_t>& bytes, const Resolver& ou
                 }
                 return r;
             };
-            out = parseKmlText(static_cast<const char*>(data), size, resolve, overlays);
+            parseKmlDocument(static_cast<const char*>(data), size, resolve, baseUrl, depth, budget, out, overlays);
             mz_free(data);
         }
     }
     mz_zip_reader_end(&zip);
+}
+
+std::vector<Feature> parseKmz(const std::vector<std::uint8_t>& bytes, std::vector<GroundOverlay>* overlays = nullptr,
+                              const Resolver& outer = {}) {
+    std::vector<Feature> out;
+    KmlBudget budget;
+    parseKmzDocument(bytes, withRemoteIcons(outer), {}, 0, budget, out, overlays);
     return out;
 }
 
