@@ -145,7 +145,7 @@ TextStyle markStyle(const TileMark& m, double dpi) {
     case MarkType::Road: s = {10.5f, 0.0f, rgba(255, 255, 255, 1.0f), dark, 1.2f, 0.0f, 0.0f, 2.0f}; break;
     case MarkType::Shield: {
         const bool interstate = m.network == "us-interstate";
-        s = {9.5f, 0.0f, interstate ? rgba(255, 255, 255, 1.0f) : rgba(20, 20, 20, 1.0f), rgba(0, 0, 0, 0.0f), 0.0f, 0.05f, 0.0f, 2.0f};
+        s = {10.5f, 0.0f, interstate ? rgba(255, 255, 255, 1.0f) : rgba(20, 20, 20, 1.0f), rgba(0, 0, 0, 0.0f), 0.0f, 0.05f, 0.0f, 2.0f};
         break;
     }
     case MarkType::Place:
@@ -170,7 +170,7 @@ float markZoom(const TileMark& m) {
     case MarkType::Road: return kRoad[std::min(r, 7)];
     case MarkType::Place: return r == 0 ? 13.0f : r == 1 ? 12.0f : 11.5f;
     case MarkType::Park: return r == 0 ? 11.0f : 14.5f;
-    case MarkType::Water: return r == 0 ? 2.5f : r == 1 ? 9.0f : 11.5f;
+    case MarkType::Water: return r == 0 ? 2.5f : r == 1 ? 9.0f : 12.5f;
     case MarkType::Waterway: return r == 0 ? 12.0f : r == 1 ? 13.5f : 14.5f;
     }
     return 20.0f;
@@ -230,10 +230,9 @@ double shieldShape(int type, double u, double v) {
     if (type >= 2) {
         const double hx = 0.94, hy = 0.78, r = 0.34;
         const double qx = std::max(std::abs(u) - (hx - r), 0.0), qy = std::max(std::abs(v) - (hy - r), 0.0);
-        return std::hypot(qx, qy) - r + std::min(std::max(std::abs(u) - hx, std::abs(v) - hy), 0.0) * 0.0;
+        return std::hypot(qx, qy) - r;
     }
     const double au = std::abs(u);
-    if (v < -0.86) return -0.86 - v + (type == 0 ? 0.0 : 0.0);
     double top = type == 0 ? -0.86 + 0.09 * (1.0 - std::abs(au * 2.0 - 1.0)) : -0.86;
     if (v < top) return top - v;
     if (v <= 0.18) return au - 0.9;
@@ -555,11 +554,11 @@ void LabelLayer::drawRoads(const std::vector<RoadBatch>& batches, const GeoRect&
         const RoadStyle& s = kRoads[i];
         const float w = stop(s.zoom, s.width, zoom);
         any = any || w > 0.0f;
-        p.line[4 + i][0] = w;
-        p.line[4 + i][1] = w > 0.0f ? s.casing : 0.0f;
-        p.line[4 + i][2] = s.on;
-        p.line[4 + i][3] = s.off;
-        std::memcpy(p.color[4 + i], s.color, sizeof(p.color[4 + i]));
+        p.styles[4 + i][0] = w;
+        p.styles[4 + i][1] = w > 0.0f ? s.casing : 0.0f;
+        p.styles[4 + i][2] = s.on;
+        p.styles[4 + i][3] = s.off;
+        std::memcpy(p.colors[4 + i], s.color, sizeof(p.colors[4 + i]));
     }
     if (!any) return;
     sg_apply_pipeline(linePipeline_);
@@ -595,11 +594,11 @@ void LabelLayer::drawSurface(const GeoRect& tile, double unitDeg, double dpi) {
     for (int l = 0; l < 4; ++l) {
         const BorderStyle& s = kBorders[l];
         const bool hidden = (l == 3 && meters > kCountyMeters) || (l == 2 && meters > kStateMeters);
-        p.line[l][0] = hidden ? 0.0f : s.width;
-        p.line[l][1] = s.casing;
-        p.line[l][2] = s.on;
-        p.line[l][3] = s.off;
-        std::memcpy(p.color[l], s.color, sizeof(p.color[l]));
+        p.styles[l][0] = hidden ? 0.0f : s.width;
+        p.styles[l][1] = s.casing;
+        p.styles[l][2] = s.on;
+        p.styles[l][3] = s.off;
+        std::memcpy(p.colors[l], s.color, sizeof(p.colors[l]));
     }
     bool applied = false;
     for (const auto& [tier, cell] : scratchKeys_) {
@@ -901,7 +900,7 @@ void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dp
             if (repeated(key, c.x, c.y, 220.0f * static_cast<float>(dpi))) continue;
             if (c.x < 0 || c.y < 0 || c.x > W || c.y > H) continue;
             const int type = shieldType(m->network);
-            const float h = 17.0f * static_cast<float>(dpi);
+            const float h = 20.0f * static_cast<float>(dpi);
             const float tw = lineWidth(atlas_, m->text, scale, s.tracking);
             const float w = std::max(h * (type <= 1 ? 1.0f : 1.15f), tw + 7.0f * static_cast<float>(dpi));
             const std::array<float, 4> box{c.x - w * 0.5f - s.padding, c.y - h * 0.5f - s.padding, c.x + w * 0.5f + s.padding, c.y + h * 0.5f + s.padding};
