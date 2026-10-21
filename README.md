@@ -57,8 +57,9 @@ Website and downloads: https://grangedevgroup-code.github.io/OpenTAKEngine/
 - Tracks past their CoT stale time are drawn faded
 
 **Loading behaviour**
-- Readiness-gated refinement: a parent tile stays on screen until its children are fully loaded, so zooming never shows tiles popping in
-- Parent, child and zoom-out prefetch inside a GPU memory budget (512 MB desktop, 256 MB mobile by default), cross-fade between levels
+- Continuous level of detail: toward the edge of its detail range each surface takes on its parent's colours while keeping its own fine detail, so imagery levels coloured differently by the provider blend without tile edges, and refining or merging does not pop (`Engine::setLodMorph`, 0 to 1)
+- Missing tiles are drawn from the nearest loaded ancestor, never blank; new and upgraded tiles cross-fade, and the most urgent decoded tiles reach the GPU first
+- Parent, child and zoom-out prefetch inside a GPU memory budget (512 MB desktop, 256 MB mobile by default)
 - Separate local (cache, files) and network loader pools
 - Airgap-ready cache: expired tiles shown instantly and refreshed in the background, unreachable hosts fail fast and are re-probed, pinned region downloads that wait out outages, size limit, MBTiles/GeoPackage export and import into the cache, built-in world backdrop where nothing is cached ([docs/OFFLINE.md](docs/OFFLINE.md))
 
