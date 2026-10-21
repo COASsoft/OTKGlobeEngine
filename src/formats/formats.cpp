@@ -218,6 +218,9 @@ std::string detectFormat(const std::vector<std::uint8_t>& b, const std::string& 
         std::string head(b.begin() + static_cast<std::ptrdiff_t>(i), b.begin() + static_cast<std::ptrdiff_t>(std::min(b.size(), i + 4096)));
         if (head.find("\"asset\"") != std::string::npos && head.find("\"root\"") != std::string::npos) return "3dtiles";
         if (head.find("\"tiles\"") != std::string::npos && head.find("\"tilejson\"") != std::string::npos) return "mvt";
+        if (head.find("\"tiles\"") != std::string::npos &&
+            (head.find("quantized-mesh-1.0") != std::string::npos || head.find("heightmap-1.0") != std::string::npos))
+            return "quantized-mesh";
         return "geojson";
     }
     if (ext == ".wkt") return "wkt";
