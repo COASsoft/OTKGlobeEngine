@@ -579,8 +579,8 @@ void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dp
             }
         }
         for (size_t li = 0; li < lines.size(); ++li) {
-            float pen = s.dot > 0.0f ? textX : c.x - widths[li] * 0.5f;
-            const float baseline = c.y - (n - 1.0f) * pitch * 0.5f + static_cast<float>(li) * pitch + em * 0.36f;
+            float pen = s.dot > 0.0f ? textX : cx - widths[li] * 0.5f;
+            const float baseline = cy - (n - 1.0f) * pitch * 0.5f + static_cast<float>(li) * pitch + em * 0.36f;
             std::uint32_t prev = 0;
             for (std::uint32_t cp : GlyphAtlas::decode(std::string(lines[li]))) {
                 const GlyphAtlas::Glyph& g = atlas_.glyph(cp);
