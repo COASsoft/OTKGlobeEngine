@@ -253,8 +253,8 @@ private:
     std::shared_ptr<TileProvider> inner_;
     std::vector<std::vector<std::array<int, 4>>> available_;
     bool tms_ = true;
-    bool heightmap_ = false;
-    bool formatKnown_ = false;
+    std::atomic<bool> heightmap_{false};
+    std::atomic<bool> formatKnown_{false};
     bool metadataExt_ = false;
     std::atomic<bool> ion_{false};
     double resolvedAt_ = 0;
