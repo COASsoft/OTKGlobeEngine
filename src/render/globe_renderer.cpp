@@ -2681,8 +2681,9 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             float pu[4] = {uvx[0], uvx[1], uvx[2], uvx[3]};
             QuadKey got = source(dt.key, up, pv, pu);
             auto ancestor = got.level >= 0 ? surface_.find(got) : surface_.end();
-            const bool sameGeneration = ancestor != surface_.end() &&
-                                        (ancestor->second.version >= switchVersion_) == (shownVersion >= switchVersion_);
+            const bool ancestorCurrent = ancestor != surface_.end() && ancestor->second.version >= switchVersion_;
+            const bool sameGeneration = ancestor != surface_.end() && ancestorCurrent == (shownVersion >= switchVersion_) &&
+                                        (!retiringShown || ancestorCurrent == (rt->second.first.version >= switchVersion_));
             if (got.level >= 0 && got.level < src.level && sameGeneration) {
                 view3 = pv;
                 std::memcpy(uvx3, pu, sizeof(pu));
