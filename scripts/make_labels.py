@@ -255,31 +255,15 @@ def grid_runs(lines, size):
     for level, p, imp in lines:
         if len(p) < 2:
             continue
-        x0 = np.minimum(p[:-1, 0], p[1:, 0])
-        x1 = np.maximum(p[:-1, 0], p[1:, 0])
-        y0 = np.minimum(p[:-1, 1], p[1:, 1])
-        y1 = np.maximum(p[:-1, 1], p[1:, 1])
-        c0 = np.clip(np.floor((x0 + 180) / size), 0, ncols - 1).astype(np.int64)
-        c1 = np.clip(np.floor((x1 + 180) / size), 0, ncols - 1).astype(np.int64)
-        r0 = np.clip(np.floor((y0 + 90) / size), 0, nrows - 1).astype(np.int64)
-        r1 = np.clip(np.floor((y1 + 90) / size), 0, nrows - 1).astype(np.int64)
-        single = (c0 == c1) & (r0 == r1)
-        idx = np.arange(len(c0))
-        keys = [r0[single] * ncols + c0[single]]
-        segs = [idx[single]]
-        for i in idx[~single].tolist():
-            for r in range(int(r0[i]), int(r1[i]) + 1):
-                for c in range(int(c0[i]), int(c1[i]) + 1):
-                    keys.append(np.array([r * ncols + c]))
-                    segs.append(np.array([i]))
-        keys = np.concatenate(keys)
-        segs = np.concatenate(segs)
-        order = np.lexsort((segs, keys))
-        keys, segs = keys[order], segs[order]
-        split = np.nonzero((np.diff(keys) != 0) | (np.diff(segs) != 1))[0] + 1
-        for grp_k, grp_s in zip(np.split(keys, split), np.split(segs, split)):
-            a, b = int(grp_s[0]), int(grp_s[-1]) + 1
-            cells[int(grp_k[0])].append((level, p[a:b + 1], imp[a:b + 1]))
+        mx = (p[:-1, 0] + p[1:, 0]) * 0.5
+        my = (p[:-1, 1] + p[1:, 1]) * 0.5
+        c = np.clip(np.floor((mx + 180) / size), 0, ncols - 1).astype(np.int64)
+        r = np.clip(np.floor((my + 90) / size), 0, nrows - 1).astype(np.int64)
+        keys = r * ncols + c
+        split = np.nonzero(np.diff(keys) != 0)[0] + 1
+        bounds = np.concatenate([[0], split, [len(keys)]])
+        for a, b in zip(bounds[:-1], bounds[1:]):
+            cells[int(keys[a])].append((level, p[a:b + 1], imp[a:b + 1]))
     return cells
 
 
