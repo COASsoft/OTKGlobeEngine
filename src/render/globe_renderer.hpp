@@ -239,6 +239,7 @@ private:
                      int coarser[4]) const;
     bool ready(const QuadKey& k) const;
     bool presentable(const QuadKey& k) const;
+    int readyGap(const QuadKey& k) const;
     bool progressed(const SurfaceTile& s) const;
     void need(const QuadKey& k, double priority);
     void prefetch(const QuadKey& k, double priority) {
@@ -295,6 +296,7 @@ private:
     int baseLayer_ = 0;
     bool fadeUpgrades_ = true;
     bool busyLog_ = false;
+    int maxDive_ = 0;
     std::unordered_map<QuadKey, std::pair<SurfaceTile, double>, QuadKeyHash> retiring_;
     bool slope_ = false;
     float slopeOpacity_ = 0.6f;
