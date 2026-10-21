@@ -434,6 +434,8 @@ void parseKmlDocument(const char* text, size_t size, const Resolver& resolve, co
             f.stale = parseIsoTime(span.child_value("end"));
         }
         for (auto c : pm.children()) kmlGeometry(c, f);
+        if (models)
+            if (auto model = pm.child("Model")) kmlModel(model, resolve, f.name, *models);
         if (!f.geometries.empty()) out.push_back(std::move(f));
     }
     kmlNetworkLinks(doc, resolve, baseUrl, depth, budget, out, overlays, models);
