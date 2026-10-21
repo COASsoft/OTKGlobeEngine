@@ -208,6 +208,17 @@ int main() {
         check(!engine.featuresRegion({}, r) && std::abs(pv.gsd - 300.0 / 500.0 * 1.2) < 1e-9, "empty and single-point regions");
         std::error_code ec;
         std::filesystem::remove(path, ec);
+
+        OpenResult opened = engine.open(data("olympia.geojson"));
+        check(opened.ok && opened.plan.target == ImportTarget::Features && opened.data.features.size() == 4 && opened.hasRegion,
+              "open routes vector data to features");
+        FeatureQuery q;
+        q.nameContains = "capitol";
+        check(engine.queryFeatures(q).size() == 2, "query features in the engine");
+        OpenResult dem = engine.open(data("dem-1234-z10.pmtiles"));
+        std::vector<ElevationLayer> elev = engine.elevationLayers();
+        check(dem.ok && dem.hasRegion && !elev.empty() && elev[0].type == ElevationType::PMTiles, "open adds a pmtiles dem as elevation");
+        check(!engine.open(data("missing.kml")).ok, "open reports a missing file");
     }
 
     {
