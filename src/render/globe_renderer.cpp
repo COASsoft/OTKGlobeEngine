@@ -2224,6 +2224,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     std::vector<float> verts;
     std::vector<float> fverts;
     std::unordered_map<QuadKey, double, QuadKeyHash> jobTexel;
+    std::unordered_map<QuadKey, double, QuadKeyHash> jobLabel;
     int renders = 0;
     for (const Work& w : work) {
         size_t i = w.index;
