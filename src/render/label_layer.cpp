@@ -169,8 +169,8 @@ float markZoom(const TileMark& m) {
     case MarkType::Shield: return r == 0 ? 7.0f : r == 1 ? 8.5f : 10.5f;
     case MarkType::Road: return kRoad[std::min(r, 7)];
     case MarkType::Place: return r == 0 ? 13.0f : r == 1 ? 12.0f : 11.5f;
-    case MarkType::Park: return r == 0 ? 11.0f : 14.5f;
-    case MarkType::Water: return r == 0 ? 2.5f : r == 1 ? 9.0f : 12.5f;
+    case MarkType::Park: return r == 0 ? 6.0f : 14.5f;
+    case MarkType::Water: return r == 0 ? 2.5f : r == 1 ? 8.0f : m.zoom <= 10 ? std::max(8.0f, static_cast<float>(m.zoom)) : 12.0f;
     case MarkType::Waterway: return r == 0 ? 12.0f : r == 1 ? 13.5f : 14.5f;
     }
     return 20.0f;
