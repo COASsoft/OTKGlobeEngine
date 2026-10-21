@@ -117,9 +117,16 @@ struct GroundOverlay {
     float opacity = 1.0f;
 };
 
+struct ModelInstance {
+    std::string name;
+    std::vector<std::uint8_t> glb;
+    ModelPlacement placement;
+};
+
 struct ParsedFile {
     std::vector<Feature> features;
     std::vector<GroundOverlay> overlays;
+    std::vector<ModelInstance> models;
 };
 
 ParsedFile parseFile(const std::string& path);
