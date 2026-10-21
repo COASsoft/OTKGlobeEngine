@@ -3,8 +3,8 @@ layout(binding=0) uniform bline_params {
     vec4 xform;
     vec4 frame;
     vec4 shade;
-    vec4 line[16];
-    vec4 color[16];
+    vec4 styles[16];
+    vec4 colors[16];
 };
 
 in vec2 corner;
@@ -18,7 +18,7 @@ out vec3 dash;
 
 void main() {
     int s = int(clamp(floor(info.y + 0.5), 0.0, 15.0));
-    vec4 style = line[s];
+    vec4 style = styles[s];
     float w = style.x * frame.z;
     float c = style.y * frame.z;
     vec2 a = vec2(seg.x * frame.x, seg.y);
@@ -31,7 +31,7 @@ void main() {
     vec2 p = mix(a, b, corner.x) + n * (corner.y * half_px * frame.y);
     p.x /= frame.x;
     gl_Position = w > 0.0 ? vec4(p * xform.xy + xform.zw, 0.0, 1.0) : vec4(2.0, 2.0, 2.0, 1.0);
-    tint = color[s];
+    tint = colors[s];
     edge = shade;
     dist = vec4(corner.y * half_px, (info.x + corner.x * len) / frame.y, w * 0.5, c);
     dash = vec3(style.z * frame.z, style.w * frame.z, frame.w);
