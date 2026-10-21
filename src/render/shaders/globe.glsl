@@ -41,6 +41,7 @@ void main() {
         mw = clamp((morph.y - morph.x * facing / d) / morph.z, 0.0, 1.0) * morph.w;
     }
     morphw = mw;
+    sgain = morph.w;
     light = shade;
     elev = height;
     float w = 1.0;
