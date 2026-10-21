@@ -170,6 +170,7 @@ public final class OTKGlobeView: OTEPlatformView, MTKViewDelegate {
         get { otk_labels(engine) != 0 }
         set { otk_set_labels(engine, newValue ? 1 : 0) }
     }
+    public func setLabelsSource(_ urlOrPath: String) { otk_set_labels_source(engine, urlOrPath) }
     public static func formatCoordinate(lat: Double, lon: Double, format: otk_coordinate_format, precision: Int32 = -1) -> String {
         var buffer = [CChar](repeating: 0, count: 128)
         otk_format_coordinate(lat, lon, format, precision, &buffer, Int32(buffer.count))
