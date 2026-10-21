@@ -1,6 +1,6 @@
 #include "core/geo.hpp"
 
-namespace ote {
+namespace otk {
 
 Vec3 geodeticToEcef(double latDeg, double lonDeg, double h) {
     double lat = latDeg * kDegToRad;

@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-namespace ote {
+namespace otk {
 
 bool codecSupported(const char* extension);
 bool decodeMeshopt(cgltf_data* data);

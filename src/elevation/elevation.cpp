@@ -9,7 +9,7 @@
 #include "raster/vector_tile.hpp"
 #include "raster/tile_provider.hpp"
 
-#include "ote/image.hpp"
+#include "otk/image.hpp"
 
 #include <json.hpp>
 
@@ -25,7 +25,7 @@
 #include <list>
 #include <map>
 
-namespace ote {
+namespace otk {
 
 namespace {
 
@@ -131,7 +131,7 @@ private:
         bool offline = offline_ && offline_->load();
         bool useCache = cache_ && cache_->isOpen() && layer_.cache;
         if (!offline) {
-            net::Response r = net::get(url, "OpenTAKEngine/0.1", headers);
+            net::Response r = net::get(url, "OTKGlobeEngine/0.1", headers);
             if (r.status == 200 && !r.body.empty()) {
                 body = std::move(r.body);
                 if (useCache) cache_->put(cacheKey, -1, 0, 0, body, std::int64_t(1) << 50, true);

@@ -1,13 +1,13 @@
 #pragma once
 
-#include "ote/features.hpp"
-#include "ote/layers.hpp"
+#include "otk/features.hpp"
+#include "otk/layers.hpp"
 
 #include <memory>
 #include <string>
 #include <vector>
 
-namespace ote {
+namespace otk {
 
 struct LineOfSight {
     bool visible = true;

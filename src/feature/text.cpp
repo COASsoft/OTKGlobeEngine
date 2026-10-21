@@ -7,7 +7,7 @@
 #include <cstddef>
 #include <memory>
 
-namespace ote {
+namespace otk {
 
 namespace embedded {
 extern const unsigned char font_bold[];

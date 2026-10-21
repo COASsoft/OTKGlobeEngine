@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace ote {
+namespace otk {
 
 bool decodeQuantizedMesh(const std::vector<std::uint8_t>& data, double west, double south, double east, double north,
                          int gridSize, HeightGrid& out);

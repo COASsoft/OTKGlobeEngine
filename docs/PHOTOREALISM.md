@@ -1,6 +1,6 @@
 # Photorealistic 3D
 
-Photorealism in OpenTAKEngine comes from photogrammetry and photorealistic 3D Tiles drawn on top of the imagery-draped terrain. Imagery and photogrammetry already contain real lighting, so they are drawn without extra shading; CAD-style models get physically based materials and optional sun lighting.
+Photorealism in OTKGlobeEngine comes from photogrammetry and photorealistic 3D Tiles drawn on top of the imagery-draped terrain. Imagery and photogrammetry already contain real lighting, so they are drawn without extra shading; CAD-style models get physically based materials and optional sun lighting.
 
 ## Sources
 
@@ -9,9 +9,9 @@ Photorealism in OpenTAKEngine comes from photogrammetry and photorealistic 3D Ti
 | Your own photogrammetry or LiDAR mesh (drone, aircraft, satellite stereo) | `addTileset("area.3tz")` or a `tileset.json` folder | Yes | The airgapped option. Build 3D Tiles with OpenDroneMap, Pix4D, Agisoft Metashape, RealityCapture or Cesium's tilers; Draco meshes and KTX2 textures keep packages small. |
 | Google Photorealistic 3D Tiles | `addTileset("https://tile.googleapis.com/v1/3dtiles/root.json?key=KEY")` | No | Needs the Map Tiles API. Session tokens and the key are carried to every child request. Google's terms do not allow storing the tiles, so they are not written to the offline cache. Show `Engine::credits()` and the Google logo on screen. |
 | Cesium ion assets | `addTileset("ion://ASSET_ID?access_token=TOKEN")` | Partly | The endpoint, its bearer token and token refresh are handled. Content is cached, and the endpoint answer is cached too so a cached asset opens without a network. |
-| Any 3D Tiles server needing headers | `TilesetOptions::headers`, `ote_add_tileset_ex` | Yes | For example `Authorization: Bearer ...` or an API-key header. |
+| Any 3D Tiles server needing headers | `TilesetOptions::headers`, `otk_add_tileset_ex` | Yes | For example `Authorization: Bearer ...` or an API-key header. |
 
-`Engine::credits()` (`ote_credits`) returns the attributions for what is on screen, most frequent first, from glTF `asset.copyright` and ion attributions. Providers such as Google require them to be visible.
+`Engine::credits()` (`otk_credits`) returns the attributions for what is on screen, most frequent first, from glTF `asset.copyright` and ion attributions. Providers such as Google require them to be visible.
 
 ## Rendering
 

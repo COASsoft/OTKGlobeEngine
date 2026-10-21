@@ -2,7 +2,7 @@
 
 #include "core/math.hpp"
 
-namespace ote {
+namespace otk {
 
 constexpr double kWgs84A = 6378137.0;
 constexpr double kWgs84F = 1.0 / 298.257223563;

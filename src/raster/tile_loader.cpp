@@ -10,13 +10,13 @@
 #include "raster/tile_package.hpp"
 #include "net/http.hpp"
 
-#include "ote/image.hpp"
+#include "otk/image.hpp"
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 
-namespace ote {
+namespace otk {
 
 namespace {
 
@@ -403,7 +403,7 @@ void TileLoader::finish(const TileId& id, int gen, const std::shared_ptr<TilePro
                         ++placeholders_;
 #if defined(__ANDROID__)
                         if (placeholders_ <= 8)
-                            __android_log_print(ANDROID_LOG_INFO, "OpenTAKEngine", "placeholder layer %d z%d %d/%d bytes %zu status %d", id.layer, id.z,
+                            __android_log_print(ANDROID_LOG_INFO, "OTKGlobeEngine", "placeholder layer %d z%d %d/%d bytes %zu status %d", id.layer, id.z,
                                                 id.x, id.y, res.data.size(), res.status);
 #endif
                         revoke = seen.ids;
@@ -505,7 +505,7 @@ void TileLoader::runNetwork() {
             if (!woke) {
                 if (net::hostsDown() > 0 && !probing_.exchange(true)) {
                     lock.unlock();
-                    net::probeDueHosts("OpenTAKEngine/0.1");
+                    net::probeDueHosts("OTKGlobeEngine/0.1");
                     probing_ = false;
                 }
                 continue;

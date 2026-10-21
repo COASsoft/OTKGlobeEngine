@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace ote {
+namespace otk {
 
 struct PrjTransform {
     enum class Kind { Geographic, TransverseMercator, LambertConformalConic, Albers, Mercator, WebMercator, Unsupported };

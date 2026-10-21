@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace ote {
+namespace otk {
 
 using AssetReader = std::function<std::vector<std::uint8_t>(const std::string&)>;
 

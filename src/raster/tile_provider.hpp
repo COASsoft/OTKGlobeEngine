@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ote/engine.hpp"
+#include "otk/engine.hpp"
 #include "raster/tile_matrix.hpp"
 
 #include <atomic>
@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-namespace ote {
+namespace otk {
 
 class TileCache;
 

@@ -8,7 +8,7 @@
 #define CGLTF_IMPLEMENTATION
 #include <cgltf.h>
 #include <json.hpp>
-#include "ote/image.hpp"
+#include "otk/image.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -18,7 +18,7 @@
 #include <map>
 #include <tuple>
 
-namespace ote {
+namespace otk {
 
 namespace {
 

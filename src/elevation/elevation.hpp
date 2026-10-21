@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ote/engine.hpp"
+#include "otk/engine.hpp"
 #include "raster/tile_loader.hpp"
 #include "raster/tile_matrix.hpp"
 
@@ -15,7 +15,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace ote {
+namespace otk {
 
 class TileCache;
 

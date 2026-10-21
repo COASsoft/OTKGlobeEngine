@@ -2,7 +2,7 @@
 
 #include "db/sqlite.hpp"
 
-#include "ote/image.hpp"
+#include "otk/image.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -10,7 +10,7 @@
 #include <cstdio>
 #include <filesystem>
 
-namespace ote {
+namespace otk {
 
 namespace {
 

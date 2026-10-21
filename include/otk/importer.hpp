@@ -1,11 +1,11 @@
 #pragma once
 
-#include "ote/layers.hpp"
+#include "otk/layers.hpp"
 
 #include <string>
 #include <vector>
 
-namespace ote {
+namespace otk {
 
 enum class ImportTarget { Features, Imagery, Elevation, Tileset, PointCloud, Model, Iconset, Unsupported };
 

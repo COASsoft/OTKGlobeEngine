@@ -5,12 +5,12 @@
 #endif
 #if defined(SOKOL_GLES3)
 #include <GLES3/gl3.h>
-#define OTE_GL_MIPS 1
+#define OTK_GL_MIPS 1
 #elif defined(SOKOL_GLCORE) && !defined(_WIN32) && !defined(__APPLE__)
 #define GL_GLEXT_PROTOTYPES
 #include <GL/gl.h>
 #include <GL/glext.h>
-#define OTE_GL_MIPS 1
+#define OTK_GL_MIPS 1
 #endif
 #if defined(_WIN32)
 #ifndef NOMINMAX
@@ -53,14 +53,14 @@
 #include <limits>
 #include <unordered_set>
 
-#if defined(OTE_EMBED_BACKDROP)
-namespace ote::embedded {
+#if defined(OTK_EMBED_BACKDROP)
+namespace otk::embedded {
 extern const unsigned char world_backdrop[];
 extern const std::size_t world_backdrop_size;
 }
 #endif
 
-namespace ote {
+namespace otk {
 
 namespace {
 
@@ -123,21 +123,21 @@ bool GlobeRenderer::init() {
     fitPools();
     sg_enable_stats();
     sg_backend backend = sg_query_backend();
-    holeMarker_ = std::getenv("OTE_HOLES") != nullptr;
-    if (const char* v = std::getenv("OTE_LOD_BLEND")) lodBlend_ = std::atoi(v) != 0;
-    if (const char* v = std::getenv("OTE_UPGRADE_FADE")) fadeUpgrades_ = std::atoi(v) != 0;
-    busyLog_ = std::getenv("OTE_BUSY_LOG") != nullptr;
-    if (const char* v = std::getenv("OTE_MAX_DIVE")) maxDive_ = std::atoi(v);
-    if (const char* v = std::getenv("OTE_LOD_MORPH")) lodMorph_ = std::clamp(std::atof(v), 0.0, 1.0);
-    if (const char* v = std::getenv("OTE_MARGIN")) marginPrefetch_ = std::max(1.0, std::atof(v));
-    if (std::getenv("OTE_DIAG")) diagnostics_ = true;
-    if (const char* pp = std::getenv("OTE_PROFILE")) {
+    holeMarker_ = std::getenv("OTK_HOLES") != nullptr;
+    if (const char* v = std::getenv("OTK_LOD_BLEND")) lodBlend_ = std::atoi(v) != 0;
+    if (const char* v = std::getenv("OTK_UPGRADE_FADE")) fadeUpgrades_ = std::atoi(v) != 0;
+    busyLog_ = std::getenv("OTK_BUSY_LOG") != nullptr;
+    if (const char* v = std::getenv("OTK_MAX_DIVE")) maxDive_ = std::atoi(v);
+    if (const char* v = std::getenv("OTK_LOD_MORPH")) lodMorph_ = std::clamp(std::atof(v), 0.0, 1.0);
+    if (const char* v = std::getenv("OTK_MARGIN")) marginPrefetch_ = std::max(1.0, std::atof(v));
+    if (std::getenv("OTK_DIAG")) diagnostics_ = true;
+    if (const char* pp = std::getenv("OTK_PROFILE")) {
         profiling_ = true;
         profilePath_ = pp;
     }
-#if defined(OTE_GL_MIPS)
+#if defined(OTK_GL_MIPS)
     glMips_ = backend == SG_BACKEND_GLES3 || backend == SG_BACKEND_GLCORE;
-    if (const char* v = std::getenv("OTE_BOX_MIPS")) glMips_ = glMips_ && std::atoi(v) == 0;
+    if (const char* v = std::getenv("OTK_BOX_MIPS")) glMips_ = glMips_ && std::atoi(v) == 0;
 #endif
     flipSurface_ = backend == SG_BACKEND_D3D11 || backend == SG_BACKEND_METAL_IOS ||
                    backend == SG_BACKEND_METAL_MACOS || backend == SG_BACKEND_METAL_SIMULATOR ||
@@ -502,7 +502,7 @@ void GlobeRenderer::setOffline(bool offline) {
 sg_view GlobeRenderer::backdrop() {
     if (backdropTried_ || !backdropEnabled_) return backdropView_;
     backdropTried_ = true;
-#if defined(OTE_EMBED_BACKDROP)
+#if defined(OTK_EMBED_BACKDROP)
     int w = 0, h = 0, n = 0;
     unsigned char* px = stbi_load_from_memory(embedded::world_backdrop, static_cast<int>(embedded::world_backdrop_size), &w, &h, &n, 4);
     if (!px) return backdropView_;
@@ -1774,7 +1774,7 @@ bool GlobeRenderer::buildSurfaceJob(const QuadKey& k, double priority, SurfaceJo
 }
 
 void GlobeRenderer::generateMips(const std::vector<sg_image>& images) {
-#if defined(OTE_GL_MIPS)
+#if defined(OTK_GL_MIPS)
     for (const sg_image& img : images) {
         sg_gl_image_info info = sg_gl_query_image_info(img);
         GLuint tex = info.tex[info.active_slot];
@@ -1805,7 +1805,7 @@ double GlobeRenderer::videoMemoryMb() {
     }
     dxgi->Release();
     return mb;
-#elif defined(OTE_GL_MIPS) && !defined(SOKOL_GLES3)
+#elif defined(OTK_GL_MIPS) && !defined(SOKOL_GLES3)
     GLint kb = 0;
     while (glGetError() != GL_NO_ERROR) {
     }
@@ -1847,9 +1847,9 @@ void GlobeRenderer::diag(const char* fmt, ...) const {
     std::vsnprintf(buf, sizeof(buf), fmt, ap);
     va_end(ap);
 #if defined(__ANDROID__)
-    __android_log_write(ANDROID_LOG_INFO, "OpenTAKEngine", buf);
+    __android_log_write(ANDROID_LOG_INFO, "OTKGlobeEngine", buf);
 #else
-    if (const char* path = std::getenv("OTE_DIAG")) {
+    if (const char* path = std::getenv("OTK_DIAG")) {
         if (FILE* f = std::fopen(path, "a")) {
             std::fputs(buf, f);
             std::fputc(10, f);
@@ -1911,7 +1911,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     profileStart_ = frameStart_;
     profileLast_ = 0;
     if (!trace_)
-        if (const char* path = std::getenv("OTE_TRACE")) trace_ = std::fopen(path, "w");
+        if (const char* path = std::getenv("OTK_TRACE")) trace_ = std::fopen(path, "w");
     ++frame_;
     const bool capture = snapshotWanted_ && !views && lastIncompleteFraction_ < 0.3 && ensureSnapshotTarget(width, height);
     snapshotWanted_ = false;
@@ -2957,10 +2957,10 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     viewComplete_ = incomplete == 0;
     busy_ = pending || fading || snapshotShown_ || tilesBusy || stats_.pendingRequests > 0 || renders > 0 || builds > 0 || elevationChanged;
     if (busyLog_ && busy_ && frame_ % 30 == 0)
-        std::fprintf(stderr, "[ote] busy frame %llu pending %d fading %d tiles %d requests %d renders %d builds %d elevation %d needs %zu\n",
+        std::fprintf(stderr, "[otk] busy frame %llu pending %d fading %d tiles %d requests %d renders %d builds %d elevation %d needs %zu\n",
                      static_cast<unsigned long long>(frame_), pending ? 1 : 0, fading ? 1 : 0, tilesBusy ? 1 : 0, stats_.pendingRequests, renders, builds,
                      elevationChanged ? 1 : 0, needs_.size());
-    if (busyLog_ && busy_ && frame_ % 30 == 0) std::fprintf(stderr, "[ote]   t %.2f base %d %s\n", now(), baseLayer_, loader_.debug().c_str());
+    if (busyLog_ && busy_ && frame_ % 30 == 0) std::fprintf(stderr, "[otk]   t %.2f base %d %s\n", now(), baseLayer_, loader_.debug().c_str());
     if (trace_) {
         int waitImagery = 0, waitTerrain = 0, unrendered = 0;
         for (auto& dt : tiles) {
@@ -2976,7 +2976,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                      now(), static_cast<unsigned long long>(frame_), tiles.size(), needs_.size(), work.size(), renders, builds,
                      loader_.pending(), elevation_.pending(), incomplete, waitImagery, unrendered, waitTerrain, maxLevel,
                      cam.gsd);
-        if (std::getenv("OTE_TRACE_TILES")) {
+        if (std::getenv("OTK_TRACE_TILES")) {
             GeoPoint eg = ecefToGeodetic(cam.eye());
             std::fprintf(trace_, "  eye %.5f %.5f alt %.1f ground %.1f\n", eg.lat, eg.lon, eg.alt, elevationAt(eg.lat, eg.lon));
             for (size_t i = 0; i < tiles.size() && i < 6; ++i) {

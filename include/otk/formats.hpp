@@ -4,9 +4,9 @@
 #include <string>
 #include <vector>
 
-#include "ote/features.hpp"
+#include "otk/features.hpp"
 
-namespace ote {
+namespace otk {
 
 enum class DataKind { Vector, Raster, Elevation, Model, PointCloud, Tiles, Package, Stream };
 

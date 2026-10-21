@@ -7,7 +7,7 @@
 
 #include <functional>
 
-namespace ote {
+namespace otk {
 
 class Camera {
 public:

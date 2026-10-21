@@ -1,10 +1,10 @@
-#include "ote/elevation.hpp"
-#include "ote/feature_query.hpp"
-#include "ote/formats.hpp"
-#include "ote/importer.hpp"
-#include "ote/layers.hpp"
-#include "ote/mgrs.hpp"
-#include "ote/navigation.hpp"
+#include "otk/elevation.hpp"
+#include "otk/feature_query.hpp"
+#include "otk/formats.hpp"
+#include "otk/importer.hpp"
+#include "otk/layers.hpp"
+#include "otk/mgrs.hpp"
+#include "otk/navigation.hpp"
 
 #include <cmath>
 #include <cstdio>
@@ -21,12 +21,12 @@ void check(bool ok, const char* what) {
     if (!ok) ++failures;
 }
 
-std::string data(const char* name) { return std::string(OTE_TEST_DATA) + "/" + name; }
+std::string data(const char* name) { return std::string(OTK_TEST_DATA) + "/" + name; }
 
 }
 
 int main() {
-    using namespace ote;
+    using namespace otk;
 
     ImportResult geo = importData(data("olympia.geojson"));
     check(geo.ok && geo.data.features.size() == 4, "geojson import");
@@ -88,14 +88,14 @@ int main() {
     check(mobac.target == ImportTarget::Imagery && mobac.imagery.size() == 2, "import plan for a mobac source");
     check(planImport(data("pyramid.gltf")).target == ImportTarget::Model, "import plan for a model");
     std::error_code ec;
-    auto tileset = std::filesystem::temp_directory_path() / "ote_kernel_tileset";
+    auto tileset = std::filesystem::temp_directory_path() / "otk_kernel_tileset";
     std::filesystem::create_directories(tileset, ec);
     std::ofstream(tileset / "tileset.json") << R"({"asset":{"version":"1.0"},"geometricError":10,"root":{"geometricError":0}})";
     ImportPlan ts = planImport(tileset.string());
     check(ts.target == ImportTarget::Tileset && ts.resource.size() > 12 && ts.resource.substr(ts.resource.size() - 12) == "tileset.json",
           "import plan for a 3d tiles folder");
     std::filesystem::remove_all(tileset, ec);
-    auto dir = std::filesystem::temp_directory_path() / "ote_kernel_terrain";
+    auto dir = std::filesystem::temp_directory_path() / "otk_kernel_terrain";
     std::filesystem::create_directories(dir, ec);
     std::ofstream(dir / "layer.json") << R"({"format":"quantized-mesh-1.0","tiles":["{z}/{x}/{y}.terrain"],"bounds":[-123,46,-122,47]})";
     ImportPlan terrain = planImport(dir.string());
@@ -112,6 +112,24 @@ int main() {
           "mgrs round trip");
     GeodesicLine line = geodesicInverse(47.0359, -122.9049, 46.9694, -122.9027);
     check(std::abs(line.distance - 7393.0) < 15.0, "geodesic distance");
+
+    std::string legacy = R"(<event version="2.0" uid="u1" type="a-f-G" how="m-g" time="2026-01-01T00:00:00Z" start="2026-01-01T00:00:00Z" )"
+                         R"(stale="2026-01-02T00:00:00Z"><point lat="47" lon="-122" hae="0" ce="10" le="10"/><detail>)"
+                         R"(<__ote_attributes><a k="unit" v="alpha"/></__ote_attributes></detail></event>)";
+    auto hasUnit = [](const ImportResult& r) {
+        if (!r.ok || r.data.features.size() != 1) return false;
+        for (const auto& a : r.data.features[0].attributes)
+            if (a.first == "unit" && a.second == "alpha") return true;
+        return false;
+    };
+    ImportResult old = importBytes(std::vector<std::uint8_t>(legacy.begin(), legacy.end()), "cot");
+    check(hasUnit(old), "cot attributes written by 0.1.0");
+    check(hasUnit(importBytes(exportBytes(old.data.features, "cot"), "cot")), "cot detail written back unchanged");
+    std::vector<Feature> fresh = old.data.features;
+    std::erase_if(fresh[0].attributes, [](const auto& kv) { return kv.first == "cot:detail"; });
+    std::vector<std::uint8_t> rewritten = exportBytes(fresh, "cot");
+    std::string text(rewritten.begin(), rewritten.end());
+    check(hasUnit(importBytes(rewritten, "cot")) && text.find("__otk_attributes") != std::string::npos, "cot attributes round trip");
 
     std::printf("%d failure(s)\n", failures);
     return failures == 0 ? 0 : 1;

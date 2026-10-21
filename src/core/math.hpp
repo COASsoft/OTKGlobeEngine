@@ -3,7 +3,7 @@
 #include <array>
 #include <cmath>
 
-namespace ote {
+namespace otk {
 
 constexpr double kPi = 3.14159265358979323846;
 constexpr double kDegToRad = kPi / 180.0;

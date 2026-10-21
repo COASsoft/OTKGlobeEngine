@@ -1,4 +1,4 @@
-function(ote_embed target symbol file)
+function(otk_embed target symbol file)
     get_filename_component(abs "${file}" ABSOLUTE)
     set(out "${CMAKE_CURRENT_BINARY_DIR}/embed/${symbol}.cpp")
     add_custom_command(

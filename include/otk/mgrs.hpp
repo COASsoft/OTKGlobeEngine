@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace ote {
+namespace otk {
 
 struct Utm {
     int zone = 0;

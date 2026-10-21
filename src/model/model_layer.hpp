@@ -2,7 +2,7 @@
 
 #include "core/camera.hpp"
 #include "feature/feature_layer.hpp"
-#include "ote/features.hpp"
+#include "otk/features.hpp"
 
 #include <sokol_gfx.h>
 
@@ -14,7 +14,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace ote {
+namespace otk {
 
 struct CpuImage {
     int width = 0;

@@ -13,7 +13,7 @@
 #include <limits>
 #include <mutex>
 
-namespace ote {
+namespace otk {
 
 namespace {
 

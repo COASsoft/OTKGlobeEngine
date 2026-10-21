@@ -1,4 +1,4 @@
-#include "ote/features.hpp"
+#include "otk/features.hpp"
 
 #include "core/prj.hpp"
 #include "gdal/gdal_sources.hpp"
@@ -6,7 +6,7 @@
 #include "net/http.hpp"
 
 #include <json.hpp>
-#include "ote/image.hpp"
+#include "otk/image.hpp"
 #include <miniz.h>
 #include <pugixml.hpp>
 
@@ -20,7 +20,7 @@
 #include <map>
 #include <sstream>
 
-namespace ote {
+namespace otk {
 
 namespace {
 
@@ -228,7 +228,7 @@ std::string joinUrl(const std::string& base, const std::string& href) {
 
 std::vector<std::uint8_t> httpGet(const std::string& url) {
     if (!remoteHref(url) || !net::hostAvailable(url)) return {};
-    net::Response r = net::get(url, "OpenTAKEngine/0.1");
+    net::Response r = net::get(url, "OTKGlobeEngine/0.1");
     if (r.status != 200 || r.body.size() > (std::size_t(64) << 20)) return {};
     return std::move(r.body);
 }
@@ -275,7 +275,7 @@ void kmlNetworkLinks(const pugi::xml_document& doc, const Resolver& resolve, con
             std::string query = trimmed(link.child_value("httpQuery"));
             std::string extra = format + (format.empty() || query.empty() ? "" : "&") + query;
             for (auto [k, v] : {std::pair{"[bboxWest]", "-180"}, {"[bboxSouth]", "-90"}, {"[bboxEast]", "180"}, {"[bboxNorth]", "90"},
-                                {"[lookatLon]", "0"}, {"[lookatLat]", "0"}, {"[clientVersion]", "1"}, {"[clientName]", "OpenTAKEngine"},
+                                {"[lookatLon]", "0"}, {"[lookatLat]", "0"}, {"[clientVersion]", "1"}, {"[clientName]", "OTKGlobeEngine"},
                                 {"[language]", "en"}, {"[kmlVersion]", "2.2"}})
                 for (size_t p; (p = extra.find(k)) != std::string::npos;) extra.replace(p, std::strlen(k), v);
             if (!extra.empty()) url += (url.find('?') == std::string::npos ? "?" : "&") + extra;

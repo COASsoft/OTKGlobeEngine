@@ -22,7 +22,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace ote {
+namespace otk {
 
 struct QuadKey {
     int level = 0;
@@ -63,7 +63,7 @@ public:
     bool reachabilityChanged() const;
     void setOffline(bool offline);
     int fetch(const std::string& url, std::vector<std::uint8_t>& body, const FetchOptions& options) {
-        return fetchUrl(url, body, options, cache_.isOpen() ? &cache_ : nullptr, &offline_, "OpenTAKEngine/0.1");
+        return fetchUrl(url, body, options, cache_.isOpen() ? &cache_ : nullptr, &offline_, "OTKGlobeEngine/0.1");
     }
     void retryUnavailable();
     void setBackdrop(bool enabled) { backdropEnabled_ = enabled; }

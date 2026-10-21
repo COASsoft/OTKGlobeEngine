@@ -1,6 +1,6 @@
-#include "ote/navigation.hpp"
+#include "otk/navigation.hpp"
 
-#include "ote/mgrs.hpp"
+#include "otk/mgrs.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -11,7 +11,7 @@
 #include <ctime>
 #include <unordered_map>
 
-namespace ote {
+namespace otk {
 
 namespace {
 

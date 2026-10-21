@@ -2,7 +2,7 @@
 
 #include "core/camera.hpp"
 #include "feature/text.hpp"
-#include "ote/features.hpp"
+#include "otk/features.hpp"
 
 #include <sokol_gfx.h>
 
@@ -12,7 +12,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace ote {
+namespace otk {
 
 struct GeoRect {
     double west = 0, south = 0, east = 0, north = 0;

@@ -1,4 +1,4 @@
-#include "ote/elevation.hpp"
+#include "otk/elevation.hpp"
 
 #include "core/geo.hpp"
 #include "core/geoid.hpp"
@@ -11,7 +11,7 @@
 #include <limits>
 #include <mutex>
 
-namespace ote {
+namespace otk {
 
 struct ElevationService::Impl {
     explicit Impl(int threads) : manager(std::max(threads, 1)) {}

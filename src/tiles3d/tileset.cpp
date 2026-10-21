@@ -17,7 +17,7 @@
 #include <functional>
 #include <map>
 
-namespace ote {
+namespace otk {
 
 class TileSource {
 public:
@@ -136,13 +136,13 @@ public:
             std::lock_guard lock(mutex_);
             headers = headers_;
         }
-        net::Response r = net::get(path, "OpenTAKEngine/0.1", headers);
+        net::Response r = net::get(path, "OTKGlobeEngine/0.1", headers);
         if (r.status == 401 && refresh_) {
             std::lock_guard lock(mutex_);
             if (headers_ == headers && !refresh_(headers_)) return {};
             headers = headers_;
         }
-        if (r.status == 401 && refresh_) r = net::get(path, "OpenTAKEngine/0.1", headers);
+        if (r.status == 401 && refresh_) r = net::get(path, "OTKGlobeEngine/0.1", headers);
         if (r.status != 200 || r.body.empty()) {
             transient = r.status <= 0 || r.status == 401 || r.status == 408 || r.status == 429 || r.status >= 500;
             return {};
@@ -452,7 +452,7 @@ Tileset3D::Tileset3D(const std::string& uri, const TilesetOptions& options, Tile
             std::vector<std::uint8_t> body;
             bool online = !(offline && offline->load());
             if (online) {
-                net::Response r = net::get(endpoint, "OpenTAKEngine/0.1");
+                net::Response r = net::get(endpoint, "OTKGlobeEngine/0.1");
                 if (r.status == 200 && !r.body.empty()) {
                     body = std::move(r.body);
                     if (cache && cache->isOpen()) cache->put(cacheKey, -1, 0, 0, body, std::int64_t(1) << 50, true);

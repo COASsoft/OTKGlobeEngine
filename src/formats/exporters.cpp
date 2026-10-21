@@ -4,7 +4,7 @@
 
 #include <cstdio>
 
-namespace ote::adapters {
+namespace otk::adapters {
 
 std::string xmlEscape(const std::string& s) {
     std::string out;
@@ -53,7 +53,7 @@ std::string uniqueId(const Feature& f, size_t index) {
             mix(buf);
         }
     char buf[48];
-    std::snprintf(buf, sizeof(buf), "OTE-%016llx-%zu", static_cast<unsigned long long>(h), index);
+    std::snprintf(buf, sizeof(buf), "OTK-%016llx-%zu", static_cast<unsigned long long>(h), index);
     return buf;
 }
 
@@ -248,7 +248,7 @@ std::string writeGpx(const std::vector<Feature>& fs, ExportResult& r) {
     if (polyLoss) r.lossy.push_back("GPX has no polygons; polygon outlines written as closed tracks and holes dropped");
     if (attrLoss) r.lossy.push_back("GPX has no generic attributes; attributes dropped");
     r.lossy.push_back("GPX has no styles");
-    return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<gpx version=\"1.1\" creator=\"OpenTAKEngine\" xmlns=\"http://www.topografix.com/GPX/1/1\">\n" +
+    return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<gpx version=\"1.1\" creator=\"OTKGlobeEngine\" xmlns=\"http://www.topografix.com/GPX/1/1\">\n" +
            wpt + trk + "</gpx>\n";
 }
 

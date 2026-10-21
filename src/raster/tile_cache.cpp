@@ -4,7 +4,7 @@
 #include <cstdio>
 #include <filesystem>
 
-namespace ote {
+namespace otk {
 
 namespace {
 

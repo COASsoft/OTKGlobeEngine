@@ -3,12 +3,12 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
-#include "ote/input.hpp"
+#include "otk/input.hpp"
 
 namespace {
 
 WNDPROC original = nullptr;
-ote::InputController* target = nullptr;
+otk::InputController* target = nullptr;
 
 LRESULT CALLBACK pointerProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     if (target && (msg == WM_POINTERDOWN || msg == WM_POINTERUPDATE || msg == WM_POINTERUP || msg == WM_POINTERCAPTURECHANGED)) {
@@ -25,7 +25,7 @@ LRESULT CALLBACK pointerProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
                 POINT pt = info.ptPixelLocation;
                 ScreenToClient(hwnd, &pt);
                 double x = pt.x, y = pt.y;
-                ote::PointerType pt2 = type == PT_PEN ? ote::PointerType::Pen : ote::PointerType::Touch;
+                otk::PointerType pt2 = type == PT_PEN ? otk::PointerType::Pen : otk::PointerType::Touch;
                 if (msg == WM_POINTERDOWN) target->pointerDown(key, x, y, pt2);
                 else if (msg == WM_POINTERUPDATE) target->pointerMove(key, x, y);
                 else target->pointerUp(key, x, y);
@@ -38,7 +38,7 @@ LRESULT CALLBACK pointerProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
 
 }
 
-void installPointerInput(const void* hwnd, ote::InputController* input) {
+void installPointerInput(const void* hwnd, otk::InputController* input) {
     HWND h = static_cast<HWND>(const_cast<void*>(hwnd));
     if (!h || original) return;
     target = input;

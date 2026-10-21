@@ -1,30 +1,45 @@
-#include "ote/layers.hpp"
+#include "otk/layers.hpp"
 
 #include "core/geoid.hpp"
 #include "net/http.hpp"
-#include "ote/image.hpp"
+#include "otk/image.hpp"
 
 #include <cstdlib>
+#include <filesystem>
 #include <string>
 
-namespace ote {
+namespace otk {
 
 void setAndroidJavaVm(void* vm) { net::setJavaVm(vm); }
 
 double geoidOffset(double lat, double lon) { return geoidHeight(lat, lon); }
 
-std::string defaultCacheDirectory() {
+namespace {
+
+std::string cacheDirectoryFor(const char* name) {
 #if defined(_WIN32)
-    if (const char* la = std::getenv("LOCALAPPDATA"); la && *la) return std::string(la) + "/OpenTAKEngine";
+    if (const char* la = std::getenv("LOCALAPPDATA"); la && *la) return std::string(la) + "/" + name;
 #elif defined(__ANDROID__)
     return {};
 #elif defined(__APPLE__)
-    if (const char* home = std::getenv("HOME"); home && *home) return std::string(home) + "/Library/Application Support/OpenTAKEngine";
+    if (const char* home = std::getenv("HOME"); home && *home) return std::string(home) + "/Library/Application Support/" + name;
 #else
-    if (const char* xdg = std::getenv("XDG_CACHE_HOME"); xdg && *xdg) return std::string(xdg) + "/OpenTAKEngine";
-    if (const char* home = std::getenv("HOME"); home && *home) return std::string(home) + "/.cache/OpenTAKEngine";
+    if (const char* xdg = std::getenv("XDG_CACHE_HOME"); xdg && *xdg) return std::string(xdg) + "/" + name;
+    if (const char* home = std::getenv("HOME"); home && *home) return std::string(home) + "/.cache/" + name;
 #endif
     return {};
+}
+
+}
+
+std::string defaultCacheDirectory() {
+    std::string dir = cacheDirectoryFor("OTKGlobeEngine");
+    std::string old = cacheDirectoryFor("OpenTAKEngine");
+    std::error_code ec;
+    if (!dir.empty() && !old.empty() && !std::filesystem::exists(std::filesystem::u8path(dir), ec) &&
+        std::filesystem::is_directory(std::filesystem::u8path(old), ec))
+        std::filesystem::rename(std::filesystem::u8path(old), std::filesystem::u8path(dir), ec);
+    return dir;
 }
 
 std::vector<ElevationLayer> defaultElevation() {

@@ -1,8 +1,8 @@
-package com.opentakengine;
+package com.otkglobeengine;
 
-public final class OpenTakEngine {
+public final class OTKGlobeEngine {
     static {
-        System.loadLibrary("opentakengine_jni");
+        System.loadLibrary("otkglobeengine_jni");
     }
 
     public static final int SOURCE_URL = 0;
@@ -38,7 +38,7 @@ public final class OpenTakEngine {
     public static final int KEY_RESET_NORTH = 10;
     public static final int KEY_RESET_TILT = 11;
 
-    private OpenTakEngine() {}
+    private OTKGlobeEngine() {}
 
     static native long nativeCreate(int samples);
     static native void nativeDestroy(long h);

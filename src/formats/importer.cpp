@@ -1,8 +1,8 @@
-#include "ote/importer.hpp"
+#include "otk/importer.hpp"
 
 #include "db/sqlite.hpp"
 #include "gdal/gdal_sources.hpp"
-#include "ote/formats.hpp"
+#include "otk/formats.hpp"
 #include "raster/pmtiles.hpp"
 
 #include <json.hpp>
@@ -16,7 +16,7 @@
 #include <initializer_list>
 #include <iterator>
 
-namespace ote {
+namespace otk {
 
 namespace {
 

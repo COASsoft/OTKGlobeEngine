@@ -1,11 +1,11 @@
-#include "ote/mgrs.hpp"
+#include "otk/mgrs.hpp"
 
 #include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
 
-namespace ote {
+namespace otk {
 
 namespace {
 

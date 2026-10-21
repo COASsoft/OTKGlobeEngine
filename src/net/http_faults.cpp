@@ -6,7 +6,7 @@
 #include <random>
 #include <thread>
 
-namespace ote::net {
+namespace otk::net {
 
 Response getBackend(const std::string& url, const std::string& userAgent, const Headers& headers);
 
@@ -31,13 +31,13 @@ double envNumber(const char* name) {
 const Faults& faults() {
     static const Faults f = [] {
         Faults r;
-        r.delayMs = envNumber("OTE_NET_DELAY_MS");
-        r.jitterMs = envNumber("OTE_NET_JITTER_MS");
-        r.failRate = envNumber("OTE_NET_FAIL_RATE");
-        r.timeoutRate = envNumber("OTE_NET_TIMEOUT_RATE");
-        r.corruptRate = envNumber("OTE_NET_CORRUPT_RATE");
-        r.missingRate = envNumber("OTE_NET_404_RATE");
-        r.unreachable = envNumber("OTE_NET_UNREACHABLE") > 0;
+        r.delayMs = envNumber("OTK_NET_DELAY_MS");
+        r.jitterMs = envNumber("OTK_NET_JITTER_MS");
+        r.failRate = envNumber("OTK_NET_FAIL_RATE");
+        r.timeoutRate = envNumber("OTK_NET_TIMEOUT_RATE");
+        r.corruptRate = envNumber("OTK_NET_CORRUPT_RATE");
+        r.missingRate = envNumber("OTK_NET_404_RATE");
+        r.unreachable = envNumber("OTK_NET_UNREACHABLE") > 0;
         r.any = r.delayMs > 0 || r.jitterMs > 0 || r.failRate > 0 || r.timeoutRate > 0 || r.corruptRate > 0 || r.missingRate > 0 ||
                 r.unreachable;
         return r;

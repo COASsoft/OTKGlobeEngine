@@ -4,7 +4,7 @@
 
 #include <vector>
 
-namespace ote {
+namespace otk {
 
 void buildGrid(const GeoRect& tile, double texelDeg, double dpi, double spacing, std::vector<float>& verts);
 void buildGraticule(const GeoRect& tile, double texelDeg, double dpi, double stepDeg, bool gars, std::vector<float>& verts);

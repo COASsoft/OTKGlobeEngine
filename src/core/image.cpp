@@ -1,4 +1,4 @@
-#include "ote/image.hpp"
+#include "otk/image.hpp"
 
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ONLY_JPEG
@@ -9,18 +9,18 @@
 
 #include <cstring>
 
-#if defined(OTE_WITH_WEBP)
+#if defined(OTK_WITH_WEBP)
 #include <webp/decode.h>
 #endif
 
-namespace ote {
+namespace otk {
 
 bool isWebp(const std::uint8_t* data, std::size_t size) {
     return data && size >= 12 && std::memcmp(data, "RIFF", 4) == 0 && std::memcmp(data + 8, "WEBP", 4) == 0;
 }
 
 bool webpSupported() {
-#if defined(OTE_WITH_WEBP)
+#if defined(OTK_WITH_WEBP)
     return true;
 #else
     return false;
@@ -31,7 +31,7 @@ bool decodeImage(const std::uint8_t* data, std::size_t size, Image& out) {
     out = Image{};
     if (!data || size == 0 || size > 0x7fffffff) return false;
     if (isWebp(data, size)) {
-#if defined(OTE_WITH_WEBP)
+#if defined(OTK_WITH_WEBP)
         int w = 0, h = 0;
         if (!WebPGetInfo(data, size, &w, &h) || w <= 0 || h <= 0) return false;
         out.rgba.resize(static_cast<std::size_t>(w) * h * 4);
@@ -60,7 +60,7 @@ bool imageSize(const std::uint8_t* data, std::size_t size, int& width, int& heig
     width = height = 0;
     if (!data || size == 0 || size > 0x7fffffff) return false;
     if (isWebp(data, size)) {
-#if defined(OTE_WITH_WEBP)
+#if defined(OTK_WITH_WEBP)
         return WebPGetInfo(data, size, &width, &height) != 0;
 #else
         return false;

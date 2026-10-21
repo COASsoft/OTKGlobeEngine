@@ -1,4 +1,4 @@
-#include "ote/feature_query.hpp"
+#include "otk/feature_query.hpp"
 
 #include "core/region.hpp"
 
@@ -6,7 +6,7 @@
 #include <cctype>
 #include <cmath>
 
-namespace ote {
+namespace otk {
 
 namespace {
 

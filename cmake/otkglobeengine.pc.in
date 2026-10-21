@@ -2,9 +2,9 @@ prefix=${pcfiledir}/../..
 libdir=${prefix}/@CMAKE_INSTALL_LIBDIR@
 includedir=${prefix}/@CMAKE_INSTALL_INCLUDEDIR@
 
-Name: OpenTAKEngine
+Name: OTKGlobeEngine
 Description: Cross-platform map engine for TAK-style applications (C ABI)
-URL: https://github.com/grangedevgroup-code/OpenTAKEngine
+URL: https://github.com/grangedevgroup-code/OTKGlobeEngine
 Version: @PROJECT_VERSION@
-Libs: -L${libdir} -lopentakengine_c
-Cflags: -I${includedir} -DOTE_SHARED
+Libs: -L${libdir} -lotkglobeengine_c
+Cflags: -I${includedir} -DOTK_SHARED

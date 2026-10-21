@@ -4,7 +4,7 @@
 
 #include <atomic>
 
-namespace ote::net {
+namespace otk::net {
 
 namespace {
 

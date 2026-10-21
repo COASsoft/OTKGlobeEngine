@@ -13,11 +13,11 @@
 #define CurrentTime 0L
 #define DestroyAll 0
 #define Expose 12
-#include "ote/astro.hpp"
-#include "ote/engine.hpp"
-#include "ote/milsym.hpp"
-#include "ote/navigation.hpp"
-#include "ote/formats.hpp"
-#include "ote/input.hpp"
-#include "ote/klv.hpp"
-#include "ote/ote.h"
+#include "otk/astro.hpp"
+#include "otk/engine.hpp"
+#include "otk/milsym.hpp"
+#include "otk/navigation.hpp"
+#include "otk/formats.hpp"
+#include "otk/input.hpp"
+#include "otk/klv.hpp"
+#include "otk/otk.h"

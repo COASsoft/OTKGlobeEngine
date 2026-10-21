@@ -11,15 +11,15 @@ ROOT = Path(__file__).resolve().parent.parent
 
 MANIFEST = """<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.opentakengine.viewer" android:versionCode="1" android:versionName="{version}">
+    package="com.otkglobeengine.viewer" android:versionCode="1" android:versionName="{version}">
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-feature android:glEsVersion="0x00030000" android:required="true"/>
-    <application android:label="OpenTAKEngine" android:hasCode="false" android:extractNativeLibs="true"
+    <application android:label="OTKGlobeEngine" android:hasCode="false" android:extractNativeLibs="true"
         android:usesCleartextTraffic="true">
         <activity android:name="android.app.NativeActivity" android:exported="true"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode"
             android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
-            <meta-data android:name="android.app.lib_name" android:value="ote_viewer"/>
+            <meta-data android:name="android.app.lib_name" android:value="otk_viewer"/>
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
@@ -75,7 +75,7 @@ def main():
              f"-DCMAKE_TOOLCHAIN_FILE={toolchain}", f"-DANDROID_ABI={args.abi}", "-DANDROID_PLATFORM=android-26"])
     run(["cmake", "--build", out])
 
-    lib = out / "apps" / "viewer" / "libote_viewer.so"
+    lib = out / "apps" / "viewer" / "libotk_viewer.so"
     apk_dir = out / "apk"
     shutil.rmtree(apk_dir, ignore_errors=True)
     apk_dir.mkdir(parents=True)
@@ -84,11 +84,11 @@ def main():
     unsigned = apk_dir / "unsigned.apk"
     run([tool(build_tools, "aapt2"), "link", "-o", unsigned, "--manifest", apk_dir / "AndroidManifest.xml", "-I", platform,
          "--min-sdk-version", "26", "--target-sdk-version", "35"])
-    stripped = apk_dir / "libote_viewer.so"
+    stripped = apk_dir / "libotk_viewer.so"
     strip = next((ndk / "toolchains" / "llvm" / "prebuilt").glob("*/bin/llvm-strip*"))
     run([strip, "--strip-unneeded", "-o", stripped, lib])
     with zipfile.ZipFile(unsigned, "a", zipfile.ZIP_DEFLATED) as z:
-        z.write(stripped, f"lib/{args.abi}/libote_viewer.so")
+        z.write(stripped, f"lib/{args.abi}/libotk_viewer.so")
     aligned = apk_dir / "aligned.apk"
     run([tool(build_tools, "zipalign"), "-f", "-p", "4", unsigned, aligned])
     keystore = Path.home() / ".android" / "debug.keystore"
@@ -97,7 +97,7 @@ def main():
         run(["keytool", "-genkeypair", "-v", "-keystore", keystore, "-storepass", "android", "-alias", "androiddebugkey",
              "-keypass", "android", "-keyalg", "RSA", "-keysize", "2048", "-validity", "10000",
              "-dname", "CN=Android Debug,O=Android,C=US"])
-    final = out / "opentakengine-viewer.apk"
+    final = out / "otkglobeengine-viewer.apk"
     run([tool(build_tools, "apksigner"), "sign", "--ks", keystore, "--ks-pass", "pass:android", "--key-pass", "pass:android",
          "--out", final, aligned])
     print(final)
@@ -105,7 +105,7 @@ def main():
     if args.install or args.run:
         run([adb, "install", "-r", final])
     if args.run:
-        run([adb, "shell", "am", "start", "-n", "com.opentakengine.viewer/android.app.NativeActivity"])
+        run([adb, "shell", "am", "start", "-n", "com.otkglobeengine.viewer/android.app.NativeActivity"])
 
 
 if __name__ == "__main__":

@@ -5,17 +5,17 @@
 #include <cstring>
 #include <mutex>
 
-#if defined(OTE_WITH_MESHOPT)
+#if defined(OTK_WITH_MESHOPT)
 #include <meshoptimizer.h>
 #endif
-#if defined(OTE_WITH_DRACO)
+#if defined(OTK_WITH_DRACO)
 #include <draco/compression/decode.h>
 #endif
-#if defined(OTE_WITH_KTX2)
+#if defined(OTK_WITH_KTX2)
 #include <basisu_transcoder.h>
 #endif
 
-namespace ote {
+namespace otk {
 
 namespace {
 
@@ -25,7 +25,7 @@ constexpr int kBc7 = 1;
 constexpr int kAstc = 2;
 constexpr int kEtc2 = 4;
 
-#if defined(OTE_WITH_DRACO)
+#if defined(OTK_WITH_DRACO)
 template <typename T>
 bool readAttribute(const draco::PointCloud& pc, int id, int components, std::vector<T>& out, int* stored = nullptr) {
     if (id < 0) return false;
@@ -46,28 +46,28 @@ bool readAttribute(const draco::PointCloud& pc, int id, int components, std::vec
 bool codecSupported(const char* extension) {
     if (!extension) return true;
     if (std::strcmp(extension, "KHR_draco_mesh_compression") == 0) {
-#if defined(OTE_WITH_DRACO)
+#if defined(OTK_WITH_DRACO)
         return true;
 #else
         return false;
 #endif
     }
     if (std::strcmp(extension, "EXT_meshopt_compression") == 0) {
-#if defined(OTE_WITH_MESHOPT)
+#if defined(OTK_WITH_MESHOPT)
         return true;
 #else
         return false;
 #endif
     }
     if (std::strcmp(extension, "KHR_texture_basisu") == 0) {
-#if defined(OTE_WITH_KTX2)
+#if defined(OTK_WITH_KTX2)
         return true;
 #else
         return false;
 #endif
     }
     if (std::strcmp(extension, "EXT_texture_webp") == 0) {
-#if defined(OTE_WITH_WEBP)
+#if defined(OTK_WITH_WEBP)
         return true;
 #else
         return false;
@@ -82,7 +82,7 @@ bool decodeMeshopt(cgltf_data* data) {
     for (cgltf_size i = 0; i < data->buffer_views_count; ++i) {
         cgltf_buffer_view& bv = data->buffer_views[i];
         if (!bv.has_meshopt_compression || bv.data) continue;
-#if defined(OTE_WITH_MESHOPT)
+#if defined(OTK_WITH_MESHOPT)
         const cgltf_meshopt_compression& mc = bv.meshopt_compression;
         if (!mc.buffer || !mc.buffer->data || mc.offset + mc.size > mc.buffer->size) return false;
         const unsigned char* src = static_cast<const unsigned char*>(mc.buffer->data) + mc.offset;
@@ -110,7 +110,7 @@ bool decodeMeshopt(cgltf_data* data) {
 
 bool decodeDracoPrimitive(const cgltf_data* data, const cgltf_primitive& prim, std::vector<float>& positions, std::vector<float>& normals,
                           std::vector<float>& texcoords, std::vector<float>& colors, std::vector<std::uint32_t>& indices) {
-#if defined(OTE_WITH_DRACO)
+#if defined(OTK_WITH_DRACO)
     const cgltf_draco_mesh_compression& dc = prim.draco_mesh_compression;
     const cgltf_buffer_view* bv = dc.buffer_view;
     if (!bv) return false;
@@ -161,7 +161,7 @@ bool decodeDracoPrimitive(const cgltf_data* data, const cgltf_primitive& prim, s
 
 bool decodeDracoPoints(const std::uint8_t* data, std::size_t size, const std::map<std::string, int>& properties, std::vector<float>& positions,
                        std::vector<std::uint8_t>& rgba) {
-#if defined(OTE_WITH_DRACO)
+#if defined(OTK_WITH_DRACO)
     draco::DecoderBuffer buffer;
     buffer.Init(reinterpret_cast<const char*>(data), size);
     draco::Decoder decoder;
@@ -202,7 +202,7 @@ void setCompressedTextureSupport(bool bc7, bool astc, bool etc2) {
 }
 
 bool transcodeKtx2(const std::uint8_t* data, std::size_t size, CpuImage& out) {
-#if defined(OTE_WITH_KTX2)
+#if defined(OTK_WITH_KTX2)
     static std::once_flag once;
     std::call_once(once, [] { basist::basisu_transcoder_init(); });
     basist::ktx2_transcoder t;

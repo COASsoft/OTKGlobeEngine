@@ -57,7 +57,7 @@ bool readImageRgba(sg_image image, int width, int height, const void* device, co
 #include <GL/gl.h>
 #elif defined(__APPLE__)
 #include <OpenGL/gl3.h>
-#elif defined(__ANDROID__)
+#elif defined(__ANDROID__) || defined(SOKOL_GLES3)
 #include <GLES3/gl3.h>
 #else
 #include <GL/gl.h>

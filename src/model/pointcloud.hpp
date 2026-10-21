@@ -10,7 +10,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace ote {
+namespace otk {
 
 struct PointCloudInfo {
     std::uint64_t pointCount = 0;

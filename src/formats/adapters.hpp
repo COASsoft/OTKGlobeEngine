@@ -4,9 +4,9 @@
 #include <string>
 #include <vector>
 
-#include "ote/formats.hpp"
+#include "otk/formats.hpp"
 
-namespace ote::adapters {
+namespace otk::adapters {
 
 std::string xmlEscape(const std::string& s);
 std::string colorHex(std::uint32_t argb);

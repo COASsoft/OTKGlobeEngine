@@ -6,7 +6,7 @@
 #include <utility>
 #include <vector>
 
-namespace ote {
+namespace otk {
 
 struct TileData {
     std::vector<std::uint8_t> bytes;

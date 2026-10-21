@@ -1,11 +1,11 @@
 #include "feature/grid.hpp"
 
-#include "ote/mgrs.hpp"
+#include "otk/mgrs.hpp"
 
 #include <algorithm>
 #include <cmath>
 
-namespace ote {
+namespace otk {
 
 namespace {
 

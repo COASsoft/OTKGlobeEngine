@@ -1,13 +1,13 @@
 #pragma once
 
-#include "ote/tile_source.hpp"
+#include "otk/tile_source.hpp"
 
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
-namespace ote {
+namespace otk {
 
 enum class SourceType { Url, Wms, Wmts, MBTiles, GeoPackage, Osmdroid, Gdal, Mvt, PMTiles, Host };
 

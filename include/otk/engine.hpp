@@ -1,26 +1,26 @@
 #pragma once
 
-#include "ote/elevation.hpp"
-#include "ote/feature_query.hpp"
-#include "ote/formats.hpp"
-#include "ote/importer.hpp"
-#include "ote/input.hpp"
-#include "ote/layers.hpp"
-#include "ote/tile_source.hpp"
+#include "otk/elevation.hpp"
+#include "otk/feature_query.hpp"
+#include "otk/formats.hpp"
+#include "otk/importer.hpp"
+#include "otk/input.hpp"
+#include "otk/layers.hpp"
+#include "otk/tile_source.hpp"
 #include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
 
-#include "ote/features.hpp"
-#include "ote/mgrs.hpp"
-#include "ote/navigation.hpp"
+#include "otk/features.hpp"
+#include "otk/mgrs.hpp"
+#include "otk/navigation.hpp"
 
 struct sg_swapchain;
 struct sg_attachments;
 struct sg_desc;
 
-namespace ote {
+namespace otk {
 
 enum class GridType { Mgrs, LatLon, Gars };
 

@@ -2,7 +2,7 @@
 
 #include "core/math.hpp"
 
-namespace ote {
+namespace otk {
 
 Vec3 sunDirectionEcef(double unixSeconds);
 

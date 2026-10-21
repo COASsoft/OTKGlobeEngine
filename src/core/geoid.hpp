@@ -1,6 +1,6 @@
 #pragma once
 
-namespace ote {
+namespace otk {
 
 double geoidHeight(double lat, double lon);
 

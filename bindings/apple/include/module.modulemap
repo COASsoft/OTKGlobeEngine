@@ -1,4 +1,4 @@
-module OpenTAKEngineC {
-    header "ote.h"
+module OTKGlobeEngineC {
+    header "otk.h"
     export *
 }

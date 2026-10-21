@@ -1,6 +1,6 @@
 #include "model/model_convert.hpp"
 
-#include "ote/image.hpp"
+#include "otk/image.hpp"
 
 #include <json.hpp>
 #include <miniz.h>
@@ -15,7 +15,7 @@
 #include <sstream>
 #include <tuple>
 
-namespace ote {
+namespace otk {
 
 namespace {
 
@@ -194,7 +194,7 @@ std::vector<std::uint8_t> writeGlb(std::vector<Prim>& prims) {
     while (bin.size() % 4) bin.push_back(0);
     nlohmann::json j;
     j["asset"]["version"] = "2.0";
-    j["asset"]["generator"] = "OpenTAKEngine";
+    j["asset"]["generator"] = "OTKGlobeEngine";
     j["scene"] = 0;
     j["scenes"] = nlohmann::json::array({nlohmann::json{{"nodes", nlohmann::json::array({0})}}});
     j["nodes"] = nlohmann::json::array({nlohmann::json{{"mesh", 0}}});

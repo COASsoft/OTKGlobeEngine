@@ -2,8 +2,8 @@
 set -eu
 
 root=$(pwd)
-build=${OTE_BUILD_DIR:-$HOME/ote-build}
-package=${OTE_PACKAGE:-0}
+build=${OTK_BUILD_DIR:-$HOME/otk-build}
+package=${OTK_PACKAGE:-0}
 os=$(uname -s)
 prefix_path=""
 
@@ -34,7 +34,7 @@ ctest --test-dir "$build" --output-on-failure
 rm -rf "$root/dist" "$build/stage"
 mkdir -p "$root/dist"
 (cd "$build" && cpack -G TGZ)
-cp "$build"/opentakengine-*.tar.gz "$root/dist/"
+cp "$build"/otkglobeengine-*.tar.gz "$root/dist/"
 
 DESTDIR="$build/stage" cmake --install "$build" --prefix /usr/local
 cmake -S "$root/tests/package_consumer" -B "$build/consumer" -G Ninja -DCMAKE_PREFIX_PATH="$build/stage/usr/local;$prefix_path"
@@ -42,7 +42,7 @@ cmake --build "$build/consumer"
 LD_LIBRARY_PATH="$build/stage/usr/local/lib" "$build/consumer/consumer"
 
 if [ "$os" = FreeBSD ]; then
-    version=$(sed -n 's/^project(OpenTAKEngine VERSION \([0-9.]*\).*/\1/p' "$root/CMakeLists.txt")
+    version=$(sed -n 's/^project(OTKGlobeEngine VERSION \([0-9.]*\).*/\1/p' "$root/CMakeLists.txt")
     deps=""
     for p in curl mesa-libs libglvnd libX11 libXi libXcursor; do
         line=$(pkg query '%n %o %v' "$p")
@@ -51,13 +51,13 @@ if [ "$os" = FreeBSD ]; then
 "
     done
     cat > "$build/+MANIFEST" <<EOF
-name: opentakengine
+name: otkglobeengine
 version: "$version"
-origin: graphics/opentakengine
+origin: graphics/otkglobeengine
 comment: "Cross-platform map engine for TAK-style applications"
-desc: "OpenTAKEngine renders a 3D globe with imagery, terrain, 3D Tiles, MIL-STD-2525 symbols and features, works offline, and exposes a C ABI."
+desc: "OTKGlobeEngine renders a 3D globe with imagery, terrain, 3D Tiles, MIL-STD-2525 symbols and features, works offline, and exposes a C ABI."
 maintainer: grangedevgroup@gmail.com
-www: https://github.com/grangedevgroup-code/OpenTAKEngine
+www: https://github.com/grangedevgroup-code/OTKGlobeEngine
 prefix: /usr/local
 licenselogic: single
 licenses: [APACHE20]
@@ -67,8 +67,8 @@ $deps}
 EOF
     (cd "$build/stage" && find . -type f -o -type l | sed 's|^\.||' | sort) > "$build/plist"
     pkg create -M "$build/+MANIFEST" -r "$build/stage" -p "$build/plist" -o "$root/dist"
-    for f in "$root"/dist/opentakengine-*.pkg; do
-        mv "$f" "$root/dist/opentakengine-$version-freebsd-$(uname -m | sed s/amd64/x86_64/).pkg"
+    for f in "$root"/dist/otkglobeengine-*.pkg; do
+        mv "$f" "$root/dist/otkglobeengine-$version-freebsd-$(uname -m | sed s/amd64/x86_64/).pkg"
     done
 fi
 

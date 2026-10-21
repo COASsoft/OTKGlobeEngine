@@ -1,14 +1,14 @@
 #pragma once
 
-#include "ote/features.hpp"
-#include "ote/layers.hpp"
+#include "otk/features.hpp"
+#include "otk/layers.hpp"
 
 #include <cstddef>
 #include <string>
 #include <utility>
 #include <vector>
 
-namespace ote {
+namespace otk {
 
 struct FeatureQuery {
     bool useRegion = false;

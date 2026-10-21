@@ -1,4 +1,4 @@
-#include "ote/klv.hpp"
+#include "otk/klv.hpp"
 
 #include "core/geo.hpp"
 
@@ -10,7 +10,7 @@
 #include <map>
 #include <set>
 
-namespace ote {
+namespace otk {
 
 namespace {
 

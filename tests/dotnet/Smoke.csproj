@@ -5,6 +5,6 @@
     <Nullable>disable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../../bindings/dotnet/OpenTakEngine.csproj" />
+    <ProjectReference Include="../../bindings/dotnet/OTKGlobeEngine.csproj" />
   </ItemGroup>
 </Project>

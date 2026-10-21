@@ -124,7 +124,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('out')
     ap.add_argument('--releases', default='')
-    ap.add_argument('--repo', default=os.environ.get('GITHUB_REPOSITORY', 'grangedevgroup-code/OpenTAKEngine'))
+    ap.add_argument('--repo', default=os.environ.get('GITHUB_REPOSITORY', 'grangedevgroup-code/OTKGlobeEngine'))
     ap.add_argument('--gitlab', default='')
     args = ap.parse_args()
     repo = args.repo
@@ -134,7 +134,7 @@ def main():
     os.makedirs(os.path.join(out, 'shots'), exist_ok=True)
     os.makedirs(os.path.join(out, 'images'), exist_ok=True)
     shutil.copy(os.path.join(ROOT, 'site', 'style.css'), out)
-    shots = os.path.join(ROOT, 'screenshots', 'opentakengine')
+    shots = os.path.join(ROOT, 'screenshots', 'otkglobeengine')
     for f in os.listdir(shots):
         if f.lower().endswith('.png'):
             shutil.copy(os.path.join(shots, f), os.path.join(out, 'shots', f))

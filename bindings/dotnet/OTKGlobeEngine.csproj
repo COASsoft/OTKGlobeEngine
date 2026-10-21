@@ -3,15 +3,15 @@
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>disable</Nullable>
-    <AssemblyName>OpenTakEngine</AssemblyName>
-    <RootNamespace>OpenTakEngine</RootNamespace>
-    <PackageId>OpenTakEngine</PackageId>
+    <AssemblyName>OTKGlobeEngine</AssemblyName>
+    <RootNamespace>OTKGlobeEngine</RootNamespace>
+    <PackageId>OTKGlobeEngine</PackageId>
     <Version>0.1.0</Version>
-    <Authors>OpenTAKEngine</Authors>
-    <Description>.NET bindings for OpenTAKEngine, a cross-platform globe map engine for TAK-style applications</Description>
+    <Authors>OTKGlobeEngine</Authors>
+    <Description>.NET bindings for OTKGlobeEngine, a cross-platform globe map engine for TAK-style applications</Description>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
-    <PackageProjectUrl>https://github.com/grangedevgroup-code/OpenTAKEngine</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/grangedevgroup-code/OpenTAKEngine</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/grangedevgroup-code/OTKGlobeEngine</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/grangedevgroup-code/OTKGlobeEngine</RepositoryUrl>
     <PackageTags>map;gis;globe;tak;milstd2525;3dtiles;offline</PackageTags>
     <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
   </PropertyGroup>

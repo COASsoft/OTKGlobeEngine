@@ -1,4 +1,4 @@
-#include "ote/milsym.hpp"
+#include "otk/milsym.hpp"
 
 #include <stb_truetype.h>
 
@@ -10,7 +10,7 @@
 #include <mutex>
 #include <vector>
 
-namespace ote {
+namespace otk {
 
 namespace embedded {
 extern const unsigned char font_bold[];

@@ -6,7 +6,7 @@
 #include <cstdlib>
 #include <vector>
 
-namespace ote {
+namespace otk {
 
 namespace {
 

@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from android_apk import ROOT, latest, run, sdk_root
 
 MANIFEST = """<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.opentakengine">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.otkglobeengine">
     <uses-sdk android:minSdkVersion="26" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -36,8 +36,8 @@ def main():
         if not (build / "build.ninja").exists():
             run(["cmake", "-S", ROOT, "-B", build, "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release",
                  f"-DCMAKE_TOOLCHAIN_FILE={toolchain}", f"-DANDROID_ABI={abi}", "-DANDROID_PLATFORM=android-26"])
-        run(["cmake", "--build", build, "--target", "opentakengine_jni"])
-        lib = next(build.rglob("libopentakengine_jni.so"))
+        run(["cmake", "--build", build, "--target", "otkglobeengine_jni"])
+        lib = next(build.rglob("libotkglobeengine_jni.so"))
         stripped = out / abi / lib.name
         stripped.parent.mkdir(parents=True, exist_ok=True)
         strip = next((ndk / "toolchains" / "llvm" / "prebuilt").glob("*/bin/llvm-strip*"))
@@ -48,13 +48,13 @@ def main():
          "-d", out / "classes", *sources])
     run(["jar", "cf", out / "classes.jar", "-C", out / "classes", "."])
     version = re.search(r"project\(\w+ VERSION ([0-9.]+)", (ROOT / "CMakeLists.txt").read_text()).group(1)
-    aar = ROOT / "build" / f"opentakengine-{version}.aar"
+    aar = ROOT / "build" / f"otkglobeengine-{version}.aar"
     with zipfile.ZipFile(aar, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("AndroidManifest.xml", MANIFEST)
         z.write(out / "classes.jar", "classes.jar")
         z.writestr("R.txt", "")
         for abi, lib in libs.items():
-            z.write(lib, f"jni/{abi}/libopentakengine_jni.so")
+            z.write(lib, f"jni/{abi}/libotkglobeengine_jni.so")
     print(aar)
 
 

@@ -1,10 +1,10 @@
 #if defined(__APPLE__)
 #include <TargetConditionals.h>
 #endif
-#include "ote/engine.hpp"
-#include "ote/formats.hpp"
-#include "ote/image.hpp"
-#include "ote/milsym.hpp"
+#include "otk/engine.hpp"
+#include "otk/formats.hpp"
+#include "otk/image.hpp"
+#include "otk/milsym.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -18,12 +18,12 @@
 #include "render/globe_renderer.hpp"
 
 #include "core/geoid.hpp"
-#include "ote/mgrs.hpp"
+#include "otk/mgrs.hpp"
 #include "net/http.hpp"
 
 #include <sokol_gfx.h>
 
-namespace ote {
+namespace otk {
 
 struct Engine::Impl {
     Camera camera;
@@ -131,7 +131,7 @@ struct Engine::Impl {
         GeoPoint eg = ecefToGeodetic(eye);
         double g = globe.elevationAt(eg.lat, eg.lon);
         if (sanityFrame % 30 == 0)
-            if (const char* pr = std::getenv("OTE_PROBE")) {
+            if (const char* pr = std::getenv("OTK_PROBE")) {
                 double px = 0, py = 0;
                 Vec3 ph;
                 if (std::sscanf(pr, "%lf,%lf", &px, &py) == 2 && pickGround(px, py, ph)) {
@@ -528,7 +528,7 @@ ExportResult Engine::exportFeatures(const std::vector<std::uint64_t>& ids, const
         Feature f;
         if (feature(id, f)) out.push_back(std::move(f));
     }
-    return ote::exportFeatures(out, path, format);
+    return otk::exportFeatures(out, path, format);
 }
 
 std::uint64_t Engine::hitTest(double sx, double sy, double radiusPx) const {
@@ -1545,9 +1545,9 @@ void configureGfx(sg_desc& desc) {
     desc.image_pool_size = 6144;
     desc.view_pool_size = 65536;
 #endif
-    if (const char* v = std::getenv("OTE_GFX_BUFFERS")) desc.buffer_pool_size = std::max(64, std::atoi(v));
-    if (const char* v = std::getenv("OTE_GFX_IMAGES")) desc.image_pool_size = std::max(64, std::atoi(v));
-    if (const char* v = std::getenv("OTE_GFX_VIEWS")) desc.view_pool_size = std::max(256, std::atoi(v));
+    if (const char* v = std::getenv("OTK_GFX_BUFFERS")) desc.buffer_pool_size = std::max(64, std::atoi(v));
+    if (const char* v = std::getenv("OTK_GFX_IMAGES")) desc.image_pool_size = std::max(64, std::atoi(v));
+    if (const char* v = std::getenv("OTK_GFX_VIEWS")) desc.view_pool_size = std::max(256, std::atoi(v));
     desc.sampler_pool_size = 64;
     desc.shader_pool_size = 64;
     desc.pipeline_pool_size = 128;

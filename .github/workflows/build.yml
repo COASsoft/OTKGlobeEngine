@@ -21,32 +21,52 @@ jobs:
       - run: ctest --test-dir build --output-on-failure
       - uses: actions/upload-artifact@v4
         with:
-          name: opentakengine-windows
-          path: build/apps/viewer/ote_viewer.exe
+          name: otkglobeengine-windows
+          path: build/apps/viewer/otk_viewer.exe
 
   linux:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get update && sudo apt-get install -y ninja-build libcurl4-openssl-dev libx11-dev libxi-dev libxcursor-dev libgl1-mesa-dev libgdal-dev
-      - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DOTE_WITH_GDAL=ON
+      - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DOTK_WITH_GDAL=ON
       - run: cmake --build build
       - run: ctest --test-dir build --output-on-failure
       - name: Pregenerated shaders match the sources
         run: |
-          cmake --build build --target ote_pregenerate_shaders
+          cmake --build build --target otk_pregenerate_shaders
           git diff --exit-code -- src/render/shaders/generated
       - uses: actions/upload-artifact@v4
         with:
-          name: opentakengine-linux
-          path: build/apps/viewer/ote_viewer
+          name: otkglobeengine-linux
+          path: build/apps/viewer/otk_viewer
+
+  raspberry-pi:
+    runs-on: ubuntu-22.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build libcurl4-openssl-dev libx11-dev libxi-dev libxcursor-dev libegl-dev libgles-dev libegl-mesa0 libgl1-mesa-dri xvfb xauth
+      - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DOTK_GLES=ON
+      - run: cmake --build build
+      - run: ctest --test-dir build --output-on-failure
+      - name: Render a frame with OpenGL ES through EGL
+        run: |
+          xvfb-run -a -s "-screen 0 1280x720x24" ./build/apps/viewer/otk_viewer --offscreen 1 --shot shot.png --size 640x360 --shot-timeout 60
+          test -s shot.png
+      - uses: actions/upload-artifact@v4
+        with:
+          name: otkglobeengine-raspberry-pi
+          path: |
+            build/apps/viewer/otk_viewer
+            shot.png
+            shot.png.txt
 
   kernel:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get update && sudo apt-get install -y ninja-build libcurl4-openssl-dev
-      - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DOTE_ENGINE=OFF
+      - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DOTK_ENGINE=OFF
       - run: cmake --build build
       - run: ctest --test-dir build --output-on-failure
 
@@ -76,7 +96,7 @@ jobs:
           cpu_count: 4
           memory: 8G
       - name: Build, test and package
-        run: env OTE_PACKAGE=1 sh scripts/bsd_build.sh
+        run: env OTK_PACKAGE=1 sh scripts/bsd_build.sh
 
   macos:
     runs-on: macos-latest
@@ -88,8 +108,8 @@ jobs:
       - run: ctest --test-dir build --output-on-failure
       - uses: actions/upload-artifact@v4
         with:
-          name: opentakengine-macos
-          path: build/apps/viewer/ote_viewer.app
+          name: otkglobeengine-macos
+          path: build/apps/viewer/otk_viewer.app
 
   ios:
     runs-on: macos-latest
@@ -106,18 +126,18 @@ jobs:
       - name: Typecheck Swift view for macOS and iOS
         run: |
           mkdir -p build/swiftcheck
-          cp include/ote/ote.h build/swiftcheck/
-          echo 'module OpenTAKEngineC {' > build/swiftcheck/module.modulemap
-          echo '    header "ote.h"' >> build/swiftcheck/module.modulemap
+          cp include/otk/otk.h build/swiftcheck/
+          echo 'module OTKGlobeEngineC {' > build/swiftcheck/module.modulemap
+          echo '    header "otk.h"' >> build/swiftcheck/module.modulemap
           echo '    export *' >> build/swiftcheck/module.modulemap
           echo '}' >> build/swiftcheck/module.modulemap
-          xcrun --sdk macosx swiftc -typecheck -target arm64-apple-macos12 -I build/swiftcheck bindings/apple/OpenTAKView.swift
-          xcrun --sdk iphoneos swiftc -typecheck -target arm64-apple-ios15.0 -I build/swiftcheck bindings/apple/OpenTAKView.swift
-      - run: cd build/apple && zip -qry OpenTAKEngine.xcframework.zip OpenTAKEngine.xcframework
+          xcrun --sdk macosx swiftc -typecheck -target arm64-apple-macos12 -I build/swiftcheck bindings/apple/OTKGlobeView.swift
+          xcrun --sdk iphoneos swiftc -typecheck -target arm64-apple-ios15.0 -I build/swiftcheck bindings/apple/OTKGlobeView.swift
+      - run: cd build/apple && zip -qry OTKGlobeEngine.xcframework.zip OTKGlobeEngine.xcframework
       - uses: actions/upload-artifact@v4
         with:
-          name: opentakengine-xcframework
-          path: build/apple/OpenTAKEngine.xcframework.zip
+          name: otkglobeengine-xcframework
+          path: build/apple/OTKGlobeEngine.xcframework.zip
 
   android:
     runs-on: ubuntu-latest
@@ -132,7 +152,7 @@ jobs:
       - run: python3 scripts/android_aar.py
       - uses: actions/upload-artifact@v4
         with:
-          name: opentakengine-android
+          name: otkglobeengine-android
           path: |
-            build/android-arm64-v8a/opentakengine-viewer.apk
-            build/opentakengine-*.aar
+            build/android-arm64-v8a/otkglobeengine-viewer.apk
+            build/otkglobeengine-*.aar

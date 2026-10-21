@@ -21,5 +21,5 @@ First release.
 
 ### Platforms and packages
 - Windows, Linux, macOS, iOS, Android, FreeBSD, OpenBSD and NetBSD.
-- C ABI (`ote.h`) as a shared library with CMake package config and pkg-config; .NET (NuGet), Android (AAR), Apple (XCFramework) and Swift bindings.
+- C ABI (`otk.h`) as a shared library with CMake package config and pkg-config; .NET (NuGet), Android (AAR), Apple (XCFramework) and Swift bindings.
 - Apache License 2.0.

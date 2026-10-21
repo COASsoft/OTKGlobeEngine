@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace ote {
+namespace otk {
 
 namespace {
 constexpr double kMercHalf = 20037508.342789244;

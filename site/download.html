@@ -1,16 +1,17 @@
 <h1>Download</h1>
 
 <p>Each release has packages for every platform.  The desktop packages hold
-the shared library and its C header (<tt>ote.h</tt>), the viewer, the
+the shared library and its C header (<tt>otk.h</tt>), the viewer, the
 documentation and the license texts.  Use them from CMake with
-<tt>find_package(OpenTAKEngine)</tt> or with <tt>pkg-config opentakengine</tt>.
+<tt>find_package(OTKGlobeEngine)</tt> or with <tt>pkg-config otkglobeengine</tt>.
 <tt>SHA256SUMS.txt</tt> in each release has the checksums.</p>
 
 <ul>
 <li>Windows: the <tt>.zip</tt></li>
-<li>Debian and Ubuntu: <tt>apt install ./opentakengine_VERSION_amd64.deb</tt> (or <tt>arm64</tt>)</li>
-<li>Fedora, RHEL, SUSE: <tt>dnf install ./opentakengine-VERSION-1.x86_64.rpm</tt></li>
-<li>FreeBSD: <tt>pkg add ./opentakengine-VERSION-freebsd-x86_64.pkg</tt></li>
+<li>Debian and Ubuntu: <tt>apt install ./otkglobeengine_VERSION_amd64.deb</tt> (or <tt>arm64</tt>)</li>
+<li>Raspberry Pi 4 and 5 (64-bit Raspberry Pi OS): <tt>sudo apt install ./otkglobeengine-VERSION-raspberrypi-arm64.deb</tt>, built for their OpenGL ES 3.1 GPUs</li>
+<li>Fedora, RHEL, SUSE: <tt>dnf install ./otkglobeengine-VERSION-1.x86_64.rpm</tt></li>
+<li>FreeBSD: <tt>pkg add ./otkglobeengine-VERSION-freebsd-x86_64.pkg</tt></li>
 <li>OpenBSD, NetBSD, other Linux, macOS: unpack the <tt>.tar.gz</tt> anywhere</li>
 <li>Android: the <tt>.aar</tt> library, or the viewer <tt>.apk</tt> to try it on a phone</li>
 <li>iOS, iPadOS and macOS apps: the <tt>.xcframework.zip</tt></li>

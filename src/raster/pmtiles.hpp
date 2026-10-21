@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-namespace ote {
+namespace otk {
 
 class PmTilesArchive {
 public:

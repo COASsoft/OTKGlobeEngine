@@ -10,7 +10,7 @@ on:
       - 'CHANGELOG.md'
       - 'SECURITY.md'
       - 'LICENSE'
-      - 'screenshots/opentakengine/**'
+      - 'screenshots/otkglobeengine/**'
       - 'scripts/site_build.py'
       - '.github/workflows/pages.yml'
   release:

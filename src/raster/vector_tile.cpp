@@ -8,7 +8,7 @@
 #include <string>
 #include <string_view>
 
-namespace ote {
+namespace otk {
 
 namespace {
 

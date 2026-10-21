@@ -9,7 +9,7 @@
 #include <fstream>
 #include <random>
 
-namespace ote::adapters {
+namespace otk::adapters {
 
 namespace {
 
@@ -117,7 +117,7 @@ ImportResult importPackage(const std::vector<std::uint8_t>& bytes, const ImportL
         if (ext.empty() || mz_zip_reader_is_file_a_directory(&zip, i)) continue;
         if (ext == ".shp") {
             if (temp.empty()) {
-                temp = std::filesystem::temp_directory_path() / ("ote_pkg_" + randomToken());
+                temp = std::filesystem::temp_directory_path() / ("otk_pkg_" + randomToken());
                 std::filesystem::create_directories(temp);
             }
             std::string stem = name.substr(0, name.size() - 4);
@@ -168,9 +168,9 @@ std::vector<std::uint8_t> writePackage(const std::vector<Feature>& fs, ExportRes
         r.error = "zip writer failed";
         return out;
     }
-    std::string packageUid = "OTE-PKG-" + randomToken();
+    std::string packageUid = "OTK-PKG-" + randomToken();
     std::string manifest = "<MissionPackageManifest version=\"2\"><Configuration><Parameter name=\"uid\" value=\"" + packageUid +
-                           "\"/><Parameter name=\"name\" value=\"OpenTAKEngine export\"/></Configuration><Contents>";
+                           "\"/><Parameter name=\"name\" value=\"OTKGlobeEngine export\"/></Configuration><Contents>";
     ExportResult inner;
     for (size_t i = 0; i < fs.size(); ++i) {
         std::string event = writeCotEvent(fs[i], i, inner);

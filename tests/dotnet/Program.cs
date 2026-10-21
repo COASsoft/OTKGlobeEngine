@@ -1,9 +1,9 @@
 using System;
-using OpenTakEngine;
+using OTKGlobeEngine;
 
 string mgrs = Engine.ToMgrs(46.8529, -121.7604, 5);
 Console.WriteLine($"mgrs {mgrs}");
-int ok = Native.ote_from_mgrs(mgrs, out double lat, out double lon);
+int ok = Native.otk_from_mgrs(mgrs, out double lat, out double lon);
 Console.WriteLine($"roundtrip {ok} {lat:F5} {lon:F5}");
 var sky = Engine.SunMoonAt(DateTimeOffset.FromUnixTimeSeconds(1718971200), 51.5, 0.0);
 var day = Engine.SunMoonTimes(DateTimeOffset.FromUnixTimeSeconds(1718928000), 51.5074, -0.1278);

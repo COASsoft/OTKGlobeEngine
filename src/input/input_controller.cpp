@@ -1,11 +1,11 @@
-#include "ote/input.hpp"
+#include "otk/input.hpp"
 
 #include <algorithm>
 #include <cmath>
 
-#include "ote/engine.hpp"
+#include "otk/engine.hpp"
 
-namespace ote {
+namespace otk {
 
 namespace {
 

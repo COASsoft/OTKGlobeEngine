@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <cstring>
 
-namespace ote {
+namespace otk {
 
 namespace embedded {
 extern const unsigned char geoid_egm96[];

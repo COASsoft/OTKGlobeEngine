@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ote/features.hpp"
+#include "otk/features.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-namespace ote {
+namespace otk {
 
 struct UasMetadata {
     static constexpr double kNone = std::numeric_limits<double>::quiet_NaN();

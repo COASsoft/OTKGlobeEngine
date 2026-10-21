@@ -1,11 +1,11 @@
 #pragma once
 
-#include "ote/layers.hpp"
+#include "otk/layers.hpp"
 
 #include <algorithm>
 #include <cmath>
 
-namespace ote {
+namespace otk {
 
 struct RegionBuilder {
     double south = 90, north = -90, west = 180, east = -180, westShifted = 360, eastShifted = 0;

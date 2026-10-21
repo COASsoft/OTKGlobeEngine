@@ -1,6 +1,6 @@
 import MetalKit
 import Network
-import OpenTAKEngineC
+import OTKGlobeEngineC
 
 #if canImport(UIKit)
 import UIKit
@@ -10,7 +10,7 @@ import AppKit
 public typealias OTEPlatformView = MTKView
 #endif
 
-public final class OpenTAKView: OTEPlatformView, MTKViewDelegate {
+public final class OTKGlobeView: OTEPlatformView, MTKViewDelegate {
     public private(set) var engine: OpaquePointer?
     public var onTap: ((CGPoint, Int) -> Void)?
     public var onLongPress: ((CGPoint) -> Void)?
@@ -27,34 +27,34 @@ public final class OpenTAKView: OTEPlatformView, MTKViewDelegate {
         preferredFramesPerSecond = 60
         delegate = self
         if let device = device {
-            engine = ote_create_metal(Unmanaged.passUnretained(device).toOpaque(), 1)
+            engine = otk_create_metal(Unmanaged.passUnretained(device).toOpaque(), 1)
         }
         if let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
-            var dir = support.appendingPathComponent("OpenTAKEngine", isDirectory: true)
+            var dir = support.appendingPathComponent("OTKGlobeEngine", isDirectory: true)
             try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             var values = URLResourceValues()
             values.isExcludedFromBackup = true
             try? dir.setResourceValues(values)
-            ote_set_cache_directory(engine, dir.path)
+            otk_set_cache_directory(engine, dir.path)
         }
         pathMonitor.pathUpdateHandler = { [weak self] path in
             guard path.status == .satisfied else { return }
             DispatchQueue.main.async {
                 guard let self = self, let engine = self.engine else { return }
-                ote_network_changed(engine)
+                otk_network_changed(engine)
             }
         }
         pathMonitor.start(queue: DispatchQueue.global(qos: .utility))
         let me = Unmanaged.passUnretained(self).toOpaque()
-        ote_set_tap_callback(engine, { user, x, y, taps, _ in
+        otk_set_tap_callback(engine, { user, x, y, taps, _ in
             guard let user = user else { return }
-            let view = Unmanaged<OpenTAKView>.fromOpaque(user).takeUnretainedValue()
+            let view = Unmanaged<OTKGlobeView>.fromOpaque(user).takeUnretainedValue()
             let s = CGFloat(view.scale)
             view.onTap?(CGPoint(x: x / s, y: y / s), Int(taps))
         }, me)
-        ote_set_long_press_callback(engine, { user, x, y, _ in
+        otk_set_long_press_callback(engine, { user, x, y, _ in
             guard let user = user else { return }
-            let view = Unmanaged<OpenTAKView>.fromOpaque(user).takeUnretainedValue()
+            let view = Unmanaged<OTKGlobeView>.fromOpaque(user).takeUnretainedValue()
             let s = CGFloat(view.scale)
             view.onLongPress?(CGPoint(x: x / s, y: y / s))
         }, me)
@@ -67,9 +67,9 @@ public final class OpenTAKView: OTEPlatformView, MTKViewDelegate {
 
     deinit {
         pathMonitor.cancel()
-        ote_set_tap_callback(engine, nil, nil)
-        ote_set_long_press_callback(engine, nil, nil)
-        ote_destroy(engine)
+        otk_set_tap_callback(engine, nil, nil)
+        otk_set_long_press_callback(engine, nil, nil)
+        otk_destroy(engine)
     }
 
     fileprivate var scale: Float {
@@ -81,106 +81,106 @@ public final class OpenTAKView: OTEPlatformView, MTKViewDelegate {
     }
 
     public func setView(lat: Double, lon: Double, gsd: Double, azimuth: Double = 0, tilt: Double = 0) {
-        var v = ote_view(lat: lat, lon: lon, gsd: gsd, azimuth: azimuth, tilt: tilt)
-        ote_set_view(engine, &v)
+        var v = otk_view(lat: lat, lon: lon, gsd: gsd, azimuth: azimuth, tilt: tilt)
+        otk_set_view(engine, &v)
     }
 
     public func flyTo(lat: Double, lon: Double, gsd: Double, azimuth: Double = 0, tilt: Double = 0, seconds: Double = 2) {
-        var v = ote_view(lat: lat, lon: lon, gsd: gsd, azimuth: azimuth, tilt: tilt)
-        ote_fly_to(engine, &v, seconds)
+        var v = otk_view(lat: lat, lon: lon, gsd: gsd, azimuth: azimuth, tilt: tilt)
+        otk_fly_to(engine, &v, seconds)
     }
 
-    public func setHeadingLockedPan(_ enabled: Bool) { ote_set_heading_locked_pan(engine, enabled ? 1 : 0) }
+    public func setHeadingLockedPan(_ enabled: Bool) { otk_set_heading_locked_pan(engine, enabled ? 1 : 0) }
 
     @discardableResult
-    public func loadFeatures(path: String) -> Int32 { ote_load_features(engine, path) }
+    public func loadFeatures(path: String) -> Int32 { otk_load_features(engine, path) }
 
     @discardableResult
-    public func addTileset(path: String, maxScreenSpaceError: Double = 16) -> UInt64 { ote_add_tileset(engine, path, maxScreenSpaceError) }
+    public func addTileset(path: String, maxScreenSpaceError: Double = 16) -> UInt64 { otk_add_tileset(engine, path, maxScreenSpaceError) }
 
     @discardableResult
     public func addTileset(path: String, maxScreenSpaceError: Double = 16, headers: [String: String], lighting: Int32 = 0, cacheOffline: Bool = true) -> UInt64 {
         let text = headers.map { "\($0.key): \($0.value)" }.joined(separator: "\n")
-        return ote_add_tileset_ex(engine, path, maxScreenSpaceError, text, lighting, cacheOffline ? 1 : 0)
+        return otk_add_tileset_ex(engine, path, maxScreenSpaceError, text, lighting, cacheOffline ? 1 : 0)
     }
 
     public func credits() -> [String] {
-        let n = ote_credits(engine, nil, 0)
+        let n = otk_credits(engine, nil, 0)
         var buffer = [CChar](repeating: 0, count: Int(n) + 1)
-        ote_credits(engine, &buffer, n + 1)
+        otk_credits(engine, &buffer, n + 1)
         let text = String(cString: buffer)
         return text.isEmpty ? [] : text.components(separatedBy: "\n")
     }
 
     public func setSunLighting(_ enabled: Bool, date: Date? = nil) {
-        ote_set_sun_lighting(engine, enabled ? 1 : 0, date?.timeIntervalSince1970 ?? 0)
+        otk_set_sun_lighting(engine, enabled ? 1 : 0, date?.timeIntervalSince1970 ?? 0)
     }
 
-    public static func sunMoon(at date: Date, lat: Double, lon: Double) -> ote_sun_moon {
-        var r = ote_sun_moon()
-        ote_sun_moon_at(date.timeIntervalSince1970, lat, lon, &r)
+    public static func sunMoon(at date: Date, lat: Double, lon: Double) -> otk_sun_moon {
+        var r = otk_sun_moon()
+        otk_sun_moon_at(date.timeIntervalSince1970, lat, lon, &r)
         return r
     }
 
-    public static func sunMoonTimes(from date: Date, lat: Double, lon: Double, hours: Double = 24) -> ote_twilight {
-        var r = ote_twilight()
-        ote_sun_moon_times(date.timeIntervalSince1970, lat, lon, hours, &r)
+    public static func sunMoonTimes(from date: Date, lat: Double, lon: Double, hours: Double = 24) -> otk_twilight {
+        var r = otk_twilight()
+        otk_sun_moon_times(date.timeIntervalSince1970, lat, lon, hours, &r)
         return r
     }
 
-    public func setOffline(_ offline: Bool) { ote_set_offline(engine, offline ? 1 : 0) }
-    public func setCacheLimit(megabytes: Int32) { ote_set_cache_limit(engine, megabytes) }
+    public func setOffline(_ offline: Bool) { otk_set_offline(engine, offline ? 1 : 0) }
+    public func setCacheLimit(megabytes: Int32) { otk_set_cache_limit(engine, megabytes) }
     public func downloadRegion(layer: Int32 = 0, west: Double, south: Double, east: Double, north: Double, minZoom: Int32, maxZoom: Int32) -> Int32 {
-        ote_download_region(engine, layer, west, south, east, north, minZoom, maxZoom)
+        otk_download_region(engine, layer, west, south, east, north, minZoom, maxZoom)
     }
-    public func downloadStatus(_ id: Int32) -> ote_download_status {
-        var s = ote_download_status()
-        ote_get_download_status(engine, id, &s)
+    public func downloadStatus(_ id: Int32) -> otk_download_status {
+        var s = otk_download_status()
+        otk_get_download_status(engine, id, &s)
         return s
     }
-    public func cancelDownload(_ id: Int32) { ote_cancel_download(engine, id) }
+    public func cancelDownload(_ id: Int32) { otk_cancel_download(engine, id) }
     public func exportTiles(layer: Int32 = 0, west: Double, south: Double, east: Double, north: Double, minZoom: Int32, maxZoom: Int32, path: String) -> Int64 {
-        ote_export_tiles(engine, layer, west, south, east, north, minZoom, maxZoom, path)
+        otk_export_tiles(engine, layer, west, south, east, north, minZoom, maxZoom, path)
     }
-    public func importTiles(layer: Int32 = 0, path: String) -> Int64 { ote_import_tiles(engine, layer, path) }
+    public func importTiles(layer: Int32 = 0, path: String) -> Int64 { otk_import_tiles(engine, layer, path) }
 
     @discardableResult
     public func addSymbol(lat: Double, lon: Double, code: String, name: String = "", altitude: Double = 0) -> UInt64 {
-        ote_add_symbol(engine, lat, lon, altitude, code, name)
+        otk_add_symbol(engine, lat, lon, altitude, code, name)
     }
     @discardableResult
     public func addBullseye(lat: Double, lon: Double, radius: Double, rings: Int32 = 3, bearingStep: Double = 30,
-                            reference: ote_north_reference = OTE_NORTH_MAGNETIC, unit: ote_angle_unit = OTE_ANGLE_DEGREES) -> Int32 {
-        ote_add_bullseye(engine, lat, lon, radius, rings, bearingStep, reference, unit, 0)
+                            reference: otk_north_reference = OTK_NORTH_MAGNETIC, unit: otk_angle_unit = OTK_ANGLE_DEGREES) -> Int32 {
+        otk_add_bullseye(engine, lat, lon, radius, rings, bearingStep, reference, unit, 0)
     }
     @discardableResult
     public func addRangeRings(lat: Double, lon: Double, spacing: Double, count: Int32, radials: Int32 = 0) -> Int32 {
-        ote_add_range_rings(engine, lat, lon, spacing, count, radials, 0)
+        otk_add_range_rings(engine, lat, lon, spacing, count, radials, 0)
     }
     @discardableResult
-    public func addRangeBearing(from: (Double, Double), to: (Double, Double), reference: ote_north_reference = OTE_NORTH_MAGNETIC,
-                                unit: ote_angle_unit = OTE_ANGLE_DEGREES) -> Int32 {
-        ote_add_range_bearing(engine, from.0, from.1, to.0, to.1, reference, unit, OTE_DISTANCE_METRIC, 0)
+    public func addRangeBearing(from: (Double, Double), to: (Double, Double), reference: otk_north_reference = OTK_NORTH_MAGNETIC,
+                                unit: otk_angle_unit = OTK_ANGLE_DEGREES) -> Int32 {
+        otk_add_range_bearing(engine, from.0, from.1, to.0, to.1, reference, unit, OTK_DISTANCE_METRIC, 0)
     }
     @discardableResult
-    public func addContoursInView(interval: Double, majorEvery: Int32 = 5) -> Int32 { ote_add_contours_in_view(engine, interval, majorEvery, 0) }
-    public func setTerrainSlope(_ enabled: Bool) { ote_set_terrain_slope(engine, enabled ? 1 : 0, 0.6, 45) }
-    public func setGridType(_ type: ote_grid_type) { ote_set_grid_type(engine, type) }
-    public static func formatCoordinate(lat: Double, lon: Double, format: ote_coordinate_format, precision: Int32 = -1) -> String {
+    public func addContoursInView(interval: Double, majorEvery: Int32 = 5) -> Int32 { otk_add_contours_in_view(engine, interval, majorEvery, 0) }
+    public func setTerrainSlope(_ enabled: Bool) { otk_set_terrain_slope(engine, enabled ? 1 : 0, 0.6, 45) }
+    public func setGridType(_ type: otk_grid_type) { otk_set_grid_type(engine, type) }
+    public static func formatCoordinate(lat: Double, lon: Double, format: otk_coordinate_format, precision: Int32 = -1) -> String {
         var buffer = [CChar](repeating: 0, count: 128)
-        ote_format_coordinate(lat, lon, format, precision, &buffer, Int32(buffer.count))
+        otk_format_coordinate(lat, lon, format, precision, &buffer, Int32(buffer.count))
         return String(cString: buffer)
     }
     public static func parseCoordinate(_ text: String) -> (Double, Double)? {
         var lat = 0.0, lon = 0.0
-        return ote_parse_coordinate(text, &lat, &lon) != 0 ? (lat, lon) : nil
+        return otk_parse_coordinate(text, &lat, &lon) != 0 ? (lat, lon) : nil
     }
 
     public func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
 
     public func draw(in view: MTKView) {
         guard let drawable = view.currentDrawable, let depth = view.depthStencilTexture else { return }
-        ote_frame_metal(engine, Int32(view.drawableSize.width), Int32(view.drawableSize.height),
+        otk_frame_metal(engine, Int32(view.drawableSize.width), Int32(view.drawableSize.height),
                         Unmanaged.passUnretained(drawable).toOpaque(),
                         Unmanaged.passUnretained(depth).toOpaque(), nil, scale)
     }
@@ -196,18 +196,18 @@ public final class OpenTAKView: OTEPlatformView, MTKViewDelegate {
 
     private static func keyCode(_ k: Int) -> Int32? {
         switch k {
-        case 0: return Int32(OTE_KEY_LEFT.rawValue)
-        case 1: return Int32(OTE_KEY_RIGHT.rawValue)
-        case 2: return Int32(OTE_KEY_UP.rawValue)
-        case 3: return Int32(OTE_KEY_DOWN.rawValue)
-        case 4: return Int32(OTE_KEY_ZOOM_IN.rawValue)
-        case 5: return Int32(OTE_KEY_ZOOM_OUT.rawValue)
-        case 6: return Int32(OTE_KEY_ROTATE_LEFT.rawValue)
-        case 7: return Int32(OTE_KEY_ROTATE_RIGHT.rawValue)
-        case 8: return Int32(OTE_KEY_TILT_UP.rawValue)
-        case 9: return Int32(OTE_KEY_TILT_DOWN.rawValue)
-        case 10: return Int32(OTE_KEY_RESET_NORTH.rawValue)
-        case 11: return Int32(OTE_KEY_RESET_TILT.rawValue)
+        case 0: return Int32(OTK_KEY_LEFT.rawValue)
+        case 1: return Int32(OTK_KEY_RIGHT.rawValue)
+        case 2: return Int32(OTK_KEY_UP.rawValue)
+        case 3: return Int32(OTK_KEY_DOWN.rawValue)
+        case 4: return Int32(OTK_KEY_ZOOM_IN.rawValue)
+        case 5: return Int32(OTK_KEY_ZOOM_OUT.rawValue)
+        case 6: return Int32(OTK_KEY_ROTATE_LEFT.rawValue)
+        case 7: return Int32(OTK_KEY_ROTATE_RIGHT.rawValue)
+        case 8: return Int32(OTK_KEY_TILT_UP.rawValue)
+        case 9: return Int32(OTK_KEY_TILT_DOWN.rawValue)
+        case 10: return Int32(OTK_KEY_RESET_NORTH.rawValue)
+        case 11: return Int32(OTK_KEY_RESET_TILT.rawValue)
         default: return nil
         }
     }
@@ -238,26 +238,26 @@ public final class OpenTAKView: OTEPlatformView, MTKViewDelegate {
 
     private func modifiers(_ flags: UIKeyModifierFlags) -> Int32 {
         var m: Int32 = 0
-        if flags.contains(.shift) { m |= Int32(OTE_MOD_SHIFT.rawValue) }
-        if flags.contains(.control) { m |= Int32(OTE_MOD_CTRL.rawValue) }
-        if flags.contains(.alternate) { m |= Int32(OTE_MOD_ALT.rawValue) }
-        if flags.contains(.command) { m |= Int32(OTE_MOD_SUPER.rawValue) }
+        if flags.contains(.shift) { m |= Int32(OTK_MOD_SHIFT.rawValue) }
+        if flags.contains(.control) { m |= Int32(OTK_MOD_CTRL.rawValue) }
+        if flags.contains(.alternate) { m |= Int32(OTK_MOD_ALT.rawValue) }
+        if flags.contains(.command) { m |= Int32(OTK_MOD_SUPER.rawValue) }
         return m
     }
 
     private func pointerType(_ t: UITouch) -> Int32 {
         switch t.type {
-        case .pencil: return Int32(OTE_POINTER_PEN.rawValue)
-        case .indirectPointer: return Int32(OTE_POINTER_MOUSE.rawValue)
-        default: return Int32(OTE_POINTER_TOUCH.rawValue)
+        case .pencil: return Int32(OTK_POINTER_PEN.rawValue)
+        case .indirectPointer: return Int32(OTK_POINTER_MOUSE.rawValue)
+        default: return Int32(OTK_POINTER_TOUCH.rawValue)
         }
     }
 
     private func button(_ event: UIEvent?) -> Int32 {
-        guard let mask = event?.buttonMask else { return Int32(OTE_BUTTON_LEFT.rawValue) }
-        if mask.contains(.secondary) { return Int32(OTE_BUTTON_RIGHT.rawValue) }
-        if mask.contains(UIEvent.ButtonMask.button(3)) { return Int32(OTE_BUTTON_MIDDLE.rawValue) }
-        return Int32(OTE_BUTTON_LEFT.rawValue)
+        guard let mask = event?.buttonMask else { return Int32(OTK_BUTTON_LEFT.rawValue) }
+        if mask.contains(.secondary) { return Int32(OTK_BUTTON_RIGHT.rawValue) }
+        if mask.contains(UIEvent.ButtonMask.button(3)) { return Int32(OTK_BUTTON_MIDDLE.rawValue) }
+        return Int32(OTK_BUTTON_LEFT.rawValue)
     }
 
     public override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -267,7 +267,7 @@ public final class OpenTAKView: OTEPlatformView, MTKViewDelegate {
             nextTouchId += 1
             touchIds[ObjectIdentifier(t)] = id
             let p = px(t.location(in: self))
-            ote_pointer_down(engine, id, p.x, p.y, pointerType(t), button(event), mods)
+            otk_pointer_down(engine, id, p.x, p.y, pointerType(t), button(event), mods)
         }
     }
 
@@ -276,7 +276,7 @@ public final class OpenTAKView: OTEPlatformView, MTKViewDelegate {
         for t in touches {
             guard let id = touchIds[ObjectIdentifier(t)] else { continue }
             let p = px(t.location(in: self))
-            ote_pointer_move(engine, id, p.x, p.y, mods)
+            otk_pointer_move(engine, id, p.x, p.y, mods)
         }
     }
 
@@ -284,26 +284,26 @@ public final class OpenTAKView: OTEPlatformView, MTKViewDelegate {
         for t in touches {
             guard let id = touchIds.removeValue(forKey: ObjectIdentifier(t)) else { continue }
             let p = px(t.location(in: self))
-            ote_pointer_up(engine, id, p.x, p.y)
+            otk_pointer_up(engine, id, p.x, p.y)
         }
     }
 
     public override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
         for t in touches {
             guard let id = touchIds.removeValue(forKey: ObjectIdentifier(t)) else { continue }
-            ote_pointer_cancel(engine, id)
+            otk_pointer_cancel(engine, id)
         }
     }
 
     @objc private func onTrackpadPinch(_ g: UIPinchGestureRecognizer) {
         let p = px(g.location(in: self))
-        ote_magnify(engine, p.x, p.y, Double(g.scale))
+        otk_magnify(engine, p.x, p.y, Double(g.scale))
         g.scale = 1
     }
 
     @objc private func onTrackpadRotate(_ g: UIRotationGestureRecognizer) {
         let p = px(g.location(in: self))
-        ote_rotate_gesture(engine, p.x, p.y, -Double(g.rotation) * 180 / .pi)
+        otk_rotate_gesture(engine, p.x, p.y, -Double(g.rotation) * 180 / .pi)
         g.rotation = 0
     }
 
@@ -311,7 +311,7 @@ public final class OpenTAKView: OTEPlatformView, MTKViewDelegate {
         let p = px(g.location(in: self))
         let t = g.translation(in: self)
         let s = CGFloat(scale)
-        ote_wheel(engine, p.x, p.y, t.x * s, t.y * s, 1, 0)
+        otk_wheel(engine, p.x, p.y, t.x * s, t.y * s, 1, 0)
         g.setTranslation(.zero, in: self)
     }
 
@@ -337,8 +337,8 @@ public final class OpenTAKView: OTEPlatformView, MTKViewDelegate {
     public override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
         var handled = false
         for p in presses {
-            if let i = keyIndex(p), let k = OpenTAKView.keyCode(i) {
-                ote_key(engine, k, 1, modifiers(p.key?.modifierFlags ?? []))
+            if let i = keyIndex(p), let k = OTKGlobeView.keyCode(i) {
+                otk_key(engine, k, 1, modifiers(p.key?.modifierFlags ?? []))
                 handled = true
             }
         }
@@ -348,8 +348,8 @@ public final class OpenTAKView: OTEPlatformView, MTKViewDelegate {
     public override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
         var handled = false
         for p in presses {
-            if let i = keyIndex(p), let k = OpenTAKView.keyCode(i) {
-                ote_key(engine, k, 0, 0)
+            if let i = keyIndex(p), let k = OTKGlobeView.keyCode(i) {
+                otk_key(engine, k, 0, 0)
                 handled = true
             }
         }
@@ -358,7 +358,7 @@ public final class OpenTAKView: OTEPlatformView, MTKViewDelegate {
 
     public override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
         for p in presses {
-            if let i = keyIndex(p), let k = OpenTAKView.keyCode(i) { ote_key(engine, k, 0, 0) }
+            if let i = keyIndex(p), let k = OTKGlobeView.keyCode(i) { otk_key(engine, k, 0, 0) }
         }
         super.pressesCancelled(presses, with: event)
     }
@@ -371,10 +371,10 @@ public final class OpenTAKView: OTEPlatformView, MTKViewDelegate {
 
     private func modifiers(_ flags: NSEvent.ModifierFlags) -> Int32 {
         var m: Int32 = 0
-        if flags.contains(.shift) { m |= Int32(OTE_MOD_SHIFT.rawValue) }
-        if flags.contains(.control) { m |= Int32(OTE_MOD_CTRL.rawValue) }
-        if flags.contains(.option) { m |= Int32(OTE_MOD_ALT.rawValue) }
-        if flags.contains(.command) { m |= Int32(OTE_MOD_SUPER.rawValue) }
+        if flags.contains(.shift) { m |= Int32(OTK_MOD_SHIFT.rawValue) }
+        if flags.contains(.control) { m |= Int32(OTK_MOD_CTRL.rawValue) }
+        if flags.contains(.option) { m |= Int32(OTK_MOD_ALT.rawValue) }
+        if flags.contains(.command) { m |= Int32(OTK_MOD_SUPER.rawValue) }
         return m
     }
 
@@ -385,49 +385,49 @@ public final class OpenTAKView: OTEPlatformView, MTKViewDelegate {
         guard mouseButton == 0 else { return }
         mouseButton = button
         let p = location(event)
-        ote_pointer_down(engine, 0, p.x, p.y, Int32(OTE_POINTER_MOUSE.rawValue), button, modifiers(event.modifierFlags))
+        otk_pointer_down(engine, 0, p.x, p.y, Int32(OTK_POINTER_MOUSE.rawValue), button, modifiers(event.modifierFlags))
     }
 
     private func dragged(_ event: NSEvent) {
         let p = location(event)
-        ote_pointer_move(engine, 0, p.x, p.y, modifiers(event.modifierFlags))
+        otk_pointer_move(engine, 0, p.x, p.y, modifiers(event.modifierFlags))
     }
 
     private func up(_ event: NSEvent, _ button: Int32) {
         guard mouseButton == button else { return }
         mouseButton = 0
         let p = location(event)
-        ote_pointer_up(engine, 0, p.x, p.y)
+        otk_pointer_up(engine, 0, p.x, p.y)
     }
 
-    public override func mouseDown(with event: NSEvent) { down(event, Int32(OTE_BUTTON_LEFT.rawValue)) }
+    public override func mouseDown(with event: NSEvent) { down(event, Int32(OTK_BUTTON_LEFT.rawValue)) }
     public override func mouseDragged(with event: NSEvent) { dragged(event) }
-    public override func mouseUp(with event: NSEvent) { up(event, Int32(OTE_BUTTON_LEFT.rawValue)) }
-    public override func rightMouseDown(with event: NSEvent) { down(event, Int32(OTE_BUTTON_RIGHT.rawValue)) }
+    public override func mouseUp(with event: NSEvent) { up(event, Int32(OTK_BUTTON_LEFT.rawValue)) }
+    public override func rightMouseDown(with event: NSEvent) { down(event, Int32(OTK_BUTTON_RIGHT.rawValue)) }
     public override func rightMouseDragged(with event: NSEvent) { dragged(event) }
-    public override func rightMouseUp(with event: NSEvent) { up(event, Int32(OTE_BUTTON_RIGHT.rawValue)) }
-    public override func otherMouseDown(with event: NSEvent) { down(event, Int32(OTE_BUTTON_MIDDLE.rawValue)) }
+    public override func rightMouseUp(with event: NSEvent) { up(event, Int32(OTK_BUTTON_RIGHT.rawValue)) }
+    public override func otherMouseDown(with event: NSEvent) { down(event, Int32(OTK_BUTTON_MIDDLE.rawValue)) }
     public override func otherMouseDragged(with event: NSEvent) { dragged(event) }
-    public override func otherMouseUp(with event: NSEvent) { up(event, Int32(OTE_BUTTON_MIDDLE.rawValue)) }
+    public override func otherMouseUp(with event: NSEvent) { up(event, Int32(OTK_BUTTON_MIDDLE.rawValue)) }
 
     public override func scrollWheel(with event: NSEvent) {
         let p = location(event)
         let s = CGFloat(scale)
         if event.hasPreciseScrollingDeltas {
-            ote_wheel(engine, p.x, p.y, event.scrollingDeltaX * s, event.scrollingDeltaY * s, 1, modifiers(event.modifierFlags))
+            otk_wheel(engine, p.x, p.y, event.scrollingDeltaX * s, event.scrollingDeltaY * s, 1, modifiers(event.modifierFlags))
         } else {
-            ote_wheel(engine, p.x, p.y, event.scrollingDeltaX, event.scrollingDeltaY, 0, modifiers(event.modifierFlags))
+            otk_wheel(engine, p.x, p.y, event.scrollingDeltaX, event.scrollingDeltaY, 0, modifiers(event.modifierFlags))
         }
     }
 
     public override func magnify(with event: NSEvent) {
         let p = location(event)
-        ote_magnify(engine, p.x, p.y, 1.0 + Double(event.magnification))
+        otk_magnify(engine, p.x, p.y, 1.0 + Double(event.magnification))
     }
 
     public override func rotate(with event: NSEvent) {
         let p = location(event)
-        ote_rotate_gesture(engine, p.x, p.y, Double(event.rotation))
+        otk_rotate_gesture(engine, p.x, p.y, Double(event.rotation))
     }
 
     private func keyIndex(_ code: UInt16) -> Int? {
@@ -449,19 +449,19 @@ public final class OpenTAKView: OTEPlatformView, MTKViewDelegate {
     }
 
     public override func keyDown(with event: NSEvent) {
-        guard let i = keyIndex(event.keyCode), let k = OpenTAKView.keyCode(i) else {
+        guard let i = keyIndex(event.keyCode), let k = OTKGlobeView.keyCode(i) else {
             super.keyDown(with: event)
             return
         }
-        if !event.isARepeat { ote_key(engine, k, 1, modifiers(event.modifierFlags)) }
+        if !event.isARepeat { otk_key(engine, k, 1, modifiers(event.modifierFlags)) }
     }
 
     public override func keyUp(with event: NSEvent) {
-        guard let i = keyIndex(event.keyCode), let k = OpenTAKView.keyCode(i) else {
+        guard let i = keyIndex(event.keyCode), let k = OTKGlobeView.keyCode(i) else {
             super.keyUp(with: event)
             return
         }
-        ote_key(engine, k, 0, 0)
+        otk_key(engine, k, 0, 0)
     }
     #endif
 }

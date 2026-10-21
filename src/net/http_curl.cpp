@@ -4,7 +4,7 @@
 
 #include <mutex>
 
-namespace ote::net {
+namespace otk::net {
 
 namespace {
 

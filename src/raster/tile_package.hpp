@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-namespace ote {
+namespace otk {
 
 class TilePackageWriter {
 public:

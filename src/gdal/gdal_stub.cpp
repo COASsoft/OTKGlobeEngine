@@ -1,6 +1,6 @@
 #include "gdal/gdal_sources.hpp"
 
-namespace ote {
+namespace otk {
 
 bool gdalAvailable() { return false; }
 

@@ -1,11 +1,11 @@
 #pragma once
 
-#include "ote/features.hpp"
+#include "otk/features.hpp"
 
 #include <cstddef>
 #include <cstdint>
 
-namespace ote {
+namespace otk {
 
 bool decodeImage(const std::uint8_t* data, std::size_t size, Image& out);
 bool imageSize(const std::uint8_t* data, std::size_t size, int& width, int& height);

@@ -1,6 +1,6 @@
 #pragma once
 
-namespace ote {
+namespace otk {
 
 struct CelestialPosition {
     double azimuth = 0.0;

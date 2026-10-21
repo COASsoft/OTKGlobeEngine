@@ -6,7 +6,7 @@
 #include <utility>
 #include <vector>
 
-namespace ote {
+namespace otk {
 
 struct Coord {
     double lat = 0;

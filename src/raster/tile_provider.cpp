@@ -16,7 +16,7 @@
 #include <filesystem>
 #include <mutex>
 
-namespace ote {
+namespace otk {
 
 namespace {
 
@@ -54,7 +54,7 @@ public:
                  : layer.srid == 4326 ? TileMatrix::geographic(layer.minZoom, layer.maxZoom, layer.tileSize)
                                      : TileMatrix::webMercator(layer.minZoom, layer.maxZoom, layer.tileSize);
         key_ = layerCacheKey(layer);
-        ua_ = layer.userAgent.empty() ? std::string("OpenTAKEngine/0.1") : layer.userAgent;
+        ua_ = layer.userAgent.empty() ? std::string("OTKGlobeEngine/0.1") : layer.userAgent;
         expiry_ = layer.expirySeconds < 0 ? kNeverExpires : layer.expirySeconds > 0 ? layer.expirySeconds : kMinExpirySeconds;
         local_ = layer.url.rfind("file://", 0) == 0;
     }
@@ -534,7 +534,7 @@ class HostProvider : public TileProvider {
 public:
     HostProvider(const ImageryLayer& layer, TileCache* cache, std::atomic<bool>* offline)
         : source_(layer.source), cache_(cache), offline_(offline),
-          ua_(layer.userAgent.empty() ? std::string("OpenTAKEngine/0.1") : layer.userAgent) {
+          ua_(layer.userAgent.empty() ? std::string("OTKGlobeEngine/0.1") : layer.userAgent) {
         matrix_ = layer.srid == 4326 ? TileMatrix::geographic(layer.minZoom, layer.maxZoom, layer.tileSize)
                                      : TileMatrix::webMercator(layer.minZoom, layer.maxZoom, layer.tileSize);
         useCache_ = layer.cache;

@@ -1,14 +1,14 @@
 #pragma once
 
 #include "elevation/elevation.hpp"
-#include "ote/features.hpp"
+#include "otk/features.hpp"
 #include "raster/tile_provider.hpp"
 
 #include <memory>
 #include <string>
 #include <vector>
 
-namespace ote {
+namespace otk {
 
 bool gdalAvailable();
 bool gdalIsElevation(const std::string& path);

@@ -1,7 +1,7 @@
-#include "ote/formats.hpp"
+#include "otk/formats.hpp"
 
 #include "formats/adapters.hpp"
-#include "ote/klv.hpp"
+#include "otk/klv.hpp"
 #include "gdal/gdal_sources.hpp"
 
 #include <miniz.h>
@@ -13,7 +13,7 @@
 #include <filesystem>
 #include <fstream>
 
-namespace ote {
+namespace otk {
 
 namespace {
 

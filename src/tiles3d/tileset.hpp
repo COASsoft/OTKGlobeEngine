@@ -3,7 +3,7 @@
 #include "core/camera.hpp"
 #include "model/model_layer.hpp"
 #include "model/pointcloud.hpp"
-#include "ote/engine.hpp"
+#include "otk/engine.hpp"
 
 #include <array>
 #include <atomic>
@@ -17,7 +17,7 @@
 #include <thread>
 #include <vector>
 
-namespace ote {
+namespace otk {
 
 class TileSource;
 class TileCache;

@@ -1,14 +1,14 @@
 #include "core/astro.hpp"
 
 #include "core/geo.hpp"
-#include "ote/astro.hpp"
+#include "otk/astro.hpp"
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <limits>
 
-namespace ote {
+namespace otk {
 
 namespace {
 

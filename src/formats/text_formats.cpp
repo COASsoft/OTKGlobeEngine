@@ -10,7 +10,7 @@
 #include <set>
 #include <sstream>
 
-namespace ote::adapters {
+namespace otk::adapters {
 
 namespace {
 
@@ -563,7 +563,7 @@ std::vector<Feature> parseGml(const std::vector<std::uint8_t>& bytes, std::vecto
             if (ln == "boundedBy") continue;
             std::string value = c.text().as_string();
             std::string ns = c.name();
-            bool own = ns.rfind("ote:", 0) == 0;
+            bool own = ns.rfind("otk:", 0) == 0 || ns.rfind("ote:", 0) == 0;
             if (ln == "name" && f.name.empty()) f.name = value;
             else if (ln == "description" && f.description.empty()) f.description = value;
             else if (own && ln == "uid") f.uid = value;
@@ -582,7 +582,7 @@ std::vector<Feature> parseGml(const std::vector<std::uint8_t>& bytes, std::vecto
 std::string writeGml(const std::vector<Feature>& fs, ExportResult& r) {
     std::string out =
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<gml:FeatureCollection xmlns:gml=\"http://www.opengis.net/gml/3.2\" "
-        "xmlns:ote=\"https://github.com/grangedevgroup-code/OpenTAKEngine\" gml:id=\"ote\">\n";
+        "xmlns:otk=\"https://github.com/grangedevgroup-code/OTKGlobeEngine\" gml:id=\"otk\">\n";
     auto poslist = [](const std::vector<Coord>& pts, bool close) {
         std::string s;
         std::vector<Coord> p = pts;
@@ -594,21 +594,21 @@ std::string writeGml(const std::vector<Feature>& fs, ExportResult& r) {
     for (size_t i = 0; i < fs.size(); ++i) {
         const Feature& f = fs[i];
         std::string id = xmlEscape(uniqueId(f, i));
-        out += "<gml:featureMember><ote:Feature gml:id=\"f" + std::to_string(i) + "\">";
-        out += "<ote:uid>" + id + "</ote:uid><ote:name>" + xmlEscape(f.name) + "</ote:name>";
-        if (!f.description.empty()) out += "<ote:description>" + xmlEscape(f.description) + "</ote:description>";
-        if (!f.type.empty()) out += "<ote:type>" + xmlEscape(f.type) + "</ote:type>";
-        if (f.time > 0) out += "<ote:time>" + formatIsoTime(f.time) + "</ote:time>";
+        out += "<gml:featureMember><otk:Feature gml:id=\"f" + std::to_string(i) + "\">";
+        out += "<otk:uid>" + id + "</otk:uid><otk:name>" + xmlEscape(f.name) + "</otk:name>";
+        if (!f.description.empty()) out += "<otk:description>" + xmlEscape(f.description) + "</otk:description>";
+        if (!f.type.empty()) out += "<otk:type>" + xmlEscape(f.type) + "</otk:type>";
+        if (f.time > 0) out += "<otk:time>" + formatIsoTime(f.time) + "</otk:time>";
         for (const auto& kv : f.attributes) {
             std::string key;
             for (char c : kv.first) key += std::isalnum(static_cast<unsigned char>(c)) || c == '_' ? c : '_';
             if (key.empty() || std::isdigit(static_cast<unsigned char>(key[0]))) key = "a_" + key;
-            out += "<ote:" + key + ">" + xmlEscape(kv.second) + "</ote:" + key + ">";
+            out += "<otk:" + key + ">" + xmlEscape(kv.second) + "</otk:" + key + ">";
         }
         for (size_t g = 0; g < f.geometries.size(); ++g) {
             const Geometry& geo = f.geometries[g];
             std::string gid = "g" + std::to_string(i) + "_" + std::to_string(g);
-            out += "<ote:geometry>";
+            out += "<otk:geometry>";
             if (geo.type == GeometryType::Point && !geo.points.empty())
                 out += "<gml:Point gml:id=\"" + gid + "\"" + srs + "><gml:pos>" + poslist({geo.points[0]}, false) + "</gml:pos></gml:Point>";
             else if (geo.type == GeometryType::LineString)
@@ -620,9 +620,9 @@ std::string writeGml(const std::vector<Feature>& fs, ExportResult& r) {
                     out += "<gml:interior><gml:LinearRing><gml:posList>" + poslist(h, true) + "</gml:posList></gml:LinearRing></gml:interior>";
                 out += "</gml:Polygon>";
             }
-            out += "</ote:geometry>";
+            out += "</otk:geometry>";
         }
-        out += "</ote:Feature></gml:featureMember>\n";
+        out += "</otk:Feature></gml:featureMember>\n";
     }
     out += "</gml:FeatureCollection>\n";
     r.lossy.push_back("GML drops styles and start/stale times; attribute names are sanitised to XML element names");

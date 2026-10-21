@@ -5,7 +5,7 @@
 #include <cstring>
 #include <limits>
 
-namespace ote {
+namespace otk {
 
 namespace {
 

@@ -1,12 +1,12 @@
 #pragma once
 
-#include "ote/features.hpp"
+#include "otk/features.hpp"
 
 #include <cstdint>
 #include <string>
 #include <vector>
 
-namespace ote {
+namespace otk {
 
 struct GeodesicLine {
     double distance = 0;

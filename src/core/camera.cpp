@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-namespace ote {
+namespace otk {
 
 double Camera::maxTiltForRange(double r) const {
     if (!rangeTiltLimit) return maxTilt;

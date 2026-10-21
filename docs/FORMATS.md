@@ -1,14 +1,14 @@
 # Data interoperability
 
-OpenTAKEngine reads and writes data through a registry of format adapters (`ote/formats.hpp`). Each adapter declares what it is, which extensions it uses, whether it imports and exports, and whether it needs the optional GDAL module. Imported content becomes engine `Feature`s, independent of rendering, so it can be stored, queried, transformed, rendered and exported without re-parsing.
+OTKGlobeEngine reads and writes data through a registry of format adapters (`otk/formats.hpp`). Each adapter declares what it is, which extensions it uses, whether it imports and exports, and whether it needs the optional GDAL module. Imported content becomes engine `Feature`s, independent of rendering, so it can be stored, queried, transformed, rendered and exported without re-parsing.
 
 ```cpp
-ote::ImportResult in = ote::importData("mission.zip");          // format detected from content
-ote::ExportResult out = ote::exportFeatures(in.data.features, "mission.kml");
+otk::ImportResult in = otk::importData("mission.zip");          // format detected from content
+otk::ExportResult out = otk::exportFeatures(in.data.features, "mission.kml");
 for (const auto& note : out.lossy) puts(note.c_str());           // explicit list of what the target cannot hold
 ```
 
-`Engine::loadFeatures` uses the same path, so every vector format below loads with one call, and `Engine::exportFeatures` writes any of the exporters. The C ABI exposes `ote_export_features`, `ote_detect_format` and `ote_formats_markdown`.
+`Engine::loadFeatures` uses the same path, so every vector format below loads with one call, and `Engine::exportFeatures` writes any of the exporters. The C ABI exposes `otk_export_features`, `otk_detect_format` and `otk_formats_markdown`.
 
 ## Detection
 
@@ -29,7 +29,7 @@ Formats are detected from content first and extension second: zip archives are t
 
 ## CoT and ATAK
 
-* ATAK iconset zips are registered with `registerIconset` (C ABI `ote_register_iconset`), and `usericon iconsetpath` markers draw the matching icon.
+* ATAK iconset zips are registered with `registerIconset` (C ABI `otk_register_iconset`), and `usericon iconsetpath` markers draw the matching icon.
 * Range and bearing lines (`u-rb-a`) are drawn from their `range` and `bearing`.
 * `strokeStyle` `dashed` and `dotted`, `color` (`argb` or `value`), `strokeColor`, `strokeWeight` and `fillColor` are honoured.
 
@@ -40,11 +40,11 @@ Formats are detected from content first and extension second: zip archives are t
 * GeoJSON: `id`, every property (non-string values kept as JSON text), simplestyle colours.
 * GPX: name, description, type, symbol, comment, waypoint time, track start and end.
 * Shapefile: every DBF field. Coordinates are reprojected to WGS84 from the `.prj`: geographic, Transverse Mercator (UTM, Gauss-Kruger), Lambert conformal conic (1SP and 2SP, State Plane), Albers equal area, Mercator and Web Mercator are handled natively in metres, feet or US survey feet; other projections go through GDAL when it is available.
-* CoT: uid, type, how, time/start/stale, ce/le, callsign, remarks, colours, drawn shapes, and the raw `<detail>` block, which is written back unchanged so CoT round-trips are lossless. Non-CoT attributes ride in a private `<__ote_attributes>` element that TAK clients ignore.
+* CoT: uid, type, how, time/start/stale, ce/le, callsign, remarks, colours, drawn shapes, and the raw `<detail>` block, which is written back unchanged so CoT round-trips are lossless. Non-CoT attributes ride in a private `<__otk_attributes>` element that TAK clients ignore.
 * CSV: all columns that are not coordinates, name, description, uid, type or time become attributes.
 * GML: feature `gml:id`, simple property elements, WGS84 geometry with the correct EPSG:4326 axis order.
 
-Round trips through GeoJSON, KML, GML, CSV, CoT and TAK data packages are covered by `ote_unit` and keep uid, type, attributes, times and polygon holes. Exports report every loss in `ExportResult::lossy` (for example GPX has no polygons or attributes, WKT keeps geometry only).
+Round trips through GeoJSON, KML, GML, CSV, CoT and TAK data packages are covered by `otk_unit` and keep uid, type, attributes, times and polygon holes. Exports report every loss in `ExportResult::lossy` (for example GPX has no polygons or attributes, WKT keeps geometry only).
 
 ## Untrusted input
 
@@ -56,7 +56,7 @@ Round trips through GeoJSON, KML, GML, CSV, CoT and TAK data packages are covere
 
 ## Compatibility matrix
 
-"Needs GDAL" formats are available when the engine is built with `-DOTE_WITH_GDAL=ON` (the Linux CI build does); availability then depends on the drivers compiled into that GDAL. At runtime `formats()` and `formatsMarkdown()` report the formats present in the running build.
+"Needs GDAL" formats are available when the engine is built with `-DOTK_WITH_GDAL=ON` (the Linux CI build does); availability then depends on the drivers compiled into that GDAL. At runtime `formats()` and `formatsMarkdown()` report the formats present in the running build.
 
 | Format | Id | Kind | Import | Export | Needs GDAL | Load with | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -101,7 +101,7 @@ Round trips through GeoJSON, KML, GML, CSV, CoT and TAK data packages are covere
 ## Military and government formats
 
 * NITF, CADRG/CIB (RPF `A.TOC`), DTED, ADRG and S-57 load through GDAL's drivers; DTED and SRTM HGT also have native readers.
-* MIL-STD-2525 C/D symbology is rendering, not a data format: CoT `type` strings and SIDCs are drawn as 2525 icons by `ote/milsym.hpp`.
+* MIL-STD-2525 C/D symbology is rendering, not a data format: CoT `type` strings and SIDCs are drawn as 2525 icons by `otk/milsym.hpp`.
 * VMAP/VPF has no GDAL driver; it needs OGDI and is not supported.
 * Formats without public specifications or with export-controlled specifications are out of scope unless a licensed implementation is supplied.
 

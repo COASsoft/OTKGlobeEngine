@@ -1,4 +1,4 @@
-#include "ote/engine.hpp"
+#include "otk/engine.hpp"
 
 #include <pugixml.hpp>
 
@@ -7,7 +7,7 @@
 #include <cstdlib>
 #include <sstream>
 
-namespace ote {
+namespace otk {
 
 namespace {
 

@@ -9,7 +9,7 @@
 #include <cmath>
 #include <cstring>
 
-namespace ote {
+namespace otk {
 
 namespace {
 

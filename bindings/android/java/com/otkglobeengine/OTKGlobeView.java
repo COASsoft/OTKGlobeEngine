@@ -1,4 +1,4 @@
-package com.opentakengine;
+package com.otkglobeengine;
 
 import android.content.Context;
 import android.net.ConnectivityManager;
@@ -13,9 +13,9 @@ import java.util.ArrayList;
 import javax.microedition.khronos.egl.EGLConfig;
 import javax.microedition.khronos.opengles.GL10;
 
-public class OpenTakView extends GLSurfaceView implements GLSurfaceView.Renderer {
+public class OTKGlobeView extends GLSurfaceView implements GLSurfaceView.Renderer {
     public interface Ready {
-        void onReady(OpenTakView view);
+        void onReady(OTKGlobeView view);
     }
 
     private long engine;
@@ -30,11 +30,11 @@ public class OpenTakView extends GLSurfaceView implements GLSurfaceView.Renderer
         void onResult(long value);
     }
 
-    public OpenTakView(Context context) {
+    public OTKGlobeView(Context context) {
         this(context, null);
     }
 
-    public OpenTakView(Context context, AttributeSet attrs) {
+    public OTKGlobeView(Context context, AttributeSet attrs) {
         super(context, attrs);
         density = context.getResources().getDisplayMetrics().density;
         setEGLContextClientVersion(3);
@@ -72,7 +72,7 @@ public class OpenTakView extends GLSurfaceView implements GLSurfaceView.Renderer
         run(new Runnable() {
             @Override
             public void run() {
-                OpenTakEngine.nativeSetView(engine, lat, lon, gsd, azimuth, tilt);
+                OTKGlobeEngine.nativeSetView(engine, lat, lon, gsd, azimuth, tilt);
             }
         });
     }
@@ -81,7 +81,7 @@ public class OpenTakView extends GLSurfaceView implements GLSurfaceView.Renderer
         run(new Runnable() {
             @Override
             public void run() {
-                OpenTakEngine.nativeFlyTo(engine, lat, lon, gsd, azimuth, tilt, seconds);
+                OTKGlobeEngine.nativeFlyTo(engine, lat, lon, gsd, azimuth, tilt, seconds);
             }
         });
     }
@@ -90,7 +90,7 @@ public class OpenTakView extends GLSurfaceView implements GLSurfaceView.Renderer
         run(new Runnable() {
             @Override
             public void run() {
-                OpenTakEngine.nativeLoadFeatures(engine, path);
+                OTKGlobeEngine.nativeLoadFeatures(engine, path);
             }
         });
     }
@@ -99,7 +99,7 @@ public class OpenTakView extends GLSurfaceView implements GLSurfaceView.Renderer
         run(new Runnable() {
             @Override
             public void run() {
-                OpenTakEngine.nativeAddLayer(engine, type, name, urlOrPath, minZoom, maxZoom, opacity);
+                OTKGlobeEngine.nativeAddLayer(engine, type, name, urlOrPath, minZoom, maxZoom, opacity);
             }
         });
     }
@@ -115,7 +115,7 @@ public class OpenTakView extends GLSurfaceView implements GLSurfaceView.Renderer
                 run(new Runnable() {
                     @Override
                     public void run() {
-                        OpenTakEngine.nativeNetworkChanged(engine);
+                        OTKGlobeEngine.nativeNetworkChanged(engine);
                     }
                 });
             }
@@ -144,7 +144,7 @@ public class OpenTakView extends GLSurfaceView implements GLSurfaceView.Renderer
         run(new Runnable() {
             @Override
             public void run() {
-                OpenTakEngine.nativeSetOffline(engine, offline);
+                OTKGlobeEngine.nativeSetOffline(engine, offline);
             }
         });
     }
@@ -153,7 +153,7 @@ public class OpenTakView extends GLSurfaceView implements GLSurfaceView.Renderer
         run(new Runnable() {
             @Override
             public void run() {
-                OpenTakEngine.nativeSetCacheLimit(engine, megabytes);
+                OTKGlobeEngine.nativeSetCacheLimit(engine, megabytes);
             }
         });
     }
@@ -163,7 +163,7 @@ public class OpenTakView extends GLSurfaceView implements GLSurfaceView.Renderer
         run(new Runnable() {
             @Override
             public void run() {
-                final long id = OpenTakEngine.nativeDownloadRegion(engine, layer, west, south, east, north, minZoom, maxZoom);
+                final long id = OTKGlobeEngine.nativeDownloadRegion(engine, layer, west, south, east, north, minZoom, maxZoom);
                 if (result != null) post(new Runnable() {
                     @Override
                     public void run() {
@@ -175,14 +175,14 @@ public class OpenTakView extends GLSurfaceView implements GLSurfaceView.Renderer
     }
 
     public long[] downloadStatus(int id) {
-        return engine == 0 ? new long[6] : OpenTakEngine.nativeDownloadStatus(engine, id);
+        return engine == 0 ? new long[6] : OTKGlobeEngine.nativeDownloadStatus(engine, id);
     }
 
     public void cancelDownload(final int id) {
         run(new Runnable() {
             @Override
             public void run() {
-                OpenTakEngine.nativeCancelDownload(engine, id);
+                OTKGlobeEngine.nativeCancelDownload(engine, id);
             }
         });
     }
@@ -192,7 +192,7 @@ public class OpenTakView extends GLSurfaceView implements GLSurfaceView.Renderer
         run(new Runnable() {
             @Override
             public void run() {
-                final long n = OpenTakEngine.nativeExportTiles(engine, layer, west, south, east, north, minZoom, maxZoom, path);
+                final long n = OTKGlobeEngine.nativeExportTiles(engine, layer, west, south, east, north, minZoom, maxZoom, path);
                 if (result != null) post(new Runnable() {
                     @Override
                     public void run() {
@@ -207,7 +207,7 @@ public class OpenTakView extends GLSurfaceView implements GLSurfaceView.Renderer
         run(new Runnable() {
             @Override
             public void run() {
-                OpenTakEngine.nativeAddSymbol(engine, lat, lon, 0, sidcOrCotType, name);
+                OTKGlobeEngine.nativeAddSymbol(engine, lat, lon, 0, sidcOrCotType, name);
                 requestRender();
             }
         });
@@ -218,7 +218,7 @@ public class OpenTakView extends GLSurfaceView implements GLSurfaceView.Renderer
         run(new Runnable() {
             @Override
             public void run() {
-                OpenTakEngine.nativeAddBullseye(engine, lat, lon, radiusM, rings, bearingStep, northReference, angleUnit, 0);
+                OTKGlobeEngine.nativeAddBullseye(engine, lat, lon, radiusM, rings, bearingStep, northReference, angleUnit, 0);
                 requestRender();
             }
         });
@@ -228,7 +228,7 @@ public class OpenTakView extends GLSurfaceView implements GLSurfaceView.Renderer
         run(new Runnable() {
             @Override
             public void run() {
-                OpenTakEngine.nativeAddRangeRings(engine, lat, lon, spacingM, count, radials, 0);
+                OTKGlobeEngine.nativeAddRangeRings(engine, lat, lon, spacingM, count, radials, 0);
                 requestRender();
             }
         });
@@ -238,7 +238,7 @@ public class OpenTakView extends GLSurfaceView implements GLSurfaceView.Renderer
         run(new Runnable() {
             @Override
             public void run() {
-                OpenTakEngine.nativeAddRangeBearing(engine, lat1, lon1, lat2, lon2, northReference, angleUnit, 0, 0);
+                OTKGlobeEngine.nativeAddRangeBearing(engine, lat1, lon1, lat2, lon2, northReference, angleUnit, 0, 0);
                 requestRender();
             }
         });
@@ -248,7 +248,7 @@ public class OpenTakView extends GLSurfaceView implements GLSurfaceView.Renderer
         run(new Runnable() {
             @Override
             public void run() {
-                OpenTakEngine.nativeAddContoursInView(engine, interval, majorEvery, 0);
+                OTKGlobeEngine.nativeAddContoursInView(engine, interval, majorEvery, 0);
                 requestRender();
             }
         });
@@ -258,7 +258,7 @@ public class OpenTakView extends GLSurfaceView implements GLSurfaceView.Renderer
         run(new Runnable() {
             @Override
             public void run() {
-                OpenTakEngine.nativeSetTerrainSlope(engine, enabled, 0.6f, 45.0);
+                OTKGlobeEngine.nativeSetTerrainSlope(engine, enabled, 0.6f, 45.0);
                 requestRender();
             }
         });
@@ -268,7 +268,7 @@ public class OpenTakView extends GLSurfaceView implements GLSurfaceView.Renderer
         run(new Runnable() {
             @Override
             public void run() {
-                OpenTakEngine.nativeSetGridType(engine, type);
+                OTKGlobeEngine.nativeSetGridType(engine, type);
                 requestRender();
             }
         });
@@ -278,7 +278,7 @@ public class OpenTakView extends GLSurfaceView implements GLSurfaceView.Renderer
         run(new Runnable() {
             @Override
             public void run() {
-                final long n = OpenTakEngine.nativeImportTiles(engine, layer, path);
+                final long n = OTKGlobeEngine.nativeImportTiles(engine, layer, path);
                 requestRender();
                 if (result != null) post(new Runnable() {
                     @Override
@@ -293,17 +293,17 @@ public class OpenTakView extends GLSurfaceView implements GLSurfaceView.Renderer
     @Override
     public void onSurfaceCreated(GL10 gl, EGLConfig config) {
         if (engine != 0) return;
-        engine = OpenTakEngine.nativeCreate(1);
-        java.io.File tiles = new java.io.File(getContext().getNoBackupFilesDir(), "opentakengine");
+        engine = OTKGlobeEngine.nativeCreate(1);
+        java.io.File tiles = new java.io.File(getContext().getNoBackupFilesDir(), "otkglobeengine");
         if (!tiles.isDirectory()) tiles.mkdirs();
-        OpenTakEngine.nativeSetCacheDirectory(engine, tiles.getAbsolutePath());
+        OTKGlobeEngine.nativeSetCacheDirectory(engine, tiles.getAbsolutePath());
         for (Runnable r : pending) r.run();
         pending.clear();
         if (ready != null) {
             post(new Runnable() {
                 @Override
                 public void run() {
-                    ready.onReady(OpenTakView.this);
+                    ready.onReady(OTKGlobeView.this);
                 }
             });
         }
@@ -318,8 +318,8 @@ public class OpenTakView extends GLSurfaceView implements GLSurfaceView.Renderer
     @Override
     public void onDrawFrame(GL10 gl) {
         if (engine == 0) return;
-        OpenTakEngine.nativeFrame(engine, width, height, density);
-        if (OpenTakEngine.nativeNeedsRedraw(engine)) requestRender();
+        OTKGlobeEngine.nativeFrame(engine, width, height, density);
+        if (OTKGlobeEngine.nativeNeedsRedraw(engine)) requestRender();
     }
 
     public interface MapListener {
@@ -360,7 +360,7 @@ public class OpenTakView extends GLSurfaceView implements GLSurfaceView.Renderer
         run(new Runnable() {
             @Override
             public void run() {
-                listenerHandle = OpenTakEngine.nativeSetTapListener(engine, listener == null ? null : new Bridge(), listenerHandle);
+                listenerHandle = OTKGlobeEngine.nativeSetTapListener(engine, listener == null ? null : new Bridge(), listenerHandle);
             }
         });
     }
@@ -369,32 +369,32 @@ public class OpenTakView extends GLSurfaceView implements GLSurfaceView.Renderer
         run(new Runnable() {
             @Override
             public void run() {
-                OpenTakEngine.nativeSetHeadingLockedPan(engine, enabled);
+                OTKGlobeEngine.nativeSetHeadingLockedPan(engine, enabled);
             }
         });
     }
 
     private static int modifiers(int meta) {
         int m = 0;
-        if ((meta & KeyEvent.META_SHIFT_ON) != 0) m |= OpenTakEngine.MOD_SHIFT;
-        if ((meta & KeyEvent.META_CTRL_ON) != 0) m |= OpenTakEngine.MOD_CTRL;
-        if ((meta & KeyEvent.META_ALT_ON) != 0) m |= OpenTakEngine.MOD_ALT;
-        if ((meta & KeyEvent.META_META_ON) != 0) m |= OpenTakEngine.MOD_SUPER;
+        if ((meta & KeyEvent.META_SHIFT_ON) != 0) m |= OTKGlobeEngine.MOD_SHIFT;
+        if ((meta & KeyEvent.META_CTRL_ON) != 0) m |= OTKGlobeEngine.MOD_CTRL;
+        if ((meta & KeyEvent.META_ALT_ON) != 0) m |= OTKGlobeEngine.MOD_ALT;
+        if ((meta & KeyEvent.META_META_ON) != 0) m |= OTKGlobeEngine.MOD_SUPER;
         return m;
     }
 
     private static int pointerType(MotionEvent e, int index) {
         int t = e.getToolType(index);
-        if (t == MotionEvent.TOOL_TYPE_MOUSE) return OpenTakEngine.POINTER_MOUSE;
-        if (t == MotionEvent.TOOL_TYPE_STYLUS || t == MotionEvent.TOOL_TYPE_ERASER) return OpenTakEngine.POINTER_PEN;
-        return OpenTakEngine.POINTER_TOUCH;
+        if (t == MotionEvent.TOOL_TYPE_MOUSE) return OTKGlobeEngine.POINTER_MOUSE;
+        if (t == MotionEvent.TOOL_TYPE_STYLUS || t == MotionEvent.TOOL_TYPE_ERASER) return OTKGlobeEngine.POINTER_PEN;
+        return OTKGlobeEngine.POINTER_TOUCH;
     }
 
     private static int button(MotionEvent e) {
         int b = e.getButtonState();
-        if ((b & MotionEvent.BUTTON_SECONDARY) != 0) return OpenTakEngine.BUTTON_RIGHT;
-        if ((b & MotionEvent.BUTTON_TERTIARY) != 0) return OpenTakEngine.BUTTON_MIDDLE;
-        return OpenTakEngine.BUTTON_LEFT;
+        if ((b & MotionEvent.BUTTON_SECONDARY) != 0) return OTKGlobeEngine.BUTTON_RIGHT;
+        if ((b & MotionEvent.BUTTON_TERTIARY) != 0) return OTKGlobeEngine.BUTTON_MIDDLE;
+        return OTKGlobeEngine.BUTTON_LEFT;
     }
 
     @Override
@@ -408,11 +408,11 @@ public class OpenTakView extends GLSurfaceView implements GLSurfaceView.Renderer
             final int id = e.getPointerId(index);
             final float x = e.getX(index), y = e.getY(index);
             final int type = pointerType(e, index);
-            final int btn = type == OpenTakEngine.POINTER_MOUSE ? button(e) : OpenTakEngine.BUTTON_LEFT;
+            final int btn = type == OTKGlobeEngine.POINTER_MOUSE ? button(e) : OTKGlobeEngine.BUTTON_LEFT;
             run(new Runnable() {
                 @Override
                 public void run() {
-                    OpenTakEngine.nativePointerDown(engine, id, x, y, type, btn, mods);
+                    OTKGlobeEngine.nativePointerDown(engine, id, x, y, type, btn, mods);
                 }
             });
             break;
@@ -430,7 +430,7 @@ public class OpenTakView extends GLSurfaceView implements GLSurfaceView.Renderer
             run(new Runnable() {
                 @Override
                 public void run() {
-                    for (int i = 0; i < n; ++i) OpenTakEngine.nativePointerMove(engine, ids[i], xs[i], ys[i], mods);
+                    for (int i = 0; i < n; ++i) OTKGlobeEngine.nativePointerMove(engine, ids[i], xs[i], ys[i], mods);
                 }
             });
             break;
@@ -442,7 +442,7 @@ public class OpenTakView extends GLSurfaceView implements GLSurfaceView.Renderer
             run(new Runnable() {
                 @Override
                 public void run() {
-                    OpenTakEngine.nativePointerUp(engine, id, x, y);
+                    OTKGlobeEngine.nativePointerUp(engine, id, x, y);
                 }
             });
             break;
@@ -451,7 +451,7 @@ public class OpenTakView extends GLSurfaceView implements GLSurfaceView.Renderer
             run(new Runnable() {
                 @Override
                 public void run() {
-                    OpenTakEngine.nativePointerCancelAll(engine);
+                    OTKGlobeEngine.nativePointerCancelAll(engine);
                 }
             });
             break;
@@ -470,7 +470,7 @@ public class OpenTakView extends GLSurfaceView implements GLSurfaceView.Renderer
             run(new Runnable() {
                 @Override
                 public void run() {
-                    OpenTakEngine.nativeWheel(engine, x, y, h, v, false, mods);
+                    OTKGlobeEngine.nativeWheel(engine, x, y, h, v, false, mods);
                 }
             });
             return true;
@@ -482,37 +482,37 @@ public class OpenTakView extends GLSurfaceView implements GLSurfaceView.Renderer
         switch (code) {
         case KeyEvent.KEYCODE_DPAD_LEFT:
         case KeyEvent.KEYCODE_A:
-            return OpenTakEngine.KEY_LEFT;
+            return OTKGlobeEngine.KEY_LEFT;
         case KeyEvent.KEYCODE_DPAD_RIGHT:
         case KeyEvent.KEYCODE_D:
-            return OpenTakEngine.KEY_RIGHT;
+            return OTKGlobeEngine.KEY_RIGHT;
         case KeyEvent.KEYCODE_DPAD_UP:
         case KeyEvent.KEYCODE_W:
-            return OpenTakEngine.KEY_UP;
+            return OTKGlobeEngine.KEY_UP;
         case KeyEvent.KEYCODE_DPAD_DOWN:
         case KeyEvent.KEYCODE_S:
-            return OpenTakEngine.KEY_DOWN;
+            return OTKGlobeEngine.KEY_DOWN;
         case KeyEvent.KEYCODE_PLUS:
         case KeyEvent.KEYCODE_EQUALS:
         case KeyEvent.KEYCODE_NUMPAD_ADD:
         case KeyEvent.KEYCODE_ZOOM_IN:
-            return OpenTakEngine.KEY_ZOOM_IN;
+            return OTKGlobeEngine.KEY_ZOOM_IN;
         case KeyEvent.KEYCODE_MINUS:
         case KeyEvent.KEYCODE_NUMPAD_SUBTRACT:
         case KeyEvent.KEYCODE_ZOOM_OUT:
-            return OpenTakEngine.KEY_ZOOM_OUT;
+            return OTKGlobeEngine.KEY_ZOOM_OUT;
         case KeyEvent.KEYCODE_Q:
-            return OpenTakEngine.KEY_ROTATE_LEFT;
+            return OTKGlobeEngine.KEY_ROTATE_LEFT;
         case KeyEvent.KEYCODE_E:
-            return OpenTakEngine.KEY_ROTATE_RIGHT;
+            return OTKGlobeEngine.KEY_ROTATE_RIGHT;
         case KeyEvent.KEYCODE_PAGE_UP:
-            return OpenTakEngine.KEY_TILT_UP;
+            return OTKGlobeEngine.KEY_TILT_UP;
         case KeyEvent.KEYCODE_PAGE_DOWN:
-            return OpenTakEngine.KEY_TILT_DOWN;
+            return OTKGlobeEngine.KEY_TILT_DOWN;
         case KeyEvent.KEYCODE_N:
-            return OpenTakEngine.KEY_RESET_NORTH;
+            return OTKGlobeEngine.KEY_RESET_NORTH;
         case KeyEvent.KEYCODE_T:
-            return OpenTakEngine.KEY_RESET_TILT;
+            return OTKGlobeEngine.KEY_RESET_TILT;
         default:
             return -1;
         }
@@ -526,7 +526,7 @@ public class OpenTakView extends GLSurfaceView implements GLSurfaceView.Renderer
         run(new Runnable() {
             @Override
             public void run() {
-                OpenTakEngine.nativeKey(engine, k, down, mods);
+                OTKGlobeEngine.nativeKey(engine, k, down, mods);
             }
         });
         return true;

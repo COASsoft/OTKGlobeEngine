@@ -1,11 +1,11 @@
 #pragma once
 
-#include "ote/features.hpp"
+#include "otk/features.hpp"
 
 #include <memory>
 #include <string>
 
-namespace ote {
+namespace otk {
 
 enum class Affiliation { Pending, Unknown, AssumedFriend, Friend, Neutral, Suspect, Hostile, Joker, Faker, NoAffiliation };
 enum class Dimension { Space, Air, Ground, SeaSurface, Subsurface, Sof, Other };

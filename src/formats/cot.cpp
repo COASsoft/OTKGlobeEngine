@@ -1,5 +1,5 @@
 #include "formats/adapters.hpp"
-#include "ote/navigation.hpp"
+#include "otk/navigation.hpp"
 
 #include <pugixml.hpp>
 
@@ -8,7 +8,7 @@
 #include <cstdio>
 #include <sstream>
 
-namespace ote::adapters {
+namespace otk::adapters {
 
 namespace {
 
@@ -91,7 +91,7 @@ std::vector<Feature> parseCot(const std::vector<std::uint8_t>& bytes, std::vecto
             if (auto s = detail.child("usericon"))
                 if (auto image = iconsetImage(s.attribute("iconsetpath").as_string())) f.style.iconImage = image;
             if (auto s = detail.child("labels_on")) f.style.showLabel = s.attribute("value").as_bool(true);
-            if (auto attrs = detail.child("__ote_attributes"))
+            if (auto attrs = detail.child("__otk_attributes") ? detail.child("__otk_attributes") : detail.child("__ote_attributes"))
                 for (auto a : attrs.children("a")) setAttribute(f, a.attribute("k").as_string(), a.attribute("v").as_string());
             setAttribute(f, "cot:detail", nodeXml(detail));
         }
@@ -187,7 +187,7 @@ std::string writeCotEvent(const Feature& f, size_t index, ExportResult& r) {
         std::string extra;
         for (const auto& kv : f.attributes)
             if (kv.first.rfind("cot:", 0) != 0) extra += "<a k=\"" + xmlEscape(kv.first) + "\" v=\"" + xmlEscape(kv.second) + "\"/>";
-        if (!extra.empty()) xml += "<__ote_attributes>" + extra + "</__ote_attributes>";
+        if (!extra.empty()) xml += "<__otk_attributes>" + extra + "</__otk_attributes>";
         xml += "</detail>";
     }
     xml += "</event>";

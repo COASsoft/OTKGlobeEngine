@@ -14,7 +14,7 @@
 #include <sokol_glue.h>
 #include <sokol_log.h>
 
-#include "ote/engine.hpp"
+#include "otk/engine.hpp"
 #include "shot.hpp"
 #include "watchdog.hpp"
 
@@ -31,16 +31,16 @@ void parseArgs(int argc, char** argv);
 void loadScript(const char* path);
 bool runScript();
 #if defined(_WIN32)
-void installPointerInput(const void* hwnd, ote::InputController* input);
+void installPointerInput(const void* hwnd, otk::InputController* input);
 #endif
 
 namespace {
 
 struct ViewerState {
-    ote::Engine engine;
+    otk::Engine engine;
     float mouseX = 0, mouseY = 0;
     int preset = 0;
-    ote::View startView;
+    otk::View startView;
     bool offscreen = false;
     std::string shotPath;
     std::string filmDir;
@@ -57,9 +57,9 @@ struct ViewerState {
     sg_view shotDepthView{};
     std::string cacheDir;
     bool offline = false;
-    std::vector<ote::ImageryLayer> customLayers;
+    std::vector<otk::ImageryLayer> customLayers;
     bool hasDownload = false;
-    ote::Region download;
+    otk::Region download;
     int downloadMin = 0, downloadMax = 0;
     int downloadId = 0;
     std::vector<std::string> imports;
@@ -73,14 +73,14 @@ struct ViewerState {
     bool rbStarted = false;
     double rbLat = 0, rbLon = 0;
     bool hasExport = false;
-    ote::Region exportRegion;
+    otk::Region exportRegion;
     int exportMin = 0, exportMax = 0;
     std::string exportPath;
     int cacheLimit = 0;
     std::vector<std::string> featureFiles;
     std::vector<std::string> openPaths;
-    std::vector<ote::ImageryLayer> addedLayers;
-    std::vector<ote::ElevationLayer> elevation;
+    std::vector<otk::ImageryLayer> addedLayers;
+    std::vector<otk::ElevationLayer> elevation;
     std::string status;
     double statusTime = 0;
     bool viewGiven = false;
@@ -88,7 +88,7 @@ struct ViewerState {
     double stereo = -1.0;
     double sunTime = -1.0;
     std::vector<std::string> pointClouds;
-    std::vector<std::pair<std::string, ote::ModelPlacement>> models;
+    std::vector<std::pair<std::string, otk::ModelPlacement>> models;
     std::string selected;
     bool hasHit = false;
     double hitX = 0, hitY = 0;
@@ -127,7 +127,7 @@ struct ViewerState {
     int memory = 0;
     bool shotFirstPerson = false;
     double fpHeading = 0, fpPitch = 0, fpHeight = 2.0;
-    ote::View zoomTarget;
+    otk::View zoomTarget;
     double zoomSeconds = 4.0;
     bool zoomStarted = false;
     long long zoomFrames = 0, zoomIncomplete = 0, zoomMaxIncomplete = 0, zoomBadFrames = 0, zoomCoarseFrames = 0, zoomMaxDepth = 0, zoomBlankFrames = 0;
@@ -153,28 +153,28 @@ void fileLog(const char* tag, uint32_t level, uint32_t item, const char* msg, ui
     std::fflush(logFile);
 }
 
-std::vector<ote::ImageryLayer> preset(int i) {
-    std::vector<ote::ImageryLayer> layers = ote::defaultLayers();
+std::vector<otk::ImageryLayer> preset(int i) {
+    std::vector<otk::ImageryLayer> layers = otk::defaultLayers();
     if (i == 1) {
-        ote::ImageryLayer topo;
+        otk::ImageryLayer topo;
         topo.name = "USGS Topo";
         topo.url = "https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}";
         topo.minZoom = 3;
         topo.maxZoom = 16;
         layers.push_back(topo);
     } else if (i == 3) {
-        ote::ImageryLayer v;
+        otk::ImageryLayer v;
         v.name = "OpenFreeMap";
-        v.type = ote::SourceType::Mvt;
+        v.type = otk::SourceType::Mvt;
         v.url = "https://tiles.openfreemap.org/planet";
         v.maxZoom = 14;
-        layers = {v, ote::polarFillLayer()};
+        layers = {v, otk::polarFillLayer()};
     } else if (i == 2) {
-        ote::ImageryLayer osm;
+        otk::ImageryLayer osm;
         osm.name = "OpenStreetMap";
         osm.url = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
         osm.maxZoom = 19;
-        layers = {osm, ote::polarFillLayer()};
+        layers = {osm, otk::polarFillLayer()};
     }
     return layers;
 }
@@ -183,17 +183,17 @@ void init() {
     sg_desc desc{};
     desc.environment = sglue_environment();
     desc.logger.func = slog_func;
-    if (const char* lp = std::getenv("OTE_LOG")) {
+    if (const char* lp = std::getenv("OTK_LOG")) {
         logFile = std::fopen(lp, "w");
         desc.logger.func = fileLog;
     }
-    ote::configureGfx(desc);
-    if (const char* wd = std::getenv("OTE_WATCHDOG")) watchdogStart(wd);
+    otk::configureGfx(desc);
+    if (const char* wd = std::getenv("OTK_WATCHDOG")) watchdogStart(wd);
     sg_setup(&desc);
     state->engine.init();
-    state->engine.input().onTap([](double x, double y, int taps, ote::PointerType) {
+    state->engine.input().onTap([](double x, double y, int taps, otk::PointerType) {
         if (taps != 1) return;
-        ote::Feature f;
+        otk::Feature f;
         std::uint64_t id = state->engine.hitTest(x, y, 16.0 * sapp_dpi_scale());
         state->selected = id && state->engine.feature(id, f) ? (f.name.empty() ? "feature " + std::to_string(id) : f.name) : "";
     });
@@ -204,28 +204,25 @@ void init() {
 #if defined(__ANDROID__)
     {
         auto* activity = static_cast<const ANativeActivity*>(sapp_android_get_native_activity());
-        ote::setAndroidJavaVm(activity->vm);
+        otk::setAndroidJavaVm(activity->vm);
         if (state->cacheDir.empty() && activity->internalDataPath) state->cacheDir = activity->internalDataPath;
         if (activity->externalDataPath) {
             std::string path = std::string(activity->externalDataPath) + "/args.txt";
             if (FILE* f = std::fopen(path.c_str(), "r")) {
-                std::vector<std::string> tokens{"ote_viewer"};
+                std::vector<std::string> tokens{"otk_viewer"};
                 char buf[1024];
                 while (std::fscanf(f, "%1023s", buf) == 1) tokens.push_back(buf);
                 std::fclose(f);
                 std::vector<char*> args;
                 for (auto& t : tokens) args.push_back(t.data());
                 parseArgs(static_cast<int>(args.size()), args.data());
-                __android_log_print(ANDROID_LOG_INFO, "OpenTAKEngine", "args %zu from %s", tokens.size() - 1, path.c_str());
+                __android_log_print(ANDROID_LOG_INFO, "OTKGlobeEngine", "args %zu from %s", tokens.size() - 1, path.c_str());
             }
         }
     }
 #endif
     std::string cache = state->cacheDir;
-    if (cache.empty()) {
-        if (const char* la = std::getenv("LOCALAPPDATA")) cache = std::string(la) + "/OpenTAKEngine";
-        else if (const char* home = std::getenv("HOME")) cache = std::string(home) + "/.cache/OpenTAKEngine";
-    }
+    if (cache.empty()) cache = otk::defaultCacheDirectory();
     if (!cache.empty()) {
         std::error_code ec;
         std::filesystem::create_directories(cache, ec);
@@ -234,28 +231,28 @@ void init() {
     state->engine.setOffline(state->offline);
     if (state->memory > 0) state->engine.setMemoryBudget(state->memory);
     {
-        std::vector<ote::ElevationLayer>& elev = state->elevation;
+        std::vector<otk::ElevationLayer>& elev = state->elevation;
         if (!state->elevationDir.empty()) {
-            ote::ElevationLayer d;
-            d.type = ote::ElevationType::Directory;
+            otk::ElevationLayer d;
+            d.type = otk::ElevationType::Directory;
             d.path = state->elevationDir;
             d.maxZoom = 14;
             elev.push_back(d);
         }
         if (!state->quantizedMesh.empty()) {
-            ote::ElevationLayer q;
-            q.type = ote::ElevationType::QuantizedMesh;
+            otk::ElevationLayer q;
+            q.type = otk::ElevationType::QuantizedMesh;
             q.url = state->quantizedMesh;
             q.maxZoom = 14;
             elev.push_back(q);
         }
         if (!state->gdalDem.empty()) {
-            ote::ElevationLayer g;
-            g.type = ote::ElevationType::Gdal;
+            otk::ElevationLayer g;
+            g.type = otk::ElevationType::Gdal;
             g.path = state->gdalDem;
             elev.push_back(g);
         }
-        for (auto& e : ote::defaultElevation()) elev.push_back(e);
+        for (auto& e : otk::defaultElevation()) elev.push_back(e);
         state->engine.setElevation(elev);
         state->engine.setTerrainEnabled(state->terrain);
         state->engine.setDiagnostics(state->diag);
@@ -272,14 +269,14 @@ void init() {
     if (state->sunTime >= 0) state->engine.setSunLighting(true, state->sunTime);
     for (const auto& p : state->pointClouds) state->engine.addPointCloud(p);
     if (state->cacheLimit > 0) state->engine.setCacheLimit(state->cacheLimit);
-    state->engine.setGridType(static_cast<ote::GridType>(state->gridType));
+    state->engine.setGridType(static_cast<otk::GridType>(state->gridType));
     state->engine.setTerrainSlope(state->slope);
     for (const auto& b : state->bullseyes)
-        for (const ote::Feature& f : ote::bullseye({b[0], b[1], 0}, b[2])) state->engine.addFeature(f);
+        for (const otk::Feature& f : otk::bullseye({b[0], b[1], 0}, b[2])) state->engine.addFeature(f);
     for (const auto& r : state->rings)
-        for (const ote::Feature& f : ote::rangeRings({r[0], r[1], 0}, r[2], static_cast<int>(r[3]), 8)) state->engine.addFeature(f);
+        for (const otk::Feature& f : otk::rangeRings({r[0], r[1], 0}, r[2], static_cast<int>(r[3]), 8)) state->engine.addFeature(f);
     for (const auto& r : state->rbLines)
-        for (const ote::Feature& f : ote::rangeBearingLine({r[0], r[1], 0}, {r[2], r[3], 0})) state->engine.addFeature(f);
+        for (const otk::Feature& f : otk::rangeBearingLine({r[0], r[1], 0}, {r[2], r[3], 0})) state->engine.addFeature(f);
     for (const auto& path : state->imports) {
         std::string err;
         long long n = state->engine.importTiles(0, path, &err);
@@ -354,10 +351,10 @@ void checkHoles() {
     ++state->holeChecks;
     if (blocks == 0) return;
     ++state->holeFrames;
-    ote::View v = state->engine.view();
-    if (const char* dp = std::getenv("OTE_DIAG"))
+    otk::View v = state->engine.view();
+    if (const char* dp = std::getenv("OTK_DIAG"))
         if (FILE* df = std::fopen(dp, "a")) {
-            ote::Stats hs = state->engine.stats();
+            otk::Stats hs = state->engine.stats();
             std::fprintf(df, "holes frame %d t=%.2f blocks %d at %d,%d tiles %d L%d cov %d ret %d inc %d hollow %d ph %d surf %d free %d alt %.1f | view %.5f %.5f gsd %.2f tilt %.1f az %.1f\n", state->frames, state->shotElapsed, blocks, hx, hy, hs.terrainTiles,
                          hs.maxLevel, hs.coverageOnlyTiles, hs.retainedTiles, hs.incompleteTiles, hs.hollowSkipped, hs.placeholders, hs.surfaces, hs.freeSurfaces, v.alt, v.lat, v.lon, v.gsd, v.tilt, v.azimuth);
             std::fclose(df);
@@ -416,7 +413,7 @@ void frame() {
             }
         }
         if (state->shotViewshed && !state->viewshed && state->shotElapsed > 1.0 && !state->engine.needsRedraw()) {
-            ote::View v = state->engine.view();
+            otk::View v = state->engine.view();
             state->viewshed = state->engine.computeViewshed({v.lat, v.lon, 0}, 2.0, 5000.0);
         }
         if (state->contourInterval > 0 && !state->contoursDone && state->shotElapsed > 1.0 && !state->engine.needsRedraw()) {
@@ -443,7 +440,7 @@ void frame() {
         }
         bool scripting = runScript();
         if (scripting && state->scriptNext > 0) {
-            ote::Stats ss = state->engine.stats();
+            otk::Stats ss = state->engine.stats();
             if (state->scriptLoads0 < 0) state->scriptLoads0 = ss.imageryLoads;
             state->scriptLoads = ss.imageryLoads - state->scriptLoads0;
             ++state->scriptFrames;
@@ -470,7 +467,7 @@ void frame() {
                                    nullptr, nullptr,
 #endif
                                    state->shotPath.c_str());
-            ote::Stats s = state->engine.stats();
+            otk::Stats s = state->engine.stats();
             std::string logPath = state->shotPath + ".txt";
             if (FILE* f = std::fopen(logPath.c_str(), "w")) {
                 std::fprintf(f, "resources invalid=%d terrain=%d surfaces=%d free=%d imagery=%d gpu_mb=%.0f\n", s.invalidResources, s.terrainMeshes, s.surfaces,
@@ -490,7 +487,7 @@ void frame() {
                              s.terrainTiles, s.maxLevel, s.imageryTextures, s.pendingRequests, s.imageryPending, s.elevationPending);
                 std::fprintf(f, "coverage blank=%d incomplete=%d coarse=%d deficit=%d coverage_only=%d retained=%d\n", s.blankTiles,
                              s.incompleteTiles, s.coarseTiles, s.maxFallbackDepth, s.coverageOnlyTiles, s.retainedTiles);
-                ote::View fv = state->engine.view();
+                otk::View fv = state->engine.view();
                 std::fprintf(f, "focus %.5f %.5f elevation %.1f", fv.lat, fv.lon, state->engine.elevationAt(fv.lat, fv.lon));
                 std::fputc(10, f);
                 if (state->bench > 0)
@@ -507,14 +504,14 @@ void frame() {
                              static_cast<unsigned long long>(state->viewshed));
                 std::fputc(10, f);
                 if (state->hasHit) {
-                    ote::Feature hf;
+                    otk::Feature hf;
                     std::uint64_t hid = state->engine.hitTest(state->hitX, state->hitY, 16.0);
                     std::fprintf(f, "hit %llu %s", static_cast<unsigned long long>(hid),
                                  hid && state->engine.feature(hid, hf) ? hf.name.c_str() : "-");
                     std::fputc(10, f);
                 }
                 if (state->downloadId) {
-                    ote::DownloadStatus d = state->engine.downloadStatus(state->downloadId);
+                    otk::DownloadStatus d = state->engine.downloadStatus(state->downloadId);
                     std::fprintf(f, "download total=%lld done=%lld failed=%lld finished=%d\n",
                                  static_cast<long long>(d.total), static_cast<long long>(d.done),
                                  static_cast<long long>(d.failed), d.finished ? 1 : 0);
@@ -525,7 +522,7 @@ void frame() {
                     std::fprintf(f, "export tiles=%lld %s\n", n, err.c_str());
                 }
                 {
-                    ote::Stats net = state->engine.stats();
+                    otk::Stats net = state->engine.stats();
                     std::fprintf(f, "network unreachable_hosts=%d stale_tiles=%lld cache_mb=%.1f\n", net.unreachableHosts, net.staleTiles,
                                  static_cast<double>(state->engine.cacheBytes()) / 1048576.0);
                 }
@@ -540,7 +537,7 @@ void frame() {
     else state->engine.frame(sglue_swapchain());
     sg_commit();
     {
-        ote::Stats ps = state->engine.stats();
+        otk::Stats ps = state->engine.stats();
         double ft = sapp_frame_duration() * 1000.0;
         state->perfFrames++;
         state->perfFrameMs += ft;
@@ -557,7 +554,7 @@ void frame() {
         state->perfUploads += ps.uploads;
         if (state->perfFrames >= 30) {
             char line[768];
-            ote::View pv = state->engine.view();
+            otk::View pv = state->engine.view();
             std::snprintf(line, sizeof(line),
                           "perf frame avg %.1f max %.1f ms | cpu avg %.2f max %.2f | surf %.1f terr %.1f up %.1f | tiles %d L%d | "
                           "incomplete frames %d max %d blank max %d coarse frames %d depth %d pre %d hollow %d ph %d | surfaces %d+%d img %d terr %d est %.0fMB | evict s %lld i %lld t %lld loads %lld | view %.4f %.4f gsd %.1f az %.0f tilt %.0f",
@@ -569,9 +566,9 @@ void frame() {
             state->perfIncompleteFrames = state->perfIncompleteMax = state->perfBlankMax = 0;
             state->perfCoarseFrames = state->perfMaxDepth = 0;
 #if defined(__ANDROID__)
-            __android_log_write(ANDROID_LOG_INFO, "OpenTAKEngine", line);
+            __android_log_write(ANDROID_LOG_INFO, "OTKGlobeEngine", line);
 #else
-            if (const char* pf = std::getenv("OTE_PERF")) {
+            if (const char* pf = std::getenv("OTK_PERF")) {
                 if (FILE* pfile = std::fopen(pf, "a")) {
                     std::fputs(line, pfile);
                     std::fputc(10, pfile);
@@ -588,11 +585,11 @@ void frame() {
     state->statusTime = std::max(0.0, state->statusTime - sapp_frame_duration());
     if (state->titleTimer > 0.5) {
         state->titleTimer = 0;
-        ote::Stats s = state->engine.stats();
-        ote::View v = state->engine.view();
+        otk::Stats s = state->engine.stats();
+        otk::View v = state->engine.view();
         char title[256];
         std::snprintf(title, sizeof(title),
-                      "OpenTAKEngine  %.5f, %.5f  gsd %.2f m/px  tilt %.0f  az %.0f  |  tiles %d  L%d  imagery %d  pending %d  %s",
+                      "OTKGlobeEngine  %.5f, %.5f  gsd %.2f m/px  tilt %.0f  az %.0f  |  tiles %d  L%d  imagery %d  pending %d  %s",
                       v.lat, v.lon, v.gsd, v.tilt, v.azimuth, s.terrainTiles, s.maxLevel, s.imageryTextures,
                       s.pendingRequests, state->statusTime > 0 ? state->status.c_str() : state->selected.c_str());
         sapp_set_window_title(title);
@@ -606,75 +603,75 @@ void cleanup() {
     state = nullptr;
 }
 
-ote::MouseButton mouseButton(sapp_mousebutton b) {
+otk::MouseButton mouseButton(sapp_mousebutton b) {
     switch (b) {
     case SAPP_MOUSEBUTTON_LEFT:
-        return ote::MouseButton::Left;
+        return otk::MouseButton::Left;
     case SAPP_MOUSEBUTTON_RIGHT:
-        return ote::MouseButton::Right;
+        return otk::MouseButton::Right;
     case SAPP_MOUSEBUTTON_MIDDLE:
-        return ote::MouseButton::Middle;
+        return otk::MouseButton::Middle;
     default:
-        return ote::MouseButton::NoButton;
+        return otk::MouseButton::NoButton;
     }
 }
 
 int touchId(const sapp_touchpoint& t) { return static_cast<int>(t.identifier & 0x3fffffff) + 1; }
 
-ote::PointerType touchType(const sapp_touchpoint& t) {
-    return t.android_tooltype == SAPP_ANDROIDTOOLTYPE_STYLUS ? ote::PointerType::Pen : ote::PointerType::Touch;
+otk::PointerType touchType(const sapp_touchpoint& t) {
+    return t.android_tooltype == SAPP_ANDROIDTOOLTYPE_STYLUS ? otk::PointerType::Pen : otk::PointerType::Touch;
 }
 
-bool mapKey(sapp_keycode k, ote::Key& out) {
+bool mapKey(sapp_keycode k, otk::Key& out) {
     switch (k) {
     case SAPP_KEYCODE_LEFT:
     case SAPP_KEYCODE_A:
-        out = ote::Key::Left;
+        out = otk::Key::Left;
         return true;
     case SAPP_KEYCODE_RIGHT:
     case SAPP_KEYCODE_D:
-        out = ote::Key::Right;
+        out = otk::Key::Right;
         return true;
     case SAPP_KEYCODE_UP:
     case SAPP_KEYCODE_W:
-        out = ote::Key::Up;
+        out = otk::Key::Up;
         return true;
     case SAPP_KEYCODE_DOWN:
     case SAPP_KEYCODE_S:
-        out = ote::Key::Down;
+        out = otk::Key::Down;
         return true;
     case SAPP_KEYCODE_EQUAL:
     case SAPP_KEYCODE_KP_ADD:
-        out = ote::Key::ZoomIn;
+        out = otk::Key::ZoomIn;
         return true;
     case SAPP_KEYCODE_MINUS:
     case SAPP_KEYCODE_KP_SUBTRACT:
-        out = ote::Key::ZoomOut;
+        out = otk::Key::ZoomOut;
         return true;
     case SAPP_KEYCODE_Q:
-        out = ote::Key::RotateLeft;
+        out = otk::Key::RotateLeft;
         return true;
     case SAPP_KEYCODE_E:
-        out = ote::Key::RotateRight;
+        out = otk::Key::RotateRight;
         return true;
     case SAPP_KEYCODE_PAGE_UP:
-        out = ote::Key::TiltUp;
+        out = otk::Key::TiltUp;
         return true;
     case SAPP_KEYCODE_PAGE_DOWN:
-        out = ote::Key::TiltDown;
+        out = otk::Key::TiltDown;
         return true;
     case SAPP_KEYCODE_N:
-        out = ote::Key::ResetNorth;
+        out = otk::Key::ResetNorth;
         return true;
     case SAPP_KEYCODE_T:
-        out = ote::Key::ResetTilt;
+        out = otk::Key::ResetTilt;
         return true;
     default:
         return false;
     }
 }
 
-std::vector<ote::ImageryLayer> withAdded(std::vector<ote::ImageryLayer> layers) {
+std::vector<otk::ImageryLayer> withAdded(std::vector<otk::ImageryLayer> layers) {
     layers.insert(layers.end(), state->addedLayers.begin(), state->addedLayers.end());
     return layers;
 }
@@ -687,64 +684,64 @@ void showStatus(const std::string& s) {
     std::fflush(stdout);
 }
 
-void zoomTo(ote::Region region, double tilt, double padMeters = 0.0) {
+void zoomTo(otk::Region region, double tilt, double padMeters = 0.0) {
     if (state->viewGiven) return;
     const double dLat = padMeters / 110574.0;
     const double dLon = padMeters / (111320.0 * std::max(std::cos(0.5 * (region.south + region.north) * 3.14159265358979323846 / 180.0), 0.01));
     region = {region.west - dLon, region.south - dLat, region.east + dLon, region.north + dLat};
-    ote::View v = state->engine.viewForRegion(region);
+    otk::View v = state->engine.viewForRegion(region);
     v.tilt = tilt;
     if (state->shotPath.empty()) state->engine.flyTo(v, 2.5);
     else state->engine.setView(v);
 }
 
 void openPath(const std::string& path) {
-    ote::OpenResult r = state->engine.open(path);
-    const ote::ImportPlan& plan = r.plan;
+    otk::OpenResult r = state->engine.open(path);
+    const otk::ImportPlan& plan = r.plan;
     if (!r.ok) {
         showStatus("Could not open " + plan.name + (plan.message.empty() ? "" : ": " + plan.message));
         return;
     }
     std::string what;
     switch (plan.target) {
-    case ote::ImportTarget::Features:
+    case otk::ImportTarget::Features:
         what = std::to_string(r.data.features.size()) + " features";
         if (!r.data.overlays.empty()) what += ", " + std::to_string(r.data.overlays.size()) + " overlays";
         if (!r.data.models.empty()) what += ", " + std::to_string(r.data.models.size()) + " models";
         what += " from " + plan.name;
         break;
-    case ote::ImportTarget::Imagery:
+    case otk::ImportTarget::Imagery:
         state->addedLayers.insert(state->addedLayers.end(), plan.imagery.begin(), plan.imagery.end());
         what = std::to_string(plan.imagery.size()) + " map layer(s) from " + plan.name;
         break;
-    case ote::ImportTarget::Elevation:
+    case otk::ImportTarget::Elevation:
         what = "Elevation from " + plan.name;
         break;
-    case ote::ImportTarget::Tileset:
+    case otk::ImportTarget::Tileset:
         what = "3D Tiles " + plan.name;
         break;
-    case ote::ImportTarget::PointCloud:
+    case otk::ImportTarget::PointCloud:
         what = "Point cloud " + plan.name;
         break;
-    case ote::ImportTarget::Model:
+    case otk::ImportTarget::Model:
         what = "Model " + plan.name + " placed at the view centre";
         break;
-    case ote::ImportTarget::Iconset:
+    case otk::ImportTarget::Iconset:
         what = "Iconset " + r.iconset + " registered";
         break;
-    case ote::ImportTarget::Unsupported:
+    case otk::ImportTarget::Unsupported:
         break;
     }
     if (r.hasRegion) {
-        const bool models = plan.target == ote::ImportTarget::Model || !r.data.models.empty();
-        const bool solid = models || plan.target == ote::ImportTarget::Tileset || plan.target == ote::ImportTarget::PointCloud;
+        const bool models = plan.target == otk::ImportTarget::Model || !r.data.models.empty();
+        const bool solid = models || plan.target == otk::ImportTarget::Tileset || plan.target == otk::ImportTarget::PointCloud;
         zoomTo(r.region, models ? 60.0 : solid ? 45.0 : 0.0, models ? 250.0 : 0.0);
     }
     showStatus(what);
 }
 
 void event(const sapp_event* e) {
-    ote::Engine& eng = state->engine;
+    otk::Engine& eng = state->engine;
     switch (e->type) {
     case SAPP_EVENTTYPE_FILES_DROPPED:
         for (int i = 0; i < sapp_get_num_dropped_files(); ++i) openPath(sapp_get_dropped_file_path(i));
@@ -753,7 +750,7 @@ void event(const sapp_event* e) {
         if (!state->mouseDown) {
             state->mouseDown = true;
             state->mouseButton = e->mouse_button;
-            eng.input().pointerDown(0, e->mouse_x, e->mouse_y, ote::PointerType::Mouse, mouseButton(e->mouse_button), e->modifiers);
+            eng.input().pointerDown(0, e->mouse_x, e->mouse_y, otk::PointerType::Mouse, mouseButton(e->mouse_button), e->modifiers);
         }
         state->mouseX = e->mouse_x;
         state->mouseY = e->mouse_y;
@@ -792,16 +789,16 @@ void event(const sapp_event* e) {
         break;
     case SAPP_EVENTTYPE_UNFOCUSED:
         eng.input().cancelAll();
-        for (int k = 0; k <= static_cast<int>(ote::Key::ResetTilt); ++k) eng.input().keyUp(static_cast<ote::Key>(k));
+        for (int k = 0; k <= static_cast<int>(otk::Key::ResetTilt); ++k) eng.input().keyUp(static_cast<otk::Key>(k));
         state->mouseDown = false;
         break;
     case SAPP_EVENTTYPE_KEY_UP: {
-        ote::Key k;
+        otk::Key k;
         if (mapKey(e->key_code, k)) eng.input().keyUp(k);
         break;
     }
     case SAPP_EVENTTYPE_KEY_DOWN: {
-        ote::Key mapped;
+        otk::Key mapped;
         if (mapKey(e->key_code, mapped)) {
             if (!e->key_repeat) eng.input().keyDown(mapped, e->modifiers);
             break;
@@ -821,7 +818,7 @@ void event(const sapp_event* e) {
             state->heat = !state->heat;
             eng.setElevationHeatmap(state->heat);
         } else if (e->key_code == SAPP_KEYCODE_F) {
-            ote::View v;
+            otk::View v;
             v.lat = 46.8529;
             v.lon = -121.7604;
             v.gsd = 12;
@@ -837,7 +834,7 @@ void event(const sapp_event* e) {
             } else {
                 state->grid = false;
             }
-            eng.setGridType(static_cast<ote::GridType>(state->gridType));
+            eng.setGridType(static_cast<otk::GridType>(state->gridType));
             eng.setGridEnabled(state->grid);
         } else if (e->key_code == SAPP_KEYCODE_K) {
             state->slope = !state->slope;
@@ -854,12 +851,12 @@ void event(const sapp_event* e) {
         } else if (e->key_code == SAPP_KEYCODE_B) {
             double lat, lon;
             if (eng.pick(state->mouseX, state->mouseY, lat, lon))
-                for (const ote::Feature& f : ote::bullseye({lat, lon, 0}, eng.view().gsd * 250.0)) eng.addFeature(f);
+                for (const otk::Feature& f : otk::bullseye({lat, lon, 0}, eng.view().gsd * 250.0)) eng.addFeature(f);
         } else if (e->key_code == SAPP_KEYCODE_C) {
             double lat, lon;
             if (eng.pick(state->mouseX, state->mouseY, lat, lon)) {
                 if (state->rbStarted)
-                    for (const ote::Feature& f : ote::rangeBearingLine({state->rbLat, state->rbLon, 0}, {lat, lon, 0})) eng.addFeature(f);
+                    for (const otk::Feature& f : otk::rangeBearingLine({state->rbLat, state->rbLon, 0}, {lat, lon, 0})) eng.addFeature(f);
                 state->rbStarted = !state->rbStarted;
                 state->rbLat = lat;
                 state->rbLon = lon;
@@ -880,7 +877,7 @@ void event(const sapp_event* e) {
             state->exaggeration = state->exaggeration >= 3.0 ? 1.0 : state->exaggeration + 0.5;
             eng.setTerrainExaggeration(state->exaggeration);
         } else if (e->key_code == SAPP_KEYCODE_R) {
-            ote::View v = eng.view();
+            otk::View v = eng.view();
             v.azimuth = 0;
             v.tilt = 0;
             eng.flyTo(v, 0.4);
@@ -903,7 +900,7 @@ void parseArgs(int argc, char** argv) {
         }
         if (i + 1 >= argc) break;
         if (a == "--view") {
-            ote::View& v = state->startView;
+            otk::View& v = state->startView;
             std::sscanf(argv[++i], "%lf,%lf,%lf,%lf,%lf", &v.lat, &v.lon, &v.gsd, &v.tilt, &v.azimuth);
             state->viewGiven = true;
         } else if (a == "--offscreen") {
@@ -925,16 +922,16 @@ void parseArgs(int argc, char** argv) {
         } else if (a == "--offline") {
             state->offline = std::atoi(argv[++i]) != 0;
         } else if (a == "--mbtiles" || a == "--gpkg" || a == "--osmdroid") {
-            ote::ImageryLayer l;
-            l.type = a == "--mbtiles" ? ote::SourceType::MBTiles
-                     : a == "--gpkg"  ? ote::SourceType::GeoPackage
-                                      : ote::SourceType::Osmdroid;
+            otk::ImageryLayer l;
+            l.type = a == "--mbtiles" ? otk::SourceType::MBTiles
+                     : a == "--gpkg"  ? otk::SourceType::GeoPackage
+                                      : otk::SourceType::Osmdroid;
             l.path = argv[++i];
             l.name = l.path;
             state->customLayers.push_back(l);
         } else if (a == "--gdal") {
-            ote::ImageryLayer l;
-            l.type = ote::SourceType::Gdal;
+            otk::ImageryLayer l;
+            l.type = otk::SourceType::Gdal;
             l.path = argv[++i];
             l.name = l.path;
             state->customLayers.push_back(l);
@@ -943,19 +940,19 @@ void parseArgs(int argc, char** argv) {
         } else if (a == "--gdal-dem") {
             state->gdalDem = argv[++i];
         } else if (a == "--mobac") {
-            for (auto& l : ote::loadMobac(argv[++i])) state->customLayers.push_back(l);
+            for (auto& l : otk::loadMobac(argv[++i])) state->customLayers.push_back(l);
         } else if (a == "--import") {
             state->imports.push_back(argv[++i]);
         } else if (a == "--cache-limit") {
             state->cacheLimit = std::atoi(argv[++i]);
         } else if (a == "--export") {
-            ote::Region& r = state->exportRegion;
+            otk::Region& r = state->exportRegion;
             char path[1024] = {0};
             state->hasExport = std::sscanf(argv[++i], "%lf,%lf,%lf,%lf,%d,%d,%1023[^\n]", &r.west, &r.south, &r.east, &r.north,
                                            &state->exportMin, &state->exportMax, path) == 7;
             state->exportPath = path;
         } else if (a == "--download") {
-            ote::Region& r = state->download;
+            otk::Region& r = state->download;
             state->hasDownload = std::sscanf(argv[++i], "%lf,%lf,%lf,%lf,%d,%d", &r.west, &r.south, &r.east, &r.north,
                                              &state->downloadMin, &state->downloadMax) == 6;
         } else if (a == "--hit") {
@@ -970,7 +967,7 @@ void parseArgs(int argc, char** argv) {
         } else if (a == "--tileset") {
             state->tilesets.push_back(argv[++i]);
         } else if (a == "--model") {
-            ote::ModelPlacement p;
+            otk::ModelPlacement p;
             char path[1024] = {0};
             if (std::sscanf(argv[++i], "%1023[^,],%lf,%lf,%lf,%lf", path, &p.position.lat, &p.position.lon, &p.heading, &p.scale) == 5)
                 state->models.push_back({path, p});
@@ -979,7 +976,7 @@ void parseArgs(int argc, char** argv) {
         } else if (a == "--heatmap") {
             state->heat = std::atoi(argv[++i]) != 0;
         } else if (a == "--zoom-test") {
-            ote::View& v = state->zoomTarget;
+            otk::View& v = state->zoomTarget;
             state->zoomTest = std::sscanf(argv[++i], "%lf,%lf,%lf,%lf,%lf,%lf", &v.lat, &v.lon, &v.gsd, &v.tilt, &v.azimuth,
                                           &state->zoomSeconds) >= 3;
         } else if (a == "--first-person") {
@@ -1023,22 +1020,22 @@ void parseArgs(int argc, char** argv) {
             state->diag = std::atoi(argv[++i]) != 0;
         } else if (a == "--lod-blend") {
 #if defined(_WIN32)
-            _putenv_s("OTE_LOD_BLEND", argv[++i]);
+            _putenv_s("OTK_LOD_BLEND", argv[++i]);
 #else
-            setenv("OTE_LOD_BLEND", argv[++i], 1);
+            setenv("OTK_LOD_BLEND", argv[++i], 1);
 #endif
         } else if (a == "--margin") {
 #if defined(_WIN32)
-            _putenv_s("OTE_MARGIN", argv[++i]);
+            _putenv_s("OTK_MARGIN", argv[++i]);
 #else
-            setenv("OTE_MARGIN", argv[++i], 1);
+            setenv("OTK_MARGIN", argv[++i], 1);
 #endif
         } else if (a == "--holes") {
             state->holes = std::atoi(argv[++i]) != 0;
 #if defined(_WIN32)
-            if (state->holes) _putenv_s("OTE_HOLES", "1");
+            if (state->holes) _putenv_s("OTK_HOLES", "1");
 #else
-            if (state->holes) setenv("OTE_HOLES", "1", 1);
+            if (state->holes) setenv("OTK_HOLES", "1", 1);
 #endif
         } else if (a == "--preset") {
             state->preset = std::atoi(argv[++i]);
@@ -1063,7 +1060,7 @@ void loadScript(const char* path) {
 }
 
 bool runScript() {
-    ote::InputController& in = state->engine.input();
+    otk::InputController& in = state->engine.input();
     double t = state->shotElapsed;
     if (state->dragging) {
         const auto& d = state->drag;
@@ -1077,9 +1074,9 @@ bool runScript() {
     }
     while (state->scriptNext < state->script.size() && state->script[state->scriptNext].at <= t && !state->dragging) {
         const auto& st = state->script[state->scriptNext++];
-        if (const char* dp = std::getenv("OTE_DIAG"))
+        if (const char* dp = std::getenv("OTK_DIAG"))
             if (FILE* df = std::fopen(dp, "a")) {
-                ote::View cv = state->engine.view();
+                otk::View cv = state->engine.view();
                 std::fprintf(df, "input t=%.2f %s %.0f %.0f %.0f %.0f %.2f | view %.5f %.5f gsd %.2f tilt %.1f az %.1f | so far frames %lld incomplete %lld coarse %lld loads %lld\n", t,
                              st.op.c_str(), st.v[0], st.v[1], st.v[2], st.v[3], st.v[4], cv.lat, cv.lon, cv.gsd, cv.tilt, cv.azimuth, state->scriptFrames,
                              state->scriptIncomplete, state->scriptCoarse, state->scriptLoads);
@@ -1094,9 +1091,9 @@ bool runScript() {
             state->drag = st;
             state->drag.at = t;
             state->dragging = true;
-            in.pointerDown(77, st.v[0], st.v[1], ote::PointerType::Mouse, st.op == "rdrag" ? ote::MouseButton::Right : ote::MouseButton::Left, 0);
+            in.pointerDown(77, st.v[0], st.v[1], otk::PointerType::Mouse, st.op == "rdrag" ? otk::MouseButton::Right : otk::MouseButton::Left, 0);
         } else if (st.op == "view") {
-            ote::View v;
+            otk::View v;
             v.lat = st.v[0];
             v.lon = st.v[1];
             v.gsd = st.v[2];
@@ -1126,7 +1123,7 @@ sapp_desc sokol_main(int argc, char* argv[]) {
     d.enable_dragndrop = true;
     d.max_dropped_files = 32;
     d.max_dropped_file_path_length = 4096;
-    d.window_title = "OpenTAKEngine";
+    d.window_title = "OTKGlobeEngine";
     d.logger.func = slog_func;
     return d;
 }

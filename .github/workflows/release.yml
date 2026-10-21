@@ -17,8 +17,8 @@ jobs:
       - uses: actions/checkout@v4
       - id: v
         run: |
-          version=$(sed -n 's/^project(OpenTAKEngine VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
-          dotnet=$(sed -n 's/.*<Version>\(.*\)<\/Version>.*/\1/p' bindings/dotnet/OpenTakEngine.csproj)
+          version=$(sed -n 's/^project(OTKGlobeEngine VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          dotnet=$(sed -n 's/.*<Version>\(.*\)<\/Version>.*/\1/p' bindings/dotnet/OTKGlobeEngine.csproj)
           test "$version" = "$dotnet"
           grep -q "^## $version\$" CHANGELOG.md
           if [ "${GITHUB_REF_TYPE}" = tag ]; then test "${GITHUB_REF_NAME}" = "v$version"; fi
@@ -38,12 +38,12 @@ jobs:
         shell: bash
         run: |
           mkdir -p consumer native/win-x64
-          unzip -q dist/opentakengine-*.zip -d consumer
-          prefix=$(ls -d "$PWD"/consumer/opentakengine-*)
+          unzip -q dist/otkglobeengine-*.zip -d consumer
+          prefix=$(ls -d "$PWD"/consumer/otkglobeengine-*)
           cmake -S tests/package_consumer -B consumer/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$prefix"
           cmake --build consumer/build
           PATH="$prefix/bin:$PATH" consumer/build/consumer.exe
-          cp "$prefix/bin/opentakengine_c.dll" native/win-x64/
+          cp "$prefix/bin/otkglobeengine_c.dll" native/win-x64/
       - uses: actions/upload-artifact@v4
         with:
           name: pkg-windows
@@ -62,25 +62,29 @@ jobs:
             rid: linux-x64
           - runner: ubuntu-22.04-arm
             rid: linux-arm64
+          - runner: ubuntu-22.04-arm
+            rid: raspberrypi-arm64
+            cmake: -DOTK_GLES=ON -DOTK_PACKAGE_SYSTEM=raspberrypi-arm64
+            gl: libegl-dev libgles-dev
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y ninja-build libcurl4-openssl-dev libx11-dev libxi-dev libxcursor-dev libgl1-mesa-dev rpm
-      - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build libcurl4-openssl-dev libx11-dev libxi-dev libxcursor-dev ${{ matrix.gl || 'libgl1-mesa-dev' }} rpm
+      - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release ${{ matrix.cmake }}
       - run: cmake --build build
       - run: ctest --test-dir build --output-on-failure
       - run: cpack --config build/CPackConfig.cmake -B dist
       - name: Package consumer test
         run: |
           mkdir -p consumer native/${{ matrix.rid }}
-          tar -xzf dist/opentakengine-*.tar.gz -C consumer
-          prefix=$(ls -d "$PWD"/consumer/opentakengine-*)
+          tar -xzf dist/otkglobeengine-*.tar.gz -C consumer
+          prefix=$(ls -d "$PWD"/consumer/otkglobeengine-*)
           cmake -S tests/package_consumer -B consumer/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$prefix"
           cmake --build consumer/build
           LD_LIBRARY_PATH="$prefix/lib" consumer/build/consumer
-          cp -L "$prefix/lib/libopentakengine_c.so" native/${{ matrix.rid }}/libopentakengine_c.so
+          cp -L "$prefix/lib/libotkglobeengine_c.so" native/${{ matrix.rid }}/libotkglobeengine_c.so
           dpkg-deb --info dist/*.deb
-          rpm -qpl dist/*.rpm | head
+          if ls dist/*.rpm >/dev/null 2>&1; then rpm -qpl dist/*.rpm | head; fi
       - uses: actions/upload-artifact@v4
         with:
           name: pkg-${{ matrix.rid }}
@@ -106,13 +110,13 @@ jobs:
       - name: Package consumer test
         run: |
           mkdir -p consumer native/osx
-          tar -xzf dist/opentakengine-*.tar.gz -C consumer
-          prefix=$(ls -d "$PWD"/consumer/opentakengine-*)
+          tar -xzf dist/otkglobeengine-*.tar.gz -C consumer
+          prefix=$(ls -d "$PWD"/consumer/otkglobeengine-*)
           cmake -S tests/package_consumer -B consumer/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$prefix"
           cmake --build consumer/build
           DYLD_LIBRARY_PATH="$prefix/lib" consumer/build/consumer
-          cp -L "$prefix/lib/libopentakengine_c.dylib" native/osx/libopentakengine_c.dylib
-          lipo -info native/osx/libopentakengine_c.dylib
+          cp -L "$prefix/lib/libotkglobeengine_c.dylib" native/osx/libotkglobeengine_c.dylib
+          lipo -info native/osx/libotkglobeengine_c.dylib
       - uses: actions/upload-artifact@v4
         with:
           name: pkg-macos
@@ -130,7 +134,7 @@ jobs:
       - run: bash scripts/apple_xcframework.sh
       - run: |
           mkdir -p dist
-          cd build/apple && zip -qry "../../dist/OpenTAKEngine-${{ needs.version.outputs.version }}.xcframework.zip" OpenTAKEngine.xcframework
+          cd build/apple && zip -qry "../../dist/OTKGlobeEngine-${{ needs.version.outputs.version }}.xcframework.zip" OTKGlobeEngine.xcframework
       - uses: actions/upload-artifact@v4
         with:
           name: pkg-xcframework
@@ -150,8 +154,8 @@ jobs:
       - run: python3 scripts/android_aar.py
       - run: |
           mkdir -p dist
-          cp build/opentakengine-*.aar dist/
-          cp build/android-arm64-v8a/opentakengine-viewer.apk "dist/opentakengine-viewer-${{ needs.version.outputs.version }}-android-arm64.apk"
+          cp build/otkglobeengine-*.aar dist/
+          cp build/android-arm64-v8a/otkglobeengine-viewer.apk "dist/otkglobeengine-viewer-${{ needs.version.outputs.version }}-android-arm64.apk"
       - uses: actions/upload-artifact@v4
         with:
           name: pkg-android
@@ -184,7 +188,7 @@ jobs:
           cpu_count: 4
           memory: 8G
       - name: Build, test and package
-        run: env OTE_PACKAGE=1 sh scripts/bsd_build.sh
+        run: env OTK_PACKAGE=1 sh scripts/bsd_build.sh
       - uses: actions/upload-artifact@v4
         with:
           name: pkg-${{ matrix.os }}
@@ -205,12 +209,12 @@ jobs:
       - run: |
           r=bindings/dotnet/runtimes
           mkdir -p $r/win-x64/native $r/linux-x64/native $r/linux-arm64/native $r/osx-arm64/native $r/osx-x64/native
-          cp natives/native-win-x64/opentakengine_c.dll $r/win-x64/native/
-          cp natives/native-linux-x64/libopentakengine_c.so $r/linux-x64/native/
-          cp natives/native-linux-arm64/libopentakengine_c.so $r/linux-arm64/native/
-          cp natives/native-osx/libopentakengine_c.dylib $r/osx-arm64/native/
-          cp natives/native-osx/libopentakengine_c.dylib $r/osx-x64/native/
-          dotnet pack bindings/dotnet/OpenTakEngine.csproj -c Release -o dist
+          cp natives/native-win-x64/otkglobeengine_c.dll $r/win-x64/native/
+          cp natives/native-linux-x64/libotkglobeengine_c.so $r/linux-x64/native/
+          cp natives/native-linux-arm64/libotkglobeengine_c.so $r/linux-arm64/native/
+          cp natives/native-osx/libotkglobeengine_c.dylib $r/osx-arm64/native/
+          cp natives/native-osx/libotkglobeengine_c.dylib $r/osx-x64/native/
+          dotnet pack bindings/dotnet/OTKGlobeEngine.csproj -c Release -o dist
           unzip -l dist/*.nupkg | grep runtimes
       - uses: actions/upload-artifact@v4
         with:
@@ -240,5 +244,5 @@ jobs:
           sha256sum * > SHA256SUMS.txt
           cd ..
           awk -v v="## $VERSION" '$0 == v {on = 1; next} /^## / {on = 0} on' CHANGELOG.md > notes.md
-          gh release create "$GITHUB_REF_NAME" release-assets/* --title "OpenTAKEngine $VERSION" --notes-file notes.md
+          gh release create "$GITHUB_REF_NAME" release-assets/* --title "OTKGlobeEngine $VERSION" --notes-file notes.md
           gh workflow run pages.yml --ref main

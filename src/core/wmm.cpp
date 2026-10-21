@@ -1,8 +1,8 @@
-#include "ote/navigation.hpp"
+#include "otk/navigation.hpp"
 
 #include <cmath>
 
-namespace ote {
+namespace otk {
 
 namespace {
 

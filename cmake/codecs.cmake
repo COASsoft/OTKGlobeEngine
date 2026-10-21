@@ -1,21 +1,21 @@
-option(OTE_WITH_DRACO "Decode Draco-compressed glTF meshes and 3D Tiles point clouds" ON)
-option(OTE_WITH_MESHOPT "Decode meshoptimizer-compressed glTF buffers" ON)
-option(OTE_WITH_KTX2 "Decode KTX2 / Basis Universal textures" ON)
+option(OTK_WITH_DRACO "Decode Draco-compressed glTF meshes and 3D Tiles point clouds" ON)
+option(OTK_WITH_MESHOPT "Decode meshoptimizer-compressed glTF buffers" ON)
+option(OTK_WITH_KTX2 "Decode KTX2 / Basis Universal textures" ON)
 
-if(OTE_WITH_MESHOPT)
+if(OTK_WITH_MESHOPT)
     FetchContent_Declare(meshoptimizer
         URL https://github.com/zeux/meshoptimizer/archive/refs/tags/v1.3.tar.gz
         URL_HASH SHA256=ca4f47d451201593904b9e3067fa54b65db94bc34ab5173864950862b748a145
         SOURCE_SUBDIR none)
     FetchContent_MakeAvailable(meshoptimizer)
-    add_library(ote_meshopt STATIC
+    add_library(otk_meshopt STATIC
         ${meshoptimizer_SOURCE_DIR}/src/vertexcodec.cpp
         ${meshoptimizer_SOURCE_DIR}/src/indexcodec.cpp
         ${meshoptimizer_SOURCE_DIR}/src/vertexfilter.cpp)
-    target_include_directories(ote_meshopt PUBLIC ${meshoptimizer_SOURCE_DIR}/src)
+    target_include_directories(otk_meshopt PUBLIC ${meshoptimizer_SOURCE_DIR}/src)
 endif()
 
-if(OTE_WITH_DRACO)
+if(OTK_WITH_DRACO)
     FetchContent_Declare(draco
         URL https://github.com/google/draco/archive/refs/tags/1.5.7.tar.gz
         URL_HASH SHA256=bf6b105b79223eab2b86795363dfe5e5356050006a96521477973aba8f036fe1
@@ -41,17 +41,17 @@ if(OTE_WITH_DRACO)
 #define DRACO_BACKWARDS_COMPATIBILITY_SUPPORTED
 #endif
 ")
-    add_library(ote_draco STATIC ${_draco_sources})
-    target_include_directories(ote_draco PUBLIC ${draco_SOURCE_DIR}/src ${CMAKE_BINARY_DIR}/draco_generated)
+    add_library(otk_draco STATIC ${_draco_sources})
+    target_include_directories(otk_draco PUBLIC ${draco_SOURCE_DIR}/src ${CMAKE_BINARY_DIR}/draco_generated)
     if(MSVC)
-        target_compile_options(ote_draco PRIVATE /w /bigobj)
-        target_compile_definitions(ote_draco PRIVATE NOMINMAX _CRT_SECURE_NO_WARNINGS)
+        target_compile_options(otk_draco PRIVATE /w /bigobj)
+        target_compile_definitions(otk_draco PRIVATE NOMINMAX _CRT_SECURE_NO_WARNINGS)
     else()
-        target_compile_options(ote_draco PRIVATE -w)
+        target_compile_options(otk_draco PRIVATE -w)
     endif()
 endif()
 
-if(OTE_WITH_KTX2)
+if(OTK_WITH_KTX2)
     set(_basisu_tag v2_50)
     set(_basisu_dir ${CMAKE_BINARY_DIR}/_deps/basisu-${_basisu_tag})
     set(_basisu_files
@@ -77,20 +77,20 @@ if(OTE_WITH_KTX2)
             file(RENAME ${_basisu_dir}/${_f}.part ${_basisu_dir}/${_f})
         endif()
     endforeach()
-    add_library(ote_basisu STATIC ${_basisu_dir}/transcoder/basisu_transcoder.cpp ${_basisu_dir}/zstd/zstddeclib.c)
-    target_include_directories(ote_basisu PUBLIC ${_basisu_dir}/transcoder)
-    target_compile_definitions(ote_basisu PUBLIC BASISD_SUPPORT_KTX2=1 BASISD_SUPPORT_KTX2_ZSTD=1
+    add_library(otk_basisu STATIC ${_basisu_dir}/transcoder/basisu_transcoder.cpp ${_basisu_dir}/zstd/zstddeclib.c)
+    target_include_directories(otk_basisu PUBLIC ${_basisu_dir}/transcoder)
+    target_compile_definitions(otk_basisu PUBLIC BASISD_SUPPORT_KTX2=1 BASISD_SUPPORT_KTX2_ZSTD=1
         BASISD_SUPPORT_PVRTC1=0 BASISD_SUPPORT_PVRTC2=0 BASISD_SUPPORT_ATC=0 BASISD_SUPPORT_FXT1=0)
     if(MSVC)
-        target_compile_options(ote_basisu PRIVATE /w /bigobj)
+        target_compile_options(otk_basisu PRIVATE /w /bigobj)
     else()
-        target_compile_options(ote_basisu PRIVATE -w)
+        target_compile_options(otk_basisu PRIVATE -w)
     endif()
 endif()
 
-option(OTE_WITH_WEBP "Decode WebP imagery, elevation and textures" ON)
+option(OTK_WITH_WEBP "Decode WebP imagery, elevation and textures" ON)
 
-if(OTE_WITH_WEBP)
+if(OTK_WITH_WEBP)
     FetchContent_Declare(libwebp
         URL https://github.com/webmproject/libwebp/archive/refs/tags/v1.5.0.tar.gz
         URL_HASH SHA256=668c9aba45565e24c27e17f7aaf7060a399f7f31dba6c97a044e1feacb930f37
@@ -100,14 +100,14 @@ if(OTE_WITH_WEBP)
     file(GLOB _webp_sources ${_webp}/dec/*.c ${_webp}/dsp/*.c ${_webp}/utils/*.c)
     list(FILTER _webp_sources EXCLUDE REGEX "/(enc|cost|ssim|lossless_enc)[^/]*\.c$")
     list(FILTER _webp_sources EXCLUDE REGEX "/(bit_writer_utils|huffman_encode_utils|quant_levels_utils)\.c$")
-    add_library(ote_webp STATIC ${_webp_sources})
-    target_include_directories(ote_webp PUBLIC ${libwebp_SOURCE_DIR} ${libwebp_SOURCE_DIR}/src)
+    add_library(otk_webp STATIC ${_webp_sources})
+    target_include_directories(otk_webp PUBLIC ${libwebp_SOURCE_DIR} ${libwebp_SOURCE_DIR}/src)
     if(MSVC)
-        target_compile_options(ote_webp PRIVATE /w)
-        target_compile_definitions(ote_webp PRIVATE _CRT_SECURE_NO_WARNINGS)
+        target_compile_options(otk_webp PRIVATE /w)
+        target_compile_definitions(otk_webp PRIVATE _CRT_SECURE_NO_WARNINGS)
     else()
-        target_compile_options(ote_webp PRIVATE -w)
+        target_compile_options(otk_webp PRIVATE -w)
         find_package(Threads REQUIRED)
-        target_link_libraries(ote_webp PRIVATE Threads::Threads)
+        target_link_libraries(otk_webp PRIVATE Threads::Threads)
     endif()
 endif()

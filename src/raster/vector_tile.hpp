@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-namespace ote {
+namespace otk {
 
 struct VectorShape {
     std::uint32_t color = 0;

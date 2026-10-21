@@ -3,22 +3,22 @@
 #include "core/geoid.hpp"
 #include "core/prj.hpp"
 #include "elevation/quantized_mesh.hpp"
-#include "ote/features.hpp"
-#include "ote/astro.hpp"
-#include "ote/klv.hpp"
-#include "ote/formats.hpp"
-#include "ote/mgrs.hpp"
-#include "ote/milsym.hpp"
-#include "ote/navigation.hpp"
+#include "otk/features.hpp"
+#include "otk/astro.hpp"
+#include "otk/klv.hpp"
+#include "otk/formats.hpp"
+#include "otk/mgrs.hpp"
+#include "otk/milsym.hpp"
+#include "otk/navigation.hpp"
 #include "net/http.hpp"
-#include "ote/engine.hpp"
+#include "otk/engine.hpp"
 #include "raster/tile_cache.hpp"
 #include "raster/tile_loader.hpp"
 #include "raster/tile_matrix.hpp"
 #include "raster/tile_package.hpp"
 #include "raster/tile_provider.hpp"
 #include "raster/pmtiles.hpp"
-#include "ote/image.hpp"
+#include "otk/image.hpp"
 #include "raster/vector_tile.hpp"
 #include "formats/adapters.hpp"
 #include "core/astro.hpp"
@@ -26,7 +26,7 @@
 #include "model/model_convert.hpp"
 #include "model/model_layer.hpp"
 
-#if defined(OTE_WITH_MESHOPT)
+#if defined(OTK_WITH_MESHOPT)
 #include <meshoptimizer.h>
 #endif
 #include <json.hpp>
@@ -55,12 +55,12 @@ void check(bool ok, const char* what) {
     }
 }
 
-std::string data(const char* name) { return std::string(OTE_TEST_DATA) + "/" + name; }
+std::string data(const char* name) { return std::string(OTK_TEST_DATA) + "/" + name; }
 
 }
 
 int main() {
-    using namespace ote;
+    using namespace otk;
     using adapters::parseWkt;
     using adapters::writeWkt;
 
@@ -151,7 +151,7 @@ int main() {
     }
 
     {
-        auto dir = std::filesystem::temp_directory_path() / "ote local terrain";
+        auto dir = std::filesystem::temp_directory_path() / "otk local terrain";
         std::error_code ec;
         std::filesystem::remove_all(dir, ec);
         std::filesystem::create_directories(dir / "12" / "1319", ec);
@@ -181,7 +181,7 @@ int main() {
     {
         Engine engine;
         engine.setViewport(1000, 500, 1.0f);
-        auto path = (std::filesystem::temp_directory_path() / "ote_region.geojson").string();
+        auto path = (std::filesystem::temp_directory_path() / "otk_region.geojson").string();
         std::ofstream(path) << R"({"type":"FeatureCollection","features":[)"
                                R"({"type":"Feature","geometry":{"type":"Point","coordinates":[-122.5,47.0]},"properties":{}},)"
                                R"({"type":"Feature","geometry":{"type":"LineString","coordinates":[[-122.0,47.5],[-121.5,46.5]]},"properties":{}}]})";
@@ -255,7 +255,7 @@ int main() {
         };
         auto tmp = std::filesystem::temp_directory_path();
         for (bool osmand : {false, true}) {
-            std::string path = (tmp / (osmand ? "ote_osmand.sqlitedb" : "ote_rmaps.sqlite")).string();
+            std::string path = (tmp / (osmand ? "otk_osmand.sqlitedb" : "otk_rmaps.sqlite")).string();
             makeArchive(path, osmand);
             ImageryLayer l;
             l.type = SourceType::Osmdroid;
@@ -268,7 +268,7 @@ int main() {
     }
 
     {
-        auto dir = std::filesystem::temp_directory_path() / "ote_netlink";
+        auto dir = std::filesystem::temp_directory_path() / "otk_netlink";
         std::filesystem::remove_all(dir);
         std::filesystem::create_directories(dir / "sub");
         auto write = [](const std::filesystem::path& p, const std::string& s) { std::ofstream(p, std::ios::binary) << s; };
@@ -287,7 +287,7 @@ int main() {
                                                 MZ_BEST_COMPRESSION);
         ImportResult kmz = importData((dir / "wrapper.kmz").string());
         check(kmz.data.features.size() == 1 && kmz.data.features[0].name == "Inner", "kmz network link to a file beside it");
-        if (const char* base = std::getenv("OTE_TEST_HTTP")) {
+        if (const char* base = std::getenv("OTK_TEST_HTTP")) {
             write(dir / "remote.kml", std::string("<kml><NetworkLink><Link><href>") + base + "/remote/doc.kml</href></Link></NetworkLink></kml>");
             ImportResult remote = importData((dir / "remote.kml").string());
             bool nested = false, icon = false;
@@ -300,7 +300,7 @@ int main() {
     }
 
     {
-        auto zipPath = (std::filesystem::temp_directory_path() / "ote_iconset.zip").string();
+        auto zipPath = (std::filesystem::temp_directory_path() / "otk_iconset.zip").string();
         std::filesystem::remove(zipPath);
         std::vector<std::uint8_t> pixels(16 * 16 * 4, 255);
         size_t pngSize = 0;
@@ -455,7 +455,7 @@ int main() {
             "<Location><longitude>-122.9</longitude><latitude>47.04</latitude><altitude>5</altitude></Location>"
             "<Orientation><heading>45</heading><tilt>0</tilt><roll>0</roll></Orientation><Scale><x>2</x><y>2</y><z>2</z></Scale>"
             "<Link><href>models/tower.dae</href></Link></Model></Placemark></kml>";
-        auto kmzPath = (std::filesystem::temp_directory_path() / "ote_model.kmz").string();
+        auto kmzPath = (std::filesystem::temp_directory_path() / "otk_model.kmz").string();
         std::filesystem::remove(kmzPath);
         mz_zip_add_mem_to_archive_file_in_place(kmzPath.c_str(), "doc.kml", modelKml.data(), modelKml.size(), nullptr, 0, MZ_BEST_COMPRESSION);
         mz_zip_add_mem_to_archive_file_in_place(kmzPath.c_str(), "models/tower.dae", texDae.data(), texDae.size(), nullptr, 0, MZ_BEST_COMPRESSION);
@@ -577,7 +577,7 @@ int main() {
     }
     {
         std::string md = formatsMarkdown();
-        if (const char* out = std::getenv("OTE_FORMATS_MD")) std::ofstream(out, std::ios::binary) << md;
+        if (const char* out = std::getenv("OTK_FORMATS_MD")) std::ofstream(out, std::ios::binary) << md;
         check(md.find("`tak-package`") != std::string::npos && md.find("`cot`") != std::string::npos, "compatibility matrix");
         std::string evil = "PK";
         ImportLimits tight;
@@ -613,7 +613,7 @@ int main() {
     }
     {
         namespace fs = std::filesystem;
-        fs::path dir = fs::temp_directory_path() / "ote_unit_cache";
+        fs::path dir = fs::temp_directory_path() / "otk_unit_cache";
         std::error_code ec;
         fs::remove_all(dir, ec);
         fs::create_directories(dir);
@@ -833,7 +833,7 @@ int main() {
                     for (int k = 0; k < 3; ++k) t[k] = static_cast<std::uint8_t>((s[k] * s[3] + 255 * (255 - s[3])) / 255);
                 }
         }
-        if (const char* out = std::getenv("OTE_MILSYM_SHEET")) {
+        if (const char* out = std::getenv("OTK_MILSYM_SHEET")) {
             std::ofstream ppm(out, std::ios::binary);
             ppm << "P6\n" << cols * cell << " " << (n + cols - 1) / cols * cell << "\n255\n";
             ppm.write(reinterpret_cast<const char*>(rgb.data()), static_cast<std::streamsize>(rgb.size()));
@@ -857,7 +857,7 @@ int main() {
             return !b.empty() && parseTileContent(b.data(), b.size(), name, none, Mat4::identity(), out);
         };
         std::vector<CpuModel> m;
-#if defined(OTE_WITH_DRACO)
+#if defined(OTK_WITH_DRACO)
         bool mesh = content("tiles3d/draco.glb", m) && m.size() == 1 && m[0].primitives.size() == 1 &&
                     m[0].primitives[0].vertices.size() == 441 * 8 && m[0].primitives[0].indices.size() == 2400;
         if (mesh)
@@ -869,7 +869,7 @@ int main() {
             for (size_t i = 0; i < 6400; ++i) cloud = cloud && std::abs(m[0].points[i * 16 + 12] - 40) <= 2 && m[0].points[i * 16 + 14] >= 250;
         check(cloud, "draco point cloud decodes with colours");
 #endif
-#if defined(OTE_WITH_KTX2)
+#if defined(OTK_WITH_KTX2)
         setCompressedTextureSupport(true, false, false);
         check(content("tiles3d/etc1s.glb", m) && m.size() == 1 && m[0].images.size() == 1 && m[0].images[0].format == SG_PIXELFORMAT_BC7_RGBA &&
                   m[0].images[0].levels.size() == 7 && m[0].images[0].levels[0].size() == 16 * 16 * 16,
@@ -910,7 +910,7 @@ int main() {
                   merged.primitives[0].indices.size() == 6 && merged.primitives[0].indices[3] == 3,
               "primitives sharing a material merge into one draw");
 
-#if defined(OTE_WITH_MESHOPT)
+#if defined(OTK_WITH_MESHOPT)
         const std::vector<float> pos = {0, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1};
         const std::vector<unsigned> idx = {0, 1, 2, 0, 2, 3};
         std::vector<unsigned char> vb(meshopt_encodeVertexBufferBound(4, 12));
@@ -1093,7 +1093,7 @@ int main() {
             mlon += lo[c] / 4;
         }
         check(fp && std::abs(mlat - 47.0) < 1e-5 && std::abs(mlon + 122.0) < 1e-5, "sensor footprint from pose and field of view");
-        if (const char* out = std::getenv("OTE_FMV_SAMPLE")) {
+        if (const char* out = std::getenv("OTK_FMV_SAMPLE")) {
             ts.clear();
             tsPackets(0, {0x00, 0x00, 0xB0, 13, 0x00, 0x01, 0xC1, 0x00, 0x00, 0x00, 0x01, 0xE1, 0x00, 0, 0, 0, 0});
             tsPackets(0x100, {0x00, 0x02, 0xB0, 18, 0x00, 0x01, 0xC1, 0x00, 0x00, 0xE1, 0x01, 0xF0, 0x00, 0x15, 0xE1, 0x01, 0xF0, 0x00, 0, 0, 0, 0});

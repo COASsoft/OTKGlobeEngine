@@ -1,13 +1,13 @@
 #include "raster/pmtiles.hpp"
 
-#include "ote/image.hpp"
+#include "otk/image.hpp"
 #include "raster/vector_tile.hpp"
 
 #include <algorithm>
 #include <cstring>
 #include <filesystem>
 
-namespace ote {
+namespace otk {
 
 namespace {
 

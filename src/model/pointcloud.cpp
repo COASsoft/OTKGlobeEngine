@@ -1,7 +1,7 @@
 #include "model/pointcloud.hpp"
 
 #include "gdal/gdal_sources.hpp"
-#include "ote/mgrs.hpp"
+#include "otk/mgrs.hpp"
 #include "points.glsl.h"
 
 #include <algorithm>
@@ -10,7 +10,7 @@
 #include <cstring>
 #include <filesystem>
 
-namespace ote {
+namespace otk {
 
 namespace {
 

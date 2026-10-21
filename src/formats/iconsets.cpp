@@ -1,5 +1,5 @@
-#include "ote/formats.hpp"
-#include "ote/image.hpp"
+#include "otk/formats.hpp"
+#include "otk/image.hpp"
 
 #include <miniz.h>
 #include <pugixml.hpp>
@@ -10,7 +10,7 @@
 #include <map>
 #include <mutex>
 
-namespace ote {
+namespace otk {
 
 namespace {
 
