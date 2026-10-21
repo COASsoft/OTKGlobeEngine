@@ -760,6 +760,13 @@ void Engine::setGridEnabled(GridType type, bool enabled) {
 
 bool Engine::gridEnabled(GridType type) const { return impl_->globe.gridOn(static_cast<int>(type)); }
 
+void Engine::setLabelsEnabled(bool enabled) {
+    impl_->globe.setLabels(enabled);
+    impl_->dirty = true;
+}
+
+bool Engine::labelsEnabled() const { return impl_->globe.labels(); }
+
 std::vector<GridLabel> Engine::gridLabels() const {
     std::vector<GridLabel> out;
     const Camera& c = impl_->camera;
