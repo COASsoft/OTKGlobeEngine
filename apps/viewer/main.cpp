@@ -1157,7 +1157,7 @@ bool runScript() {
         if (st.op == "wheel") in.wheel(st.v[0], st.v[1], 0, st.v[2], false, 0);
         else if (st.op == "preset") {
             state->preset = static_cast<int>(st.v[0]);
-            state->engine.setLayers(preset(state->preset));
+            state->engine.setLayers(withAdded(preset(state->preset)));
         }
         else if (st.op == "drag" || st.op == "rdrag") {
             state->drag = st;
