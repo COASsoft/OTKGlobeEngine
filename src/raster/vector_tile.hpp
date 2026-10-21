@@ -32,6 +32,7 @@ enum class RoadClass : std::uint8_t { Motorway, MotorwayLink, Trunk, TrunkLink, 
 struct TileMark {
     MarkType type = MarkType::Place;
     std::uint8_t rank = 0;
+    std::uint8_t zoom = 0;
     std::string text;
     std::string network;
     std::vector<std::array<double, 2>> points;
