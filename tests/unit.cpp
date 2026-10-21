@@ -28,6 +28,7 @@
 #include <meshoptimizer.h>
 #endif
 #include <json.hpp>
+#include <miniz.h>
 
 #include <cmath>
 #include <cstdio>
