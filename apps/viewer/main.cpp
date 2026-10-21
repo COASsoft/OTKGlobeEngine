@@ -43,6 +43,10 @@ struct ViewerState {
     ote::View startView;
     bool offscreen = false;
     std::string shotPath;
+    std::string filmDir;
+    double filmEvery = 0.25;
+    double filmNext = 0.0;
+    int filmFrame = 0;
     double shotTimeout = 60.0;
     double shotElapsed = 0.0;
     int settledFrames = 0;
@@ -369,6 +373,38 @@ void frame() {
         ++state->frames;
         state->shotElapsed += sapp_frame_duration();
         if (state->holes && state->frames % 3 == 0) checkHoles();
+        if (!state->filmDir.empty() && state->shotElapsed >= state->filmNext) {
+            state->filmNext = state->shotElapsed + state->filmEvery;
+            std::vector<unsigned char> px;
+            if (readImageRgba(state->shotColor, state->width, state->height,
+#if defined(SOKOL_D3D11)
+                              sg_d3d11_device(), sg_d3d11_device_context(),
+#else
+                              nullptr, nullptr,
+#endif
+                              px)) {
+                const int w = state->width / 2, h = state->height / 2;
+                std::vector<unsigned char> half(static_cast<size_t>(w) * h * 4);
+                for (int y = 0; y < h; ++y)
+                    for (int x = 0; x < w; ++x)
+                        for (int c = 0; c < 4; ++c) {
+                            const size_t a = (static_cast<size_t>(2 * y) * state->width + 2 * x) * 4 + c;
+                            const size_t row = static_cast<size_t>(state->width) * 4;
+                            half[(static_cast<size_t>(y) * w + x) * 4 + c] =
+                                static_cast<unsigned char>((px[a] + px[a + 4] + px[a + row] + px[a + row + 4] + 2) / 4);
+                        }
+                char name[64];
+                std::snprintf(name, sizeof(name), "/frame-%04d.png", state->filmFrame);
+                writePng((state->filmDir + name).c_str(), w, h, half);
+                if (FILE* f = std::fopen((state->filmDir + "/film.csv").c_str(), state->filmFrame == 0 ? "w" : "a")) {
+                    if (state->filmFrame == 0) std::fprintf(f, "frame,ms,step,verb,pending,wants,settled\n");
+                    std::fprintf(f, "%d,%.0f,0,settle,%d,%d,0\n", state->filmFrame, state->shotElapsed * 1000.0,
+                                 state->engine.stats().pendingRequests, state->engine.needsRedraw() ? 1 : 0);
+                    std::fclose(f);
+                }
+                ++state->filmFrame;
+            }
+        }
         if (state->shotViewshed && !state->viewshed && state->shotElapsed > 1.0 && !state->engine.needsRedraw()) {
             ote::View v = state->engine.view();
             state->viewshed = state->engine.computeViewshed({v.lat, v.lon, 0}, 2.0, 5000.0);
@@ -785,6 +821,12 @@ void parseArgs(int argc, char** argv) {
             state->offscreen = std::atoi(argv[++i]) != 0;
         } else if (a == "--shot") {
             state->shotPath = argv[++i];
+        } else if (a == "--film") {
+            state->filmDir = argv[++i];
+            std::error_code ec;
+            std::filesystem::create_directories(state->filmDir, ec);
+        } else if (a == "--film-every") {
+            state->filmEvery = std::max(0.02, std::atof(argv[++i]));
         } else if (a == "--shot-timeout") {
             state->shotTimeout = std::atof(argv[++i]);
         } else if (a == "--size") {
