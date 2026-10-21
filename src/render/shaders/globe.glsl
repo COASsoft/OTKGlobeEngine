@@ -24,6 +24,7 @@ out float elev;
 out float lodw;
 out float morphw;
 out float sgain;
+out vec3 lows;
 
 void main() {
     vec3 p = position;
