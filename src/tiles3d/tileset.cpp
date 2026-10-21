@@ -670,6 +670,8 @@ void Tileset3D::expand(Node* n) {
 
 Vec3 Tileset3D::center() const { return root_ ? root_->center : Vec3{}; }
 
+double Tileset3D::radius() const { return root_ ? root_->radius : 0.0; }
+
 std::string Tileset3D::contentPath(const Node* n, const std::string& rel) const {
     std::string path = normalizePath(resolveRef(n->base, rel));
     return remote_ ? withQuery(path, n->query) : path;
