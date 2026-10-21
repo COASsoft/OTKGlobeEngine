@@ -706,7 +706,12 @@ ParsedFile parseBytes(const std::vector<std::uint8_t>& bytes, const std::string&
     std::string ext = lower(extension);
     if (!ext.empty() && ext[0] != '.') ext = "." + ext;
     if (ext == ".kmz") {
-        out.features = parseKmz(bytes, &out.overlays);
+        Resolver outer;
+        if (!baseDirectory.empty()) {
+            std::filesystem::path dir = std::filesystem::u8path(baseDirectory);
+            outer = [dir](const std::string& href) { return readAll(dir / std::filesystem::u8path(href)); };
+        }
+        out.features = parseKmz(bytes, &out.overlays, outer);
     } else if (ext == ".kml") {
         std::filesystem::path dir = std::filesystem::u8path(baseDirectory);
         Resolver resolve;
