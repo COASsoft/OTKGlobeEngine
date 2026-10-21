@@ -40,13 +40,3 @@ The same works for elevation sources and vector tiles, since they share the cach
 
 - `Stats::unreachableHosts`, `Stats::staleTiles`, `Engine::cacheBytes()`; the viewer writes them to the `.txt` next to a `--shot`.
 - Simulate an airgapped network with `OTE_NET_UNREACHABLE=1` (add `OTE_NET_DELAY_MS=5000` to make every request hang for 5 s first, like a blackholed route).
-
-Measured on the development PC (GTX 950), Olympia at 3 m/px, cache older than its expiry:
-
-| Run | Result |
-| --- | --- |
-| Blackholed network, expired cache | Full imagery, settled in 13.6 s (5 s spent on the first timeouts) |
-| `--offline 1`, same cache | Full imagery, settled in 6.9 s |
-| Blackholed network, empty cache | Blue Marble globe, no blank surfaces, settled in 10.5 s |
-| Blackholed network, empty cache + imported 9 MB MBTiles | Full imagery, settled in 6.2 s |
-| Online, expired cache | Full imagery in 8.1 s, 898 tiles refreshed in the background meanwhile |
