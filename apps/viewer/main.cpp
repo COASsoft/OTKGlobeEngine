@@ -884,7 +884,7 @@ void event(const sapp_event* e) {
         if (e->key_repeat) break;
         if (e->key_code >= SAPP_KEYCODE_1 && e->key_code <= SAPP_KEYCODE_4) {
             state->preset = e->key_code - SAPP_KEYCODE_1;
-            eng.setLayers(preset(state->preset));
+            eng.setLayers(withAdded(preset(state->preset)));
         } else if (e->key_code == SAPP_KEYCODE_P) {
             eng.setFirstPerson(!eng.firstPerson(), 2.0);
         } else if (e->key_code == SAPP_KEYCODE_M) {
