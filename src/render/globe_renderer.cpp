@@ -376,6 +376,7 @@ void GlobeRenderer::shutdown() {
         }
         overlays_.clear();
         features_.shutdown();
+        labels_.shutdown();
         tilesets_.clear();
         models_.shutdown();
         points_.shutdown();
