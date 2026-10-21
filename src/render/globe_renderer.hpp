@@ -259,6 +259,9 @@ private:
     SurfaceTile* acquireSurface(const QuadKey& k);
     SurfaceTile freshSurface();
     void recycleSurface(SurfaceTile& s);
+    bool ensureSnapshotTarget(int width, int height);
+    void dropSnapshotTarget();
+    void drawSnapshot(float alpha);
     static void dropSurface(SurfaceTile& s);
     void processLoads();
     void evict();
