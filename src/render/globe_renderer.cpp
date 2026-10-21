@@ -2410,8 +2410,14 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     main.action.depth.clear_value = 1.0f;
     const sg_swapchain* mainSwapchain = firstView ? firstView->swapchain : swapchain;
     const sg_attachments* mainAttachments = firstView ? firstView->attachments : attachments;
-    if (mainSwapchain) main.swapchain = *mainSwapchain;
-    if (mainAttachments) main.attachments = *mainAttachments;
+    if (capture) {
+        main.attachments.colors[0] = snapshotColor_;
+        main.attachments.resolves[0] = snapshotResolve_;
+        main.attachments.depth_stencil = snapshotDepthView_;
+    } else {
+        if (mainSwapchain) main.swapchain = *mainSwapchain;
+        if (mainAttachments) main.attachments = *mainAttachments;
+    }
     sg_begin_pass(&main);
     if (firstView && firstView->width > 0) sg_apply_viewport(firstView->x, firstView->y, firstView->width, firstView->height, true);
 
