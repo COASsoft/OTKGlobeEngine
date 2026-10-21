@@ -294,6 +294,7 @@ void init() {
         state->engine.setFirstPerson(true, state->fpHeight);
         state->engine.look(state->fpHeading, state->fpPitch);
     }
+    for (const auto& p : state->openPaths) openPath(p);
     if (!state->shotPath.empty()) {
         sg_environment env = sglue_environment();
         sg_image_desc c{};
