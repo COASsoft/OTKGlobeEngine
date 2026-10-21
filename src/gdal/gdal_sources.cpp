@@ -247,6 +247,14 @@ void ogrGeometry(OGRGeometryH g, Feature& f) {
 
 bool gdalAvailable() { return true; }
 
+bool gdalIsElevation(const std::string& path) {
+    GDALDatasetH ds = GDALOpen(path.c_str(), GA_ReadOnly);
+    if (!ds) return false;
+    bool dem = GDALGetRasterCount(ds) == 1 && GDALGetRasterDataType(GDALGetRasterBand(ds, 1)) != GDT_Byte;
+    GDALClose(ds);
+    return dem;
+}
+
 bool transformToGeographic(int epsg, const std::string& wkt, double* x, double* y, double* z, std::size_t n) {
     registerOnce();
     OGRSpatialReferenceH src = OSRNewSpatialReference(nullptr);

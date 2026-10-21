@@ -4,6 +4,8 @@ namespace ote {
 
 bool gdalAvailable() { return false; }
 
+bool gdalIsElevation(const std::string&) { return false; }
+
 std::shared_ptr<TileProvider> makeGdalRaster(const ImageryLayer&) { return nullptr; }
 
 std::shared_ptr<ElevationProvider> makeGdalElevation(const ElevationLayer&) { return nullptr; }

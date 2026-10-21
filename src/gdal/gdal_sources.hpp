@@ -11,6 +11,7 @@
 namespace ote {
 
 bool gdalAvailable();
+bool gdalIsElevation(const std::string& path);
 std::shared_ptr<TileProvider> makeGdalRaster(const ImageryLayer& layer);
 std::shared_ptr<ElevationProvider> makeGdalElevation(const ElevationLayer& layer);
 std::vector<Feature> parseWithOgr(const std::string& path);
