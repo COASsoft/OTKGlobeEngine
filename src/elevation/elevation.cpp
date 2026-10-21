@@ -101,7 +101,7 @@ public:
         double minX, minY, maxX, maxY;
         matrix_.tileBounds(z, x, y, minX, minY, maxX, maxY);
         std::vector<std::uint8_t> raw = gunzip(r.data);
-        bool heightmap = formatKnown_ ? heightmap_ : heightmapSized(raw.size());
+        bool heightmap = formatKnown_.load() ? heightmap_.load() : heightmapSized(raw.size());
         bool ok = heightmap ? decodeHeightmapTerrain(raw, minX, minY, maxX, maxY, out)
                             : decodeQuantizedMesh(raw, minX, minY, maxX, maxY, 64, out);
         return ok ? 200 : 404;
