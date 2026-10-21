@@ -54,5 +54,7 @@ std::string layerCacheKey(const ImageryLayer& layer);
 std::string layerIdentity(const ImageryLayer& layer);
 int fetchUrl(const std::string& url, std::vector<std::uint8_t>& body, const FetchOptions& options, TileCache* cache,
              std::atomic<bool>* offline, const std::string& userAgent);
+std::string localPathFromUrl(const std::string& url);
+int readLocalUrl(const std::string& url, std::vector<std::uint8_t>& body);
 
 }
