@@ -115,7 +115,7 @@ Packages: `cpack --config build/CPackConfig.cmake` makes the platform packages.
 ## Viewer
 
 ```
-ote_viewer [--view lat,lon,gsd,tilt,azimuth] [--preset 0..3] [--size WxH]
+ote_viewer [file or folder ...] [--view lat,lon,gsd,tilt,azimuth] [--preset 0..3] [--size WxH]
            [--mbtiles f] [--gpkg f] [--osmdroid f] [--gdal f] [--mobac xml]
            [--features file] [--model path,lat,lon,heading,scale] [--tileset dir|.3tz|url|ion://id?access_token=t] [--las file]
            [--stereo eye_separation_m (0 = auto)] [--sun unix_seconds|now]
