@@ -77,17 +77,17 @@ bool usefulRegion(const Region& r) {
 }
 
 bool mbtilesRegion(const std::string& path, Region& out) {
-    Database db;
-    if (!db.open(path, true)) return false;
-    Statement st = db.prepare("SELECT value FROM metadata WHERE name = 'bounds'");
+    db::Database database;
+    if (!database.open(path, true)) return false;
+    db::Statement st = database.prepare("SELECT value FROM metadata WHERE name = 'bounds'");
     if (!st.valid() || !st.step()) return false;
     return std::sscanf(st.text(0).c_str(), "%lf,%lf,%lf,%lf", &out.west, &out.south, &out.east, &out.north) == 4;
 }
 
 bool geopackageRegion(const std::string& path, Region& out) {
-    Database db;
-    if (!db.open(path, true)) return false;
-    Statement st = db.prepare("SELECT min_x, min_y, max_x, max_y, srs_id FROM gpkg_contents WHERE data_type = 'tiles' AND min_x IS NOT NULL");
+    db::Database database;
+    if (!database.open(path, true)) return false;
+    db::Statement st = database.prepare("SELECT min_x, min_y, max_x, max_y, srs_id FROM gpkg_contents WHERE data_type = 'tiles' AND min_x IS NOT NULL");
     if (!st.valid() || !st.step()) return false;
     double x0 = st.real(0), y0 = st.real(1), x1 = st.real(2), y1 = st.real(3);
     const int srs = static_cast<int>(st.real(4));
