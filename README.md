@@ -48,6 +48,7 @@ The project builds two libraries, matching the split between the TAK kernel and 
 - Line of sight, viewshed, elevation profile, elevation heat map
 
 **Vectors, labels and models**
+- Built-in world labels, styled like a satellite map with labels: country, state and province, and county lines, and the names of countries, states, provinces, counties, cities, towns and villages worldwide, placed by importance with decluttering. One switch (`Engine::setLabelsEnabled`, `otk_set_labels`), on by default and fully offline: the data is inside the engine (about 9.5 MB, `-DOTK_LABELS=OFF` leaves it out). The kernel's `otk::placesNear` looks up nearby towns from the same data.
 - KML/KMZ (styles, style maps, icons, MultiGeometry, gx:Track, NetworkLink with view-based refresh, Model, extrude), GeoJSON (simplestyle), GPX, Shapefile (reprojected from its `.prj`: UTM, State Plane, Albers, Mercator), plus any OGR format via GDAL
 - CoT with ATAK iconsets (`usericon`), range and bearing lines, dashed and dotted strokes
 - Ground-clamped lines and polygons draped into the terrain texture, 3D lines, extruded walls and raised polygons, icons, SDF labels with decluttering, hit testing
