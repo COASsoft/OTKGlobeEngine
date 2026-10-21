@@ -320,11 +320,10 @@ void kmlGroundOverlays(const pugi::xml_document& doc, const Resolver& resolve, s
     }
 }
 
-std::vector<Feature> parseKmlText(const char* text, size_t size, const Resolver& resolve = {},
-                                  std::vector<GroundOverlay>* overlays = nullptr) {
-    std::vector<Feature> out;
+void parseKmlDocument(const char* text, size_t size, const Resolver& resolve, const std::string& baseUrl, int depth, KmlBudget& budget,
+                      std::vector<Feature>& out, std::vector<GroundOverlay>* overlays) {
     pugi::xml_document doc;
-    if (!doc.load_buffer(text, size)) return out;
+    if (!doc.load_buffer(text, size)) return;
     if (overlays) kmlGroundOverlays(doc, resolve, *overlays);
     std::map<std::string, KmlStyle> styles;
     std::map<std::string, std::string> maps;
