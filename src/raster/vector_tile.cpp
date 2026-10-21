@@ -3,6 +3,7 @@
 #include <earcut.hpp>
 #include <miniz.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <string>
