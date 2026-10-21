@@ -262,6 +262,7 @@ void init() {
     state->engine.setLayers(state->customLayers.empty() ? preset(state->preset) : state->customLayers);
     for (const auto& f : state->featureFiles) state->engine.loadFeatures(f);
     state->engine.setGridEnabled(state->grid);
+    state->engine.setLabelsEnabled(state->labels);
     state->engine.setElevationHeatmap(state->heat);
     state->engine.setTerrainTransparency(state->xray);
 
