@@ -5,6 +5,7 @@
 #include "feature/feature_layer.hpp"
 #include "model/model_layer.hpp"
 #include "model/pointcloud.hpp"
+#include "render/label_layer.hpp"
 #include "tiles3d/tileset.hpp"
 #include "raster/tile_cache.hpp"
 #include "raster/tile_loader.hpp"
