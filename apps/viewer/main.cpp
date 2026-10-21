@@ -838,6 +838,9 @@ void event(const sapp_event* e) {
             }
             eng.setGridType(static_cast<otk::GridType>(state->gridType));
             eng.setGridEnabled(state->grid);
+        } else if (e->key_code == SAPP_KEYCODE_I) {
+            state->labels = !state->labels;
+            eng.setLabelsEnabled(state->labels);
         } else if (e->key_code == SAPP_KEYCODE_K) {
             state->slope = !state->slope;
             eng.setTerrainSlope(state->slope);
