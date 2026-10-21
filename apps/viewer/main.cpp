@@ -1198,6 +1198,9 @@ sapp_desc sokol_main(int argc, char* argv[]) {
     d.height = state->height;
     d.sample_count = state->shotPath.empty() ? 4 : 1;
     d.high_dpi = true;
+    d.enable_dragndrop = true;
+    d.max_dropped_files = 32;
+    d.max_dropped_file_path_length = 4096;
     d.window_title = "OpenTAKEngine";
     d.logger.func = slog_func;
     return d;
