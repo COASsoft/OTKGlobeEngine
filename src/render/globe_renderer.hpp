@@ -95,6 +95,8 @@ public:
     bool anyGrid() const { return gridOn_[0] || gridOn_[1] || gridOn_[2]; }
     bool gridOn(int type) const { return gridOn_[std::clamp(type, 0, 2)]; }
     double gridStep(const Camera& cam, int type) const;
+    void setLabels(bool enabled);
+    bool labels() const { return labelsOn_; }
     void setSkyVisible(bool visible) { skyVisible_ = visible; }
     void setGroundColor(float r, float g, float b) {
         ground_[0] = r;
