@@ -26,8 +26,8 @@ Website and downloads: https://grangedevgroup-code.github.io/OpenTAKEngine/
 - Atmosphere and sky from ground level to space
 
 **Imagery**
-- Online XYZ, TMS, quadkey, WMS 1.1.1/1.3.0 (EPSG:3857 and 4326), WMTS templates, MOBAC XML (including multi-layer sources)
-- Offline MBTiles, GeoPackage tiles (any tile matrix), osmdroid SQLite, and GeoTIFF/NITF/MrSID/JPEG2000/GeoPDF/CADRG via the optional GDAL module
+- Online XYZ, TMS, quadkey, WMS 1.1.1/1.3.0 (EPSG:3857 and 4326), WMTS templates, MOBAC XML (including multi-layer and WMS sources); Cesium, MapLibre and Leaflet URL placeholders (`{reverseY}`, `{westDegrees}`, `{bbox-epsg-3857}`, `{quadkey}`, `{r}` and more); custom request headers for keys and referers
+- Offline MBTiles, PMTiles v3, GeoPackage tiles (any tile matrix), osmdroid, RMaps/BigPlanet and OsmAnd SQLite, and GeoTIFF/NITF/MrSID/JPEG2000/GeoPDF/CADRG via the optional GDAL module
 - SQLite tile cache with offline mode and fallback, region download
 - Mapbox Vector Tiles (TileJSON or MBTiles) rendered on the GPU with place, peak and water labels
 - `file://` URL templates for offline `{z}/{x}/{y}` tile folders
