@@ -2527,7 +2527,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         if (blend >= 1.0f && src.level == dt.key.level) {
             auto rt = retiring_.find(dt.key);
             if (rt != retiring_.end()) {
-                double t = (tnow - rt->second.second) / 0.25;
+                double t = std::max(0.0, (tnow - rt->second.second) / 0.35);
                 if (t < 1.0 && sg_query_view_state(rt->second.first.texture) == SG_RESOURCESTATE_VALID) {
                     view2 = rt->second.first.texture;
                     uvx2[0] = 1.0f;
