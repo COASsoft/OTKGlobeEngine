@@ -747,9 +747,9 @@ std::shared_ptr<VectorTile> decodeOverlayTile(const std::vector<std::uint8_t>& r
                 std::string_view ref = f.text(layer, "ref");
                 if (!ref.empty() && rank <= 2) {
                     std::string first(ref.substr(0, ref.find(';')));
-                    tile->marks.push_back({MarkType::Shield, static_cast<std::uint8_t>(rank), first, std::string(f.text(layer, "network")), line});
+                    tile->marks.push_back({MarkType::Shield, static_cast<std::uint8_t>(rank), 0, first, std::string(f.text(layer, "network")), line});
                 }
-                if (!name.empty()) tile->marks.push_back({MarkType::Road, static_cast<std::uint8_t>(rank), shortRoadName(name), {}, std::move(line)});
+                if (!name.empty()) tile->marks.push_back({MarkType::Road, static_cast<std::uint8_t>(rank), 0, shortRoadName(name), {}, std::move(line)});
             }
         } else if (layer.name == "place") {
             for (Reader fr : layer.features) {
@@ -763,7 +763,7 @@ std::shared_ptr<VectorTile> decodeOverlayTile(const std::vector<std::uint8_t>& r
                 std::string name = pickName(layer, f);
                 if (rank < 0 || name.empty()) continue;
                 if (rank == 0) name = upper(name);
-                tile->marks.push_back({MarkType::Place, static_cast<std::uint8_t>(rank), std::move(name), {}, {lonLat(f.parts[0][0][0], f.parts[0][0][1], extent)}});
+                tile->marks.push_back({MarkType::Place, static_cast<std::uint8_t>(rank), 0, std::move(name), {}, {lonLat(f.parts[0][0][0], f.parts[0][0][1], extent)}});
             }
         } else if (layer.name == "park" || layer.name == "poi") {
             for (Reader fr : layer.features) {
@@ -773,7 +773,7 @@ std::shared_ptr<VectorTile> decodeOverlayTile(const std::vector<std::uint8_t>& r
                 std::string name = pickName(layer, f);
                 if (name.empty()) continue;
                 const int rank = layer.name == "park" ? 0 : 1;
-                tile->marks.push_back({MarkType::Park, static_cast<std::uint8_t>(rank), std::move(name), {}, {lonLat(f.parts[0][0][0], f.parts[0][0][1], extent)}});
+                tile->marks.push_back({MarkType::Park, static_cast<std::uint8_t>(rank), 0, std::move(name), {}, {lonLat(f.parts[0][0][0], f.parts[0][0][1], extent)}});
             }
         } else if (layer.name == "water_name") {
             for (Reader fr : layer.features) {
@@ -789,7 +789,7 @@ std::shared_ptr<VectorTile> decodeOverlayTile(const std::vector<std::uint8_t>& r
                 if (!inside(mid, extent)) continue;
                 std::string_view cls = f.text(layer, "class");
                 const int rank = cls == "ocean" || cls == "sea" ? 0 : cls == "bay" || cls == "strait" ? 1 : 2;
-                tile->marks.push_back({MarkType::Water, static_cast<std::uint8_t>(rank), std::move(name), {}, {lonLat(mid[0], mid[1], extent)}});
+                tile->marks.push_back({MarkType::Water, static_cast<std::uint8_t>(rank), 0, std::move(name), {}, {lonLat(mid[0], mid[1], extent)}});
             }
         } else if (layer.name == "waterway") {
             for (Reader fr : layer.features) {
@@ -802,10 +802,11 @@ std::shared_ptr<VectorTile> decodeOverlayTile(const std::vector<std::uint8_t>& r
                 const int rank = cls == "river" ? 0 : cls == "canal" ? 1 : 2;
                 std::vector<std::array<double, 2>> line;
                 for (const auto& p : *part) line.push_back(lonLat(p[0], p[1], extent));
-                tile->marks.push_back({MarkType::Waterway, static_cast<std::uint8_t>(rank), std::move(name), {}, std::move(line)});
+                tile->marks.push_back({MarkType::Waterway, static_cast<std::uint8_t>(rank), 0, std::move(name), {}, std::move(line)});
             }
         }
     }
+    for (TileMark& m : tile->marks) m.zoom = static_cast<std::uint8_t>(std::clamp(z, 0, 255));
     std::stable_sort(roads.begin(), roads.end(), [](const Road& a, const Road& b) { return a.order < b.order; });
     tile->roads.reserve(roads.size() * 6);
     for (const Road& r : roads) tile->roads.insert(tile->roads.end(), r.v, r.v + 6);
