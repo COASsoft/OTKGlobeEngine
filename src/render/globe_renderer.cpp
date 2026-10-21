@@ -2566,7 +2566,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         const double held = tnow - snapshotStart_;
         if (moved) {
             snapshotShown_ = false;
-        } else if (ready || (held > 1.5 && covered == tiles.size()) || (held > 3.0 && covered * 10 >= tiles.size() * 9) || held > 5.0) {
+        } else if (ready || (held > 1.0 && covered == tiles.size() && owned * 20 >= tiles.size() * 17) ||
+                   (held > 3.0 && covered == tiles.size()) || held > 5.0) {
             snapshotFade_ = tnow;
             snapshotFadeLength_ = 0.4;
         }
