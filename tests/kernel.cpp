@@ -50,10 +50,13 @@ int main() {
     FeatureQuery named;
     named.nameContains = "CAPITOL";
     check(queryFeatures(f, named).size() == 2, "features by name");
+    std::vector<Feature> tagged = f;
+    tagged[1].attributes.push_back({"unit", "alpha"});
+    tagged[2].attributes.push_back({"unit", "bravo"});
     FeatureQuery attr;
-    attr.attributes = {{"marker-color", "#30a0ff"}};
-    std::vector<std::size_t> byAttr = queryFeatures(f, attr);
-    check(byAttr.size() == 1 && f[byAttr[0]].name == "Olympia Airport", "features by attribute");
+    attr.attributes = {{"unit", "alpha"}};
+    std::vector<std::size_t> byAttr = queryFeatures(tagged, attr);
+    check(byAttr.size() == 1 && tagged[byAttr[0]].name == "Olympia Airport", "features by attribute");
     FeatureQuery wrap;
     wrap.useRegion = true;
     wrap.region = {179.0, -10.0, -179.0, 10.0};
