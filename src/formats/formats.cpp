@@ -54,9 +54,13 @@ std::vector<FormatInfo> buildFormats() {
           "All properties kept; simplestyle-spec colours; id preserved"),
         f("gpx", "GPX 1.1", {".gpx"}, K::Vector, true, true, false, true, "importData / loadFeatures", "Waypoints, routes, tracks, times"),
         f("shp", "Esri Shapefile", {".shp"}, K::Vector, true, false, false, true, "importData / loadFeatures",
-          "Points, lines, polygons with holes, all DBF fields; .prj ignored (WGS84 assumed); export via GDAL"),
+          "Points, lines, polygons with holes, all DBF fields; .prj in Transverse Mercator (UTM, State Plane), Lambert Conformal Conic, "
+          "Albers, Mercator or Web Mercator reprojected natively, other projections through GDAL; no datum shifts; export via GDAL"),
         f("cot", "Cursor on Target (CoT) XML", {".cot", ".xml"}, K::Vector, true, true, false, true, "importData / loadFeatures",
-          "Events, drawn shapes (links, rectangles, ellipses), callsign, remarks, colours, ce/le, how; raw <detail> kept for round-trips"),
+          "Events, drawn shapes (links, rectangles, ellipses), range and bearing lines, ATAK iconset markers, colours, line styles, "
+          "callsign, remarks, ce/le, how; raw <detail> kept for round-trips"),
+        f("iconset", "ATAK iconset", {".zip"}, K::Package, true, false, false, true, "registerIconset",
+          "iconset.xml and icon images; resolves CoT <usericon iconsetpath>"),
         f("tak-package", "TAK data package", {".zip", ".dpk"}, K::Package, true, true, false, true, "importData / loadFeatures",
           "MANIFEST/manifest.xml contents; nested CoT, KML, KMZ, GeoJSON, GPX, CSV, GML, Shapefile; attachments listed as warnings"),
         f("csv", "CSV (lat/lon or WKT column)", {".csv", ".tsv"}, K::Vector, true, true, false, true, "importData / loadFeatures",
