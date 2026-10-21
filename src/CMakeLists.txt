@@ -36,6 +36,7 @@ add_library(opentakengine STATIC
     feature/grid.cpp
     feature/milsym.cpp
     model/model_layer.cpp
+    model/model_convert.cpp
     model/gltf_codecs.cpp
     model/tile_content.cpp
     model/pointcloud.cpp
