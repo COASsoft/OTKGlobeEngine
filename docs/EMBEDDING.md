@@ -126,6 +126,7 @@ if (otk_open(e, "/data/anything.pmtiles", &opened) && opened.has_region) {
     otk_fly_to(e, &v, 2.0);
 }
 otk_set_grid(e, 1);
+otk_set_labels(e, 0);
 char mgrs[32];
 otk_to_mgrs(47.04, -122.90, 5, mgrs, sizeof mgrs);
 ```
