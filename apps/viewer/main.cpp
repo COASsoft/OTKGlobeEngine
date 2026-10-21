@@ -295,6 +295,7 @@ void init() {
         state->engine.look(state->fpHeading, state->fpPitch);
     }
     for (const auto& p : state->openPaths) openPath(p);
+    state->viewGiven = false;
     if (!state->shotPath.empty()) {
         sg_environment env = sglue_environment();
         sg_image_desc c{};
