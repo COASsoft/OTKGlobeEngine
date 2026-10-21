@@ -165,7 +165,11 @@ int main() {
             qm.maxZoom = 12;
             if (variant == 0) qm.path = dir.string();
             else if (variant == 1) qm.url = (dir / "layer.json").string();
-            else qm.url = "file:///" + std::regex_replace((dir / "layer.json").generic_string(), std::regex(" "), "%20");
+            else {
+                std::string g = (dir / "layer.json").generic_string();
+                qm.url = g[0] == '/' ? "file://" : "file:///";
+                for (char c : g) qm.url += c == ' ' ? std::string("%20") : std::string(1, c);
+            }
             engine.setElevation({qm});
             std::vector<double> h = engine.queryElevation({{47.0, -122.0, 0}});
             check(h.size() == 1 && std::abs(h[0] - expect) < 2.0,
