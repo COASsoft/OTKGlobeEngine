@@ -2896,6 +2896,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     stats_.pendingRequests = stats_.imageryPending + stats_.elevationPending;
     stats_.maxLevel = maxLevel;
     stats_.incompleteTiles = incomplete;
+    lastIncompleteFraction_ = tiles.empty() ? 1.0 : static_cast<double>(incomplete) / static_cast<double>(tiles.size());
     stats_.blankTiles = blank;
     stats_.coarseTiles = coarse;
     stats_.coverageOnlyTiles = coverageOnly;
