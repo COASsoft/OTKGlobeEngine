@@ -284,6 +284,16 @@ public class OTKGlobeView extends GLSurfaceView implements GLSurfaceView.Rendere
         });
     }
 
+    public void setLabelsSource(final String urlOrPath) {
+        run(new Runnable() {
+            @Override
+            public void run() {
+                OTKGlobeEngine.nativeSetLabelsSource(engine, urlOrPath == null ? "" : urlOrPath);
+                requestRender();
+            }
+        });
+    }
+
     public void importTiles(final int layer, final String path, final Result result) {
         run(new Runnable() {
             @Override
