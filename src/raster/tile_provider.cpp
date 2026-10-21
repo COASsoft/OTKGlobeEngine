@@ -427,8 +427,13 @@ std::string tileUrl(const ImageryLayer& layer, const TileMatrix& m, int z, int x
         double minX, minY, maxX, maxY;
         m.tileBounds(z, x, y, minX, minY, maxX, maxY);
         const int srid = m.srid == 4326 ? 4326 : 3857;
-        const double west = unprojectX(srid, minX), east = unprojectX(srid, maxX);
-        const double south = unprojectY(srid, minY), north = unprojectY(srid, maxY);
+        auto clean = [](double v) { return std::abs(v) < 1e-7 ? 0.0 : v; };
+        minX = clean(minX);
+        minY = clean(minY);
+        maxX = clean(maxX);
+        maxY = clean(maxY);
+        const double west = clean(unprojectX(srid, minX)), east = clean(unprojectX(srid, maxX));
+        const double south = clean(unprojectY(srid, minY)), north = clean(unprojectY(srid, maxY));
         replaceAll(url, "{westDegrees}", fmt(west));
         replaceAll(url, "{southDegrees}", fmt(south));
         replaceAll(url, "{eastDegrees}", fmt(east));
