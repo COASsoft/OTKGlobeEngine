@@ -207,6 +207,8 @@ namespace OTKGlobeEngine
         [DllImport(Lib)] public static extern int otk_remove_tileset(IntPtr e, ulong id);
         [DllImport(Lib)] public static extern ulong otk_add_point_cloud(IntPtr e, [MarshalAs(UnmanagedType.LPUTF8Str)] string lasPath, ulong maxPoints, float pointSizePx);
         [DllImport(Lib)] public static extern void otk_set_grid(IntPtr e, int enabled);
+        [DllImport(Lib)] public static extern void otk_set_labels(IntPtr e, int enabled);
+        [DllImport(Lib)] public static extern int otk_labels(IntPtr e);
         [DllImport(Lib)] public static extern ulong otk_viewshed(IntPtr e, double lat, double lon, double height, double radius);
         [DllImport(Lib)] public static extern int otk_to_mgrs(double lat, double lon, int digits, byte[] output, int capacity);
         [DllImport(Lib)] public static extern int otk_from_mgrs([MarshalAs(UnmanagedType.LPUTF8Str)] string mgrs, out double lat, out double lon);
