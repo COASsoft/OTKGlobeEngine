@@ -74,6 +74,11 @@ endif()
 
 include(cmake/shaders.cmake)
 include(cmake/embed.cmake)
+if(NOT OTE_ENGINE)
+    foreach(_codec DRACO MESHOPT KTX2)
+        set(OTE_WITH_${_codec} OFF CACHE BOOL "" FORCE)
+    endforeach()
+endif()
 include(cmake/codecs.cmake)
 
 if(OTE_GFX_BACKEND AND OTE_SHDC_LANG)
