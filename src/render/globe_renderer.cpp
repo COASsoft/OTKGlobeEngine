@@ -2852,6 +2852,15 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             }
         }
     }
+    std::vector<GeoRect> visibleRects;
+    if (labelsOn_) {
+        visibleRects.reserve(tiles.size());
+        for (const auto& dt : tiles) {
+            Bounds b = bounds(dt.key);
+            visibleRects.push_back({b.west, b.south, b.east, b.north});
+        }
+        labels_.drawLabels(dc, ground, dpiScale_, visibleRects, 0);
+    }
     features_.drawOverlay(dc, ground, dpiScale_, flipSurface_, &vectorLabels);
     if (!capture && snapshotShown_) {
         float alpha = 1.0f;
