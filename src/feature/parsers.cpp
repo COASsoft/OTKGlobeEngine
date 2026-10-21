@@ -249,12 +249,12 @@ Resolver withRemoteIcons(Resolver local) {
 }
 
 void parseKmlDocument(const char* text, size_t size, const Resolver& resolve, const std::string& baseUrl, int depth, KmlBudget& budget,
-                      std::vector<Feature>& out, std::vector<GroundOverlay>* overlays);
+                      std::vector<Feature>& out, std::vector<GroundOverlay>* overlays, std::vector<ModelInstance>* models);
 void parseKmzDocument(const std::vector<std::uint8_t>& bytes, const Resolver& outer, const std::string& baseUrl, int depth, KmlBudget& budget,
-                      std::vector<Feature>& out, std::vector<GroundOverlay>* overlays);
+                      std::vector<Feature>& out, std::vector<GroundOverlay>* overlays, std::vector<ModelInstance>* models);
 
 void kmlNetworkLinks(const pugi::xml_document& doc, const Resolver& resolve, const std::string& baseUrl, int depth, KmlBudget& budget,
-                     std::vector<Feature>& out, std::vector<GroundOverlay>* overlays) {
+                     std::vector<Feature>& out, std::vector<GroundOverlay>* overlays, std::vector<ModelInstance>* models) {
     if (depth >= 4) return;
     for (auto n : doc.select_nodes("//NetworkLink")) {
         if (budget.links <= 0) return;
@@ -291,9 +291,9 @@ void kmlNetworkLinks(const pugi::xml_document& doc, const Resolver& resolve, con
         }
         if (bytes.empty()) continue;
         if (bytes.size() > 1 && bytes[0] == 'P' && bytes[1] == 'K')
-            parseKmzDocument(bytes, childResolve, childBase, depth + 1, budget, out, overlays);
+            parseKmzDocument(bytes, childResolve, childBase, depth + 1, budget, out, overlays, models);
         else
-            parseKmlDocument(reinterpret_cast<const char*>(bytes.data()), bytes.size(), childResolve, childBase, depth + 1, budget, out, overlays);
+            parseKmlDocument(reinterpret_cast<const char*>(bytes.data()), bytes.size(), childResolve, childBase, depth + 1, budget, out, overlays, models);
     }
 }
 
@@ -323,7 +323,7 @@ void kmlGroundOverlays(const pugi::xml_document& doc, const Resolver& resolve, s
 }
 
 void parseKmlDocument(const char* text, size_t size, const Resolver& resolve, const std::string& baseUrl, int depth, KmlBudget& budget,
-                      std::vector<Feature>& out, std::vector<GroundOverlay>* overlays) {
+                      std::vector<Feature>& out, std::vector<GroundOverlay>* overlays, std::vector<ModelInstance>* models) {
     pugi::xml_document doc;
     if (!doc.load_buffer(text, size)) return;
     if (overlays) kmlGroundOverlays(doc, resolve, *overlays);
@@ -384,19 +384,19 @@ void parseKmlDocument(const char* text, size_t size, const Resolver& resolve, co
         for (auto c : pm.children()) kmlGeometry(c, f);
         if (!f.geometries.empty()) out.push_back(std::move(f));
     }
-    kmlNetworkLinks(doc, resolve, baseUrl, depth, budget, out, overlays);
+    kmlNetworkLinks(doc, resolve, baseUrl, depth, budget, out, overlays, models);
 }
 
 std::vector<Feature> parseKmlText(const char* text, size_t size, const Resolver& resolve = {},
-                                  std::vector<GroundOverlay>* overlays = nullptr) {
+                                  std::vector<GroundOverlay>* overlays = nullptr, std::vector<ModelInstance>* models = nullptr) {
     std::vector<Feature> out;
     KmlBudget budget;
-    parseKmlDocument(text, size, withRemoteIcons(resolve), {}, 0, budget, out, overlays);
+    parseKmlDocument(text, size, withRemoteIcons(resolve), {}, 0, budget, out, overlays, models);
     return out;
 }
 
 void parseKmzDocument(const std::vector<std::uint8_t>& bytes, const Resolver& outer, const std::string& baseUrl, int depth, KmlBudget& budget,
-                      std::vector<Feature>& out, std::vector<GroundOverlay>* overlays) {
+                      std::vector<Feature>& out, std::vector<GroundOverlay>* overlays, std::vector<ModelInstance>* models) {
     mz_zip_archive zip{};
     if (!mz_zip_reader_init_mem(&zip, bytes.data(), bytes.size(), 0)) return;
     int index = mz_zip_reader_locate_file(&zip, "doc.kml", nullptr, 0);
@@ -427,7 +427,7 @@ void parseKmzDocument(const std::vector<std::uint8_t>& bytes, const Resolver& ou
                 }
                 return r;
             };
-            parseKmlDocument(static_cast<const char*>(data), size, resolve, baseUrl, depth, budget, out, overlays);
+            parseKmlDocument(static_cast<const char*>(data), size, resolve, baseUrl, depth, budget, out, overlays, models);
             mz_free(data);
         }
     }
@@ -435,10 +435,10 @@ void parseKmzDocument(const std::vector<std::uint8_t>& bytes, const Resolver& ou
 }
 
 std::vector<Feature> parseKmz(const std::vector<std::uint8_t>& bytes, std::vector<GroundOverlay>* overlays = nullptr,
-                              const Resolver& outer = {}) {
+                              const Resolver& outer = {}, std::vector<ModelInstance>* models = nullptr) {
     std::vector<Feature> out;
     KmlBudget budget;
-    parseKmzDocument(bytes, withRemoteIcons(outer), {}, 0, budget, out, overlays);
+    parseKmzDocument(bytes, withRemoteIcons(outer), {}, 0, budget, out, overlays, models);
     return out;
 }
 
@@ -732,12 +732,12 @@ ParsedFile parseBytes(const std::vector<std::uint8_t>& bytes, const std::string&
             std::filesystem::path dir = std::filesystem::u8path(baseDirectory);
             outer = [dir](const std::string& href) { return readAll(dir / std::filesystem::u8path(href)); };
         }
-        out.features = parseKmz(bytes, &out.overlays, outer);
+        out.features = parseKmz(bytes, &out.overlays, outer, &out.models);
     } else if (ext == ".kml") {
         std::filesystem::path dir = std::filesystem::u8path(baseDirectory);
         Resolver resolve;
         if (!baseDirectory.empty()) resolve = [dir](const std::string& href) { return readAll(dir / std::filesystem::u8path(href)); };
-        out.features = parseKmlText(reinterpret_cast<const char*>(bytes.data()), bytes.size(), resolve, &out.overlays);
+        out.features = parseKmlText(reinterpret_cast<const char*>(bytes.data()), bytes.size(), resolve, &out.overlays, &out.models);
     } else if (ext == ".gpx") {
         out.features = parseGpx(bytes);
     } else if (ext == ".json" || ext == ".geojson") {
