@@ -96,4 +96,27 @@ bool decodeQuantizedMesh(const std::vector<std::uint8_t>& data, double west, dou
     return true;
 }
 
+bool decodeHeightmapTerrain(const std::vector<std::uint8_t>& data, double west, double south, double east, double north,
+                            HeightGrid& out) {
+    constexpr int kPosts = 65;
+    constexpr int kCells = kPosts - 1;
+    if (data.size() < static_cast<size_t>(kPosts) * kPosts * 2) return false;
+    auto post = [&](int col, int row) {
+        std::uint16_t v;
+        std::memcpy(&v, data.data() + (static_cast<size_t>(row) * kPosts + col) * 2, 2);
+        return v / 5.0 - 1000.0;
+    };
+    out.width = out.height = kCells;
+    out.minX = west;
+    out.maxX = east;
+    out.minY = south;
+    out.maxY = north;
+    out.values.resize(static_cast<size_t>(kCells) * kCells);
+    for (int r = 0; r < kCells; ++r)
+        for (int c = 0; c < kCells; ++c)
+            out.values[static_cast<size_t>(r) * kCells + c] =
+                static_cast<float>(0.25 * (post(c, r) + post(c + 1, r) + post(c, r + 1) + post(c + 1, r + 1)));
+    return true;
+}
+
 }
