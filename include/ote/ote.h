@@ -159,6 +159,7 @@ OTE_API void ote_set_long_press_callback(ote_engine* e, ote_press_callback callb
 OTE_API int ote_load_features(ote_engine* e, const char* path);
 OTE_API int ote_export_features(ote_engine* e, const char* path, const char* format);
 OTE_API int ote_detect_format(const char* path, char* out, int capacity);
+OTE_API int ote_register_iconset(const char* path, char* uid_out, int capacity);
 OTE_API int ote_formats_markdown(char* out, int capacity);
 OTE_API uint64_t ote_add_point(ote_engine* e, double lat, double lon, double alt, const char* name, uint32_t argb);
 OTE_API uint64_t ote_add_line(ote_engine* e, const double* lat_lon_pairs, int count, const char* name, uint32_t argb,
