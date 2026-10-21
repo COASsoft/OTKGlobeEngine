@@ -767,6 +767,13 @@ void Engine::setLabelsEnabled(bool enabled) {
 
 bool Engine::labelsEnabled() const { return impl_->globe.labels(); }
 
+void Engine::setLabelsSource(const std::string& urlOrPath) {
+    impl_->globe.setLabelsSource(urlOrPath);
+    impl_->dirty = true;
+}
+
+std::string Engine::labelsSource() const { return impl_->globe.labelsSource(); }
+
 std::vector<GridLabel> Engine::gridLabels() const {
     std::vector<GridLabel> out;
     const Camera& c = impl_->camera;
