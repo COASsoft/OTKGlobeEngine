@@ -108,6 +108,7 @@ add_library(otkglobeengine STATIC
     model/pointcloud.cpp
     tiles3d/tileset.cpp
     render/globe_renderer.cpp
+    render/label_layer.cpp
     render/gfx_impl.cpp)
 target_link_libraries(otkglobeengine PUBLIC otk_kernel)
 
