@@ -6,7 +6,7 @@ Targets Windows, macOS, Linux, Android, iOS and iPadOS from one codebase. Render
 
 Website and downloads: https://grangedevgroup-code.github.io/OpenTAKEngine/
 
-See [docs/PLAN.md](docs/PLAN.md) for the architecture and decisions, and [docs/EMBEDDING.md](docs/EMBEDDING.md) for using the engine from Android, iOS, macOS, Windows, C# and Qt. [docs/RENDERING.md](docs/RENDERING.md) covers continuous, zero-blank rendering and how it is measured; [docs/FORMATS.md](docs/FORMATS.md) is the data import/export compatibility matrix, and [docs/OFFLINE.md](docs/OFFLINE.md) covers caching and airgapped networks. [docs/PHOTOREALISM.md](docs/PHOTOREALISM.md) covers photogrammetry and photorealistic 3D Tiles, [docs/XR.md](docs/XR.md) VR, AR and stereo, and [docs/MILITARY.md](docs/MILITARY.md) the military feature set and what to add next.
+[docs/EMBEDDING.md](docs/EMBEDDING.md) covers using the engine from Android, iOS, macOS, Windows, C# and Qt. [docs/FORMATS.md](docs/FORMATS.md) is the data import/export compatibility matrix, and [docs/OFFLINE.md](docs/OFFLINE.md) covers caching and airgapped networks. [docs/PHOTOREALISM.md](docs/PHOTOREALISM.md) covers photogrammetry and photorealistic 3D Tiles, [docs/XR.md](docs/XR.md) VR, AR and stereo, and [docs/MILITARY.md](docs/MILITARY.md) the military feature set.
 
 | Globe | Terrain | First person |
 | --- | --- | --- |
