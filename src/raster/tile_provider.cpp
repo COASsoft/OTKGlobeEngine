@@ -443,8 +443,10 @@ std::string tileUrl(const ImageryLayer& layer, const TileMatrix& m, int z, int x
         replaceAll(url, "{eastProjected}", fmt(maxX));
         replaceAll(url, "{northProjected}", fmt(maxY));
         replaceAll(url, "{bbox-epsg-4326}", fmt(west) + "," + fmt(south) + "," + fmt(east) + "," + fmt(north));
-        replaceAll(url, "{bbox-epsg-3857}", fmt(projectX(3857, west)) + "," + fmt(projectY(3857, std::max(south, -85.0511287798))) + "," +
-                                                fmt(projectX(3857, east)) + "," + fmt(projectY(3857, std::min(north, 85.0511287798))));
+        replaceAll(url, "{bbox-epsg-3857}",
+                   srid == 3857 ? fmt(minX) + "," + fmt(minY) + "," + fmt(maxX) + "," + fmt(maxY)
+                                : fmt(clean(projectX(3857, west))) + "," + fmt(clean(projectY(3857, std::max(south, -85.0511287798)))) + "," +
+                                      fmt(clean(projectX(3857, east))) + "," + fmt(clean(projectY(3857, std::min(north, 85.0511287798)))));
         replaceAll(url, "{width}", std::to_string(layer.tileSize));
         replaceAll(url, "{height}", std::to_string(layer.tileSize));
         replaceAll(url, "{reverseX}", std::to_string(m.levels[z].matrixWidth - 1 - x));
