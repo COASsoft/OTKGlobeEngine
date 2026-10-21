@@ -15,6 +15,7 @@ option(OTK_ENGINE "Build the rendering engine; OFF builds only the GPU-free kern
 option(OTK_BUILD_VIEWER "Build the demo viewer" ${PROJECT_IS_TOP_LEVEL})
 option(OTK_WITH_GDAL "Build the optional GDAL raster, elevation and vector module" OFF)
 option(OTK_EMBED_BACKDROP "Embed a low-resolution world image shown wherever no imagery is available offline" ON)
+option(OTK_LABELS "Embed world borders and place names (about 10 MB)" ON)
 option(OTK_PACKAGING "Install rules and CPack packages" ${PROJECT_IS_TOP_LEVEL})
 option(OTK_GLES "Render with OpenGL ES 3 through EGL on Linux, for the Raspberry Pi 4 and 5 and other embedded GPUs" OFF)
 set(OTK_SQLITE_TARGET "" CACHE STRING "An existing SQLite target to link instead of building the bundled amalgamation")
