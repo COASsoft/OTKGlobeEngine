@@ -2555,25 +2555,45 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             ++invalidResources_;
             view2 = view;
         }
+        if (sg_query_view_state(view3) != SG_RESOURCESTATE_VALID) {
+            ++invalidResources_;
+            view3 = view;
+            morphing = false;
+            for (float& e : lodEdges) e = 0.0f;
+        }
         Mat4 mvp = dc.viewProjRel() * translation(tt.center - dc.eye());
         globe_vs_params_t vsp{};
         toFloat(mvp, vsp.mvp);
         std::memcpy(vsp.uv_xform, uvx, sizeof(uvx));
         std::memcpy(vsp.uv_xform2, uvx2, sizeof(uvx2));
+        std::memcpy(vsp.uv_xform3, uvx3, sizeof(uvx3));
         vsp.skirt[0] = static_cast<float>(skirtLen);
         std::memcpy(vsp.edges, lodEdges, sizeof(lodEdges));
         vsp.skirt[1] = static_cast<float>(kPosts * kPosts);
         vsp.center[0] = static_cast<float>(tt.center.x);
         vsp.center[1] = static_cast<float>(tt.center.y);
         vsp.center[2] = static_cast<float>(tt.center.z);
+        if (morphing) {
+            const Vec3 rel = tt.center - eye_;
+            vsp.eyerel[0] = static_cast<float>(rel.x);
+            vsp.eyerel[1] = static_cast<float>(rel.y);
+            vsp.eyerel[2] = static_cast<float>(rel.z);
+            const double texel = spanDeg(dt.key.level) * kDegToRad * kWgs84A / kSurfaceSize;
+            const double threshold = std::max(1.0, dpiScale_ * 0.6) / std::max(imageryScale_, 0.1);
+            vsp.morph[0] = static_cast<float>(texel / (cam.pixelSizeAt(1.0) * threshold));
+            vsp.morph[1] = static_cast<float>(0.5 * (1.0 + lodMorph_));
+            vsp.morph[2] = static_cast<float>(0.5 * lodMorph_);
+            vsp.morph[3] = 1.0f;
+        }
         gfs.flags[2] = blend;
-        if (views && views->size() > 1) terrainDraws.push_back({tt.vbuf, view, view2, vsp, tt.center, blend});
+        if (views && views->size() > 1) terrainDraws.push_back({tt.vbuf, view, view2, view3, vsp, tt.center, blend});
         sg_apply_uniforms(UB_globe_fs_params, SG_RANGE(gfs));
         sg_bindings bind{};
         bind.vertex_buffers[0] = tt.vbuf;
         bind.index_buffer = indexBuffer_;
         bind.views[VIEW_tex] = view;
         bind.views[VIEW_tex2] = view2;
+        bind.views[VIEW_tex3] = view3;
         bind.samplers[SMP_smp] = sampler_;
         sg_apply_bindings(&bind);
         sg_apply_uniforms(UB_globe_vs_params, SG_RANGE(vsp));
