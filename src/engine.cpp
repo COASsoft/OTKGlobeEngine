@@ -3,6 +3,7 @@
 #endif
 #include "ote/engine.hpp"
 #include "ote/formats.hpp"
+#include "ote/image.hpp"
 #include "ote/milsym.hpp"
 
 #include <algorithm>
@@ -1404,9 +1405,16 @@ void configureGfx(sg_desc& desc) {
 
 std::vector<ElevationLayer> defaultElevation() {
     ElevationLayer t;
-    t.name = "Terrain Tiles";
-    t.url = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png";
-    t.maxZoom = 15;
+    if (webpSupported()) {
+        t.name = "Mapterhorn";
+        t.url = "https://tiles.mapterhorn.com/{z}/{x}/{y}.webp";
+        t.tileSize = 512;
+        t.maxZoom = 16;
+    } else {
+        t.name = "Terrain Tiles";
+        t.url = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png";
+        t.maxZoom = 15;
+    }
     return {t};
 }
 
