@@ -298,6 +298,7 @@ private:
     ElevationManager elevation_{8};
 #endif
     FeatureLayer features_;
+    LabelLayer labels_;
     ModelLayer models_;
     PointCloudLayer points_;
     std::unordered_map<std::uint64_t, std::unique_ptr<Tileset3D>> tilesets_;
