@@ -38,31 +38,227 @@ void applyGeoid(HeightGrid& g, int srid) {
     }
 }
 
+std::string splitQuery(const std::string& url, std::string& query) {
+    size_t q = url.find('?');
+    if (q == std::string::npos) {
+        query.clear();
+        return url;
+    }
+    query = url.substr(q + 1);
+    return url.substr(0, q);
+}
+
+std::string queryValue(const std::string& query, const std::string& name) {
+    size_t pos = 0;
+    while (pos < query.size()) {
+        size_t amp = query.find('&', pos);
+        if (amp == std::string::npos) amp = query.size();
+        std::string part = query.substr(pos, amp - pos);
+        size_t eq = part.find('=');
+        if (eq != std::string::npos && part.substr(0, eq) == name) return part.substr(eq + 1);
+        pos = amp + 1;
+    }
+    return {};
+}
+
+bool hasHeader(const std::vector<std::pair<std::string, std::string>>& headers, const char* name) {
+    for (const auto& [n, v] : headers) {
+        std::string a = n;
+        std::transform(a.begin(), a.end(), a.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (a == name) return true;
+    }
+    return false;
+}
+
+bool heightmapSized(size_t n) { return n == 8451 || n == 8452 || n == 8451 + 65536; }
+
 class QuantizedMeshProvider : public ElevationProvider {
 public:
-    QuantizedMeshProvider(const ElevationLayer& layer, TileCache* cache, std::atomic<bool>* offline) {
-        ImageryLayer l;
-        l.name = layer.name;
-        l.url = layer.url;
-        l.maxZoom = layer.maxZoom;
-        l.cache = layer.cache;
-        l.srid = 4326;
-        l.tms = true;
-        inner_ = makeProvider(l, cache, offline);
+    QuantizedMeshProvider(const ElevationLayer& layer, TileCache* cache, std::atomic<bool>* offline)
+        : layer_(layer), cache_(cache), offline_(offline) {
         matrix_ = TileMatrix::geographic(0, layer.maxZoom, 64);
     }
 
     int fetch(int z, int x, int y, HeightGrid& out) override {
-        FetchResult r = inner_->fetch(z, x, y);
+        int failure = 503;
+        std::shared_ptr<TileProvider> inner = provider(false, failure);
+        if (!inner) return failure;
+        if (!availableTile(z, x, y)) return 404;
+        FetchResult r = inner->fetch(z, x, y);
+        if ((r.status == 401 || r.status == 403) && ion_) {
+            inner = provider(true, failure);
+            if (!inner) return failure;
+            r = inner->fetch(z, x, y);
+        }
         if (r.status != 200 || r.data.empty()) return r.status;
         double minX, minY, maxX, maxY;
         matrix_.tileBounds(z, x, y, minX, minY, maxX, maxY);
-        if (!decodeQuantizedMesh(gunzip(r.data), minX, minY, maxX, maxY, 64, out)) return 404;
-        return 200;
+        std::vector<std::uint8_t> raw = gunzip(r.data);
+        bool heightmap = formatKnown_ ? heightmap_ : heightmapSized(raw.size());
+        bool ok = heightmap ? decodeHeightmapTerrain(raw, minX, minY, maxX, maxY, out)
+                            : decodeQuantizedMesh(raw, minX, minY, maxX, maxY, 64, out);
+        return ok ? 200 : 404;
     }
 
 private:
+    bool availableTile(int z, int x, int y) {
+        std::lock_guard lock(mutex_);
+        if (available_.empty()) return true;
+        if (z >= static_cast<int>(available_.size())) return metadataExt_;
+        int row = tms_ ? (1 << z) - 1 - y : y;
+        for (const auto& r : available_[static_cast<size_t>(z)])
+            if (x >= r[0] && x <= r[2] && row >= r[1] && row <= r[3]) return true;
+        return false;
+    }
+
+    bool load(const std::string& url, const std::string& cacheKey, const net::Headers& headers, nlohmann::json& out, int& failure) {
+        std::vector<std::uint8_t> body;
+        bool offline = offline_ && offline_->load();
+        bool useCache = cache_ && cache_->isOpen() && layer_.cache;
+        if (!offline) {
+            net::Response r = net::get(url, "OpenTAKEngine/0.1", headers);
+            if (r.status == 200 && !r.body.empty()) {
+                body = std::move(r.body);
+                if (useCache) cache_->put(cacheKey, -1, 0, 0, body, std::int64_t(1) << 50, true);
+            } else if (r.status == 404 || r.status == 401 || r.status == 403) {
+                failure = 404;
+            }
+        }
+        std::int64_t expires = 0;
+        if (body.empty() && useCache) cache_->get(cacheKey, -1, 0, 0, body, expires);
+        if (body.empty()) {
+            if (offline) failure = -2;
+            return false;
+        }
+        out = nlohmann::json::parse(body.begin(), body.end(), nullptr, false);
+        return !out.is_discarded() && out.is_object();
+    }
+
+    std::shared_ptr<TileProvider> provider(bool refresh, int& failure) {
+        std::lock_guard lock(mutex_);
+        const double now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        if (inner_ && !(refresh && now - resolvedAt_ > 30.0)) return refresh ? nullptr : inner_;
+        if (!inner_ && now < retryAt_) return nullptr;
+        retryAt_ = now + 10.0;
+        net::Headers headers(layer_.headers.begin(), layer_.headers.end());
+        std::string url = layer_.url;
+        std::string query;
+        std::string base;
+        std::string templ;
+        bool ion = false;
+        if (url.rfind("ion://", 0) == 0) {
+            std::string params;
+            std::string id = splitQuery(url.substr(6), params);
+            std::string server = queryValue(params, "server");
+            if (server.empty()) server = "https://api.cesium.com";
+            nlohmann::json ep;
+            std::string endpoint = server + "/v1/assets/" + id + "/endpoint?access_token=" + queryValue(params, "access_token");
+            if (!load(endpoint, "ion-endpoint|" + server + "|" + id, {}, ep, failure)) return nullptr;
+            if (!ep.contains("url") || !ep["url"].is_string()) {
+                failure = 404;
+                return nullptr;
+            }
+            base = ep["url"].get<std::string>();
+            base = splitQuery(base, query);
+            if (base.empty() || base.back() != '/') base += '/';
+            if (ep.contains("accessToken") && ep["accessToken"].is_string())
+                headers.emplace_back("Authorization", "Bearer " + ep["accessToken"].get<std::string>());
+            ion = true;
+        } else if (url.find("{z}") != std::string::npos) {
+            templ = url;
+        } else {
+            std::string path = splitQuery(url, query);
+            if (path.size() >= 5 && path.compare(path.size() - 5, 5, ".json") == 0) {
+                base = path.substr(0, path.rfind('/') + 1);
+            } else {
+                base = path;
+                if (base.empty() || base.back() != '/') base += '/';
+            }
+        }
+        bool tms = true;
+        bool heightmap = false;
+        bool formatKnown = false;
+        bool metadata = false;
+        std::vector<std::vector<std::array<int, 4>>> available;
+        if (templ.empty()) {
+            std::string layerUrl = base + "layer.json" + (query.empty() ? "" : "?" + query);
+            nlohmann::json lj;
+            net::Headers jsonHeaders = headers;
+            if (!hasHeader(jsonHeaders, "accept")) jsonHeaders.emplace_back("Accept", "application/json,*/*;q=0.01");
+            if (!load(layerUrl, "qm-layer|" + base, jsonHeaders, lj, failure)) return nullptr;
+            std::string format = lj.value("format", std::string("quantized-mesh-1.0"));
+            heightmap = format.rfind("heightmap", 0) == 0;
+            formatKnown = true;
+            if (lj.value("projection", std::string("EPSG:4326")) != "EPSG:4326") {
+                failure = 404;
+                return nullptr;
+            }
+            tms = lj.value("scheme", std::string("tms")) != "slippyMap";
+            if (lj.contains("extensions") && lj["extensions"].is_array())
+                for (const auto& e : lj["extensions"])
+                    if (e.is_string() && e.get<std::string>() == "metadata") metadata = true;
+            if (lj.contains("available") && lj["available"].is_array())
+                for (const auto& level : lj["available"]) {
+                    available.emplace_back();
+                    if (!level.is_array()) continue;
+                    for (const auto& r : level)
+                        if (r.is_object())
+                            available.back().push_back({r.value("startX", 0), r.value("startY", 0), r.value("endX", -1), r.value("endY", -1)});
+                }
+            if (!lj.contains("tiles") || !lj["tiles"].is_array() || lj["tiles"].empty() || !lj["tiles"][0].is_string()) {
+                failure = 404;
+                return nullptr;
+            }
+            templ = lj["tiles"][0].get<std::string>();
+            std::string version = lj.value("version", std::string("1.0.0"));
+            for (size_t p; (p = templ.find("{version}")) != std::string::npos;) templ.replace(p, 9, version);
+            if (templ.find("://") == std::string::npos) {
+                if (!templ.empty() && templ[0] == '/') {
+                    size_t scheme = base.find("://");
+                    size_t host = scheme == std::string::npos ? std::string::npos : base.find('/', scheme + 3);
+                    templ = (host == std::string::npos ? base : base.substr(0, host)) + templ;
+                } else {
+                    if (templ.rfind("./", 0) == 0) templ = templ.substr(2);
+                    templ = base + templ;
+                }
+            }
+            if (!query.empty() && !ion) templ += (templ.find('?') == std::string::npos ? "?" : "&") + query;
+        }
+        if (!hasHeader(headers, "accept"))
+            headers.emplace_back("Accept", heightmap ? "application/octet-stream,*/*;q=0.01"
+                                                     : "application/vnd.quantized-mesh,application/octet-stream;q=0.9,*/*;q=0.01");
+        ImageryLayer l;
+        l.name = layer_.name;
+        l.url = templ;
+        l.maxZoom = layer_.maxZoom;
+        l.cache = layer_.cache;
+        l.srid = 4326;
+        l.tms = tms;
+        l.headers.assign(headers.begin(), headers.end());
+        inner_ = makeProvider(l, cache_, offline_);
+        tms_ = tms;
+        heightmap_ = heightmap;
+        formatKnown_ = formatKnown;
+        metadataExt_ = metadata;
+        available_ = std::move(available);
+        ion_ = ion;
+        resolvedAt_ = now;
+        return inner_;
+    }
+
+    ElevationLayer layer_;
+    TileCache* cache_;
+    std::atomic<bool>* offline_;
+    std::mutex mutex_;
     std::shared_ptr<TileProvider> inner_;
+    std::vector<std::vector<std::array<int, 4>>> available_;
+    bool tms_ = true;
+    bool heightmap_ = false;
+    bool formatKnown_ = false;
+    bool metadataExt_ = false;
+    std::atomic<bool> ion_{false};
+    double resolvedAt_ = 0;
+    double retryAt_ = 0;
 };
 
 class TerrariumProvider : public ElevationProvider {
