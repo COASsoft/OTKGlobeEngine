@@ -263,6 +263,8 @@ public:
     void setGridEnabled(GridType type, bool enabled);
     bool gridEnabled(GridType type) const;
     std::vector<GridLabel> gridLabels() const;
+    void setLabelsEnabled(bool enabled);
+    bool labelsEnabled() const;
     void setTerrainSlope(bool enabled, float opacity = 0.6f, double maxSlopeDegrees = 45.0);
     Region viewRegion() const;
     double terrainHeightMsl(double lat, double lon) const;
