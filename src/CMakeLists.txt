@@ -33,6 +33,7 @@ add_library(otk_kernel STATIC
     feature/feature_query.cpp
     feature/text.cpp
     feature/milsym.cpp
+    labels/label_data.cpp
     model/model_convert.cpp)
 
 target_include_directories(otk_kernel
