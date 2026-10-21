@@ -2486,18 +2486,20 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         int bestK = -1;
         int bestZ = -1000;
         SurfaceTile* best = nullptr;
-        for (int k = std::max(0, minUp); k <= key.level; ++k) {
-            QuadKey a{key.level - k, key.x >> k, key.y >> k};
-            auto it = surface_.find(a);
-            if (it == surface_.end() || it->second.version < 0) continue;
-            int z = it->second.complete ? std::max(it->second.sourceZ, it->second.imageryZ) : it->second.sourceZ;
-            if (z > bestZ) {
-                bestZ = z;
-                bestK = k;
-                best = &it->second;
+        for (int pass = 0; pass < 2 && !best; ++pass)
+            for (int k = std::max(0, minUp); k <= key.level; ++k) {
+                QuadKey a{key.level - k, key.x >> k, key.y >> k};
+                auto it = surface_.find(a);
+                if (it == surface_.end() || it->second.version < 0) continue;
+                if (pass == 0 && it->second.version < switchVersion_) continue;
+                int z = it->second.complete ? std::max(it->second.sourceZ, it->second.imageryZ) : it->second.sourceZ;
+                if (z > bestZ) {
+                    bestZ = z;
+                    bestK = k;
+                    best = &it->second;
+                }
+                if (it->second.complete) break;
             }
-            if (it->second.complete) break;
-        }
         if (!best) return QuadKey{-1, 0, 0};
         best->used = frame_;
         view = best->texture;
