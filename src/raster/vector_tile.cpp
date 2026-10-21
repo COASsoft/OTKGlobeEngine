@@ -15,6 +15,8 @@ namespace {
 
 constexpr double kPi = 3.14159265358979323846;
 
+std::int32_t unzigzag(std::uint32_t v) { return static_cast<std::int32_t>(v >> 1) ^ -static_cast<std::int32_t>(v & 1); }
+
 }
 
 std::vector<std::uint8_t> gunzip(const std::vector<std::uint8_t>& in) {
@@ -238,7 +240,7 @@ std::shared_ptr<VectorTile> decodeVectorTile(const std::vector<std::uint8_t>& ra
                 std::uint32_t cmd = static_cast<std::uint32_t>(g.varint());
                 if ((cmd & 7) == 1 && g.ok()) {
                     std::uint32_t dx = static_cast<std::uint32_t>(g.varint()), dy = static_cast<std::uint32_t>(g.varint());
-                    long px = static_cast<long>((dx >> 1) ^ (~(dx & 1) + 1)), py = static_cast<long>((dy >> 1) ^ (~(dy & 1) + 1));
+                    long px = static_cast<long>(unzigzag(dx)), py = static_cast<long>(unzigzag(dy));
                     if (px >= 0 && py >= 0 && px <= static_cast<long>(extent) && py <= static_cast<long>(extent)) {
                         VectorLabel vl;
                         float ll[2];
@@ -275,8 +277,8 @@ std::shared_ptr<VectorTile> decodeVectorTile(const std::vector<std::uint8_t>& ra
                 if (id == 1 || id == 2) {
                     for (std::uint32_t i = 0; i < count && geom.ok(); ++i) {
                         std::uint32_t dx = static_cast<std::uint32_t>(geom.varint()), dy = static_cast<std::uint32_t>(geom.varint());
-                        cx += static_cast<long>((dx >> 1) ^ (~(dx & 1) + 1));
-                        cy += static_cast<long>((dy >> 1) ^ (~(dy & 1) + 1));
+                        cx += static_cast<long>(unzigzag(dx));
+                        cy += static_cast<long>(unzigzag(dy));
                         if (id == 1) rings.emplace_back();
                         if (!rings.empty()) rings.back().push_back({static_cast<double>(cx) / extent, static_cast<double>(cy) / extent});
                     }
@@ -470,8 +472,8 @@ MvtFeature readMvtFeature(Reader f) {
         if (id == 1 || id == 2) {
             for (std::uint32_t i = 0; i < count && geom.ok(); ++i) {
                 std::uint32_t dx = static_cast<std::uint32_t>(geom.varint()), dy = static_cast<std::uint32_t>(geom.varint());
-                cx += static_cast<long>((dx >> 1) ^ (~(dx & 1) + 1));
-                cy += static_cast<long>((dy >> 1) ^ (~(dy & 1) + 1));
+                cx += static_cast<long>(unzigzag(dx));
+                cy += static_cast<long>(unzigzag(dy));
                 if (id == 1 || out.parts.empty()) out.parts.emplace_back();
                 out.parts.back().push_back({static_cast<double>(cx), static_cast<double>(cy)});
             }
