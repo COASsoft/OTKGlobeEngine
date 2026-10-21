@@ -138,6 +138,13 @@ bool GlobeRenderer::init() {
 #if defined(OTK_GL_MIPS)
     glMips_ = backend == SG_BACKEND_GLES3 || backend == SG_BACKEND_GLCORE;
     if (const char* v = std::getenv("OTK_BOX_MIPS")) glMips_ = glMips_ && std::atoi(v) == 0;
+    if (backend == SG_BACKEND_GLES3 || backend == SG_BACKEND_GLCORE) {
+        const char* renderer = reinterpret_cast<const char*>(glGetString(GL_RENDERER));
+        if (renderer && (std::strstr(renderer, "llvmpipe") || std::strstr(renderer, "softpipe") || std::strstr(renderer, "SwiftShader"))) {
+            softwareRaster_ = true;
+            lodMorph_ = 0.0;
+        }
+    }
 #endif
     flipSurface_ = backend == SG_BACKEND_D3D11 || backend == SG_BACKEND_METAL_IOS ||
                    backend == SG_BACKEND_METAL_MACOS || backend == SG_BACKEND_METAL_SIMULATOR ||
