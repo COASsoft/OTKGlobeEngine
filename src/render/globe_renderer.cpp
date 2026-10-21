@@ -2266,6 +2266,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
 
     profileMark(4);
     std::vector<sg_image> mipQueue;
+    if (capture) jobs.clear();
     for (auto& job : jobs) {
         SurfaceTile* s = acquireSurface(job.key);
         if (sg_query_view_state(s->texture) != SG_RESOURCESTATE_VALID || sg_query_view_state(s->levels[0]) != SG_RESOURCESTATE_VALID) {
