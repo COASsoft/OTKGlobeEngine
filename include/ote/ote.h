@@ -230,6 +230,31 @@ OTE_API void ote_set_terrain_slope(ote_engine* e, int enabled, float opacity, do
 OTE_API void ote_set_grid_type(ote_engine* e, ote_grid_type type);
 OTE_API void ote_view_region(const ote_engine* e, double* west, double* south, double* east, double* north);
 OTE_API void ote_view_for_region(const ote_engine* e, double west, double south, double east, double north, ote_view* out);
+
+typedef enum ote_import_target {
+    OTE_IMPORT_FEATURES = 0,
+    OTE_IMPORT_IMAGERY = 1,
+    OTE_IMPORT_ELEVATION = 2,
+    OTE_IMPORT_TILESET = 3,
+    OTE_IMPORT_POINT_CLOUD = 4,
+    OTE_IMPORT_MODEL = 5,
+    OTE_IMPORT_ICONSET = 6,
+    OTE_IMPORT_UNSUPPORTED = 7
+} ote_import_target;
+
+typedef struct ote_open_result {
+    int ok;
+    ote_import_target target;
+    int items;
+    int has_region;
+    double west;
+    double south;
+    double east;
+    double north;
+    uint64_t id;
+} ote_open_result;
+
+OTE_API int ote_open(ote_engine* e, const char* path, ote_open_result* out);
 OTE_API int ote_load_features_region(ote_engine* e, const char* path, double* west, double* south, double* east, double* north);
 OTE_API int ote_tileset_region(const ote_engine* e, uint64_t id, double* west, double* south, double* east, double* north);
 OTE_API int ote_point_cloud_region(const ote_engine* e, uint64_t id, double* west, double* south, double* east, double* north);
