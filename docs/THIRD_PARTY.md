@@ -18,6 +18,10 @@ The libraries and data built into the engine keep their own licenses. Most are p
 | [Draco](https://github.com/google/draco) decoder | `KHR_draco_mesh_compression`, Draco point clouds | Apache-2.0 | License text; leave out with `-DOTK_WITH_DRACO=OFF` |
 | [Basis Universal](https://github.com/BinomialLLC/basis_universal) transcoder and its Zstandard decoder | KTX2 / `KHR_texture_basisu` | Apache-2.0, Zstandard BSD-3-Clause | License texts; leave out with `-DOTK_WITH_KTX2=OFF` |
 | Noto Sans Bold (subset) | Labels | SIL Open Font License 1.1 ([OFL.txt](../assets/fonts/OFL.txt)) | OFL text with the font |
+| Roboto Medium (subset) | Built-in map labels | SIL Open Font License 1.1 ([OFL-Roboto.txt](../assets/fonts/OFL-Roboto.txt)) | OFL text with the font |
+| [geoBoundaries](https://www.geoboundaries.org) CGAZ 6.0 (William & Mary geoLab), simplified and re-encoded | Built-in country, state and county lines and county names | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | Credit "geoBoundaries"; the engine lists it in `credits()` while labels are on. Leave out with `-DOTK_LABELS=OFF` |
+| [GeoNames](https://www.geonames.org) cities500 and admin codes, selected and re-encoded | Built-in city, town and village names, state and county names | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | Credit "GeoNames"; listed in `credits()` while labels are on. Leave out with `-DOTK_LABELS=OFF` |
+| [Natural Earth](https://www.naturalearthdata.com) admin 0, admin 1 and populated places | Built-in country names and label positions | Public domain | Nothing required |
 | NASA Blue Marble | Offline backdrop | Public domain | Nothing required; leave out with `-DOTK_EMBED_BACKDROP=OFF` |
 | EGM96 geoid grid (NGA) | Height conversion | Public domain | Nothing required |
 | WMM2025 coefficients (NOAA/NCEI) | Magnetic declination | Public domain | Nothing required |
