@@ -132,6 +132,14 @@ void TileLoader::submit(std::vector<std::pair<TileId, double>>& requests) {
 std::vector<DecodedTile> TileLoader::take(size_t max) {
     std::lock_guard lock(mutex_);
     std::vector<DecodedTile> out;
+    if (done_.size() > max) {
+        auto rank = [this](const DecodedTile& d) {
+            if (d.generation != generation_) return -1e300;
+            auto p = netPriority_.find(d.id);
+            return p == netPriority_.end() ? 1e299 : p->second;
+        };
+        std::stable_sort(done_.begin(), done_.end(), [&](const DecodedTile& a, const DecodedTile& b) { return rank(a) < rank(b); });
+    }
     while (!done_.empty() && out.size() < max) {
         doneIds_.erase(done_.front().id);
         if (done_.front().generation == generation_) out.push_back(std::move(done_.front()));
