@@ -663,6 +663,12 @@ void GlobeRenderer::markDirty(const GeoRect& rect) {
     busy_ = true;
 }
 
+void GlobeRenderer::setLabels(bool enabled) {
+    if (labelsOn_ == enabled) return;
+    labelsOn_ = enabled;
+    markDirty({-180, -90, 180, 90});
+}
+
 void GlobeRenderer::setGrid(bool enabled) {
     std::array<bool, 3> next{};
     if (enabled) next[std::clamp(gridType_, 0, 2)] = true;
