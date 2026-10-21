@@ -59,13 +59,16 @@ layout(binding=1) uniform globe_fs_params {
 
 layout(binding=0) uniform texture2D tex;
 layout(binding=1) uniform texture2D tex2;
+layout(binding=2) uniform texture2D tex3;
 layout(binding=0) uniform sampler smp;
 
 in vec2 uv;
 in vec2 uv2;
+in vec2 uv3;
 in float light;
 in float elev;
 in float lodw;
+in float morphw;
 out vec4 frag_color;
 
 vec3 ramp(float x) {
