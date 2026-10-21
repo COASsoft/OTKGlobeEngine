@@ -172,7 +172,8 @@ otk_add_shaders(otkglobeengine
     render/shaders/model.glsl
     render/shaders/vector.glsl
     render/shaders/points.glsl
-    render/shaders/snapshot.glsl)
+    render/shaders/snapshot.glsl
+    render/shaders/labels.glsl)
 if(OTK_EMBED_BACKDROP)
     otk_embed(otkglobeengine world_backdrop ${PROJECT_SOURCE_DIR}/assets/world/blue-marble-2048.jpg)
     target_compile_definitions(otkglobeengine PRIVATE OTK_EMBED_BACKDROP)
