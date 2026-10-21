@@ -1894,7 +1894,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     if (!trace_)
         if (const char* path = std::getenv("OTE_TRACE")) trace_ = std::fopen(path, "w");
     ++frame_;
-    const bool capture = snapshotWanted_ && !views && ensureSnapshotTarget(width, height);
+    const bool capture = snapshotWanted_ && !views && lastIncompleteFraction_ < 0.3 && ensureSnapshotTarget(width, height);
     snapshotWanted_ = false;
     if (std::uint64_t epoch = net::reachabilityEpoch(); epoch != netEpoch_) {
         netEpoch_ = epoch;
