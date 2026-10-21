@@ -2674,7 +2674,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         bool spatial = false;
         const bool edgeBlend = lodBlend_ && lodUp > 0;
         const bool morphBlend = lodMorph_ > 0.0 && dt.key.level > kMinLevel;
-        if (!retiringShown && src.level == dt.key.level && (edgeBlend || morphBlend)) {
+        if (src.level == dt.key.level && (edgeBlend || morphBlend)) {
             const int up = lodUp > 0 ? lodUp : 1;
             const QuadKey want{dt.key.level - up, dt.key.x >> up, dt.key.y >> up};
             sg_view pv = view;
