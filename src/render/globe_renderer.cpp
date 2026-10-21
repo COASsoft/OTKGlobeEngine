@@ -2415,7 +2415,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         s->imageryZ = job.imageryZ;
         s->sourceZ = job.sourceZ;
         s->degraded = job.degraded;
-        s->overlaysOmitted = job.standIn;
+        s->overlaysOmitted = job.overlaysOmitted;
         s->presentable = job.presentable;
     }
 
