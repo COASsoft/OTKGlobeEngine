@@ -120,6 +120,14 @@ private:
 
     bool load(const std::string& url, const std::string& cacheKey, const net::Headers& headers, nlohmann::json& out, int& failure) {
         std::vector<std::uint8_t> body;
+        if (url.rfind("file://", 0) == 0) {
+            if (readLocalUrl(url, body) != 200 || body.empty()) {
+                failure = 404;
+                return false;
+            }
+            out = nlohmann::json::parse(body.begin(), body.end(), nullptr, false);
+            return !out.is_discarded() && out.is_object();
+        }
         bool offline = offline_ && offline_->load();
         bool useCache = cache_ && cache_->isOpen() && layer_.cache;
         if (!offline) {
