@@ -662,6 +662,42 @@ private:
 
 }
 
+std::string localPathFromUrl(const std::string& url) {
+    std::string s = url.rfind("file://", 0) == 0 ? url.substr(7) : url;
+    if (url.rfind("file://", 0) == 0) s = s.substr(0, s.find('?'));
+    std::string path;
+    for (size_t i = 0; i < s.size(); ++i) {
+        if (s[i] == '%' && i + 2 < s.size() && std::isxdigit(static_cast<unsigned char>(s[i + 1])) &&
+            std::isxdigit(static_cast<unsigned char>(s[i + 2]))) {
+            path.push_back(static_cast<char>(std::stoi(s.substr(i + 1, 2), nullptr, 16)));
+            i += 2;
+        } else {
+            path.push_back(s[i]);
+        }
+    }
+    if (path.size() > 2 && path[0] == '/' && path[2] == ':') path = path.substr(1);
+    return path;
+}
+
+int readLocalUrl(const std::string& url, std::vector<std::uint8_t>& body) {
+    body.clear();
+    std::string path = localPathFromUrl(url);
+#if defined(_WIN32)
+    FILE* f = _wfopen(std::filesystem::u8path(path).wstring().c_str(), L"rb");
+#else
+    FILE* f = std::fopen(path.c_str(), "rb");
+#endif
+    if (!f) return 404;
+    std::fseek(f, 0, SEEK_END);
+    long n = std::ftell(f);
+    std::fseek(f, 0, SEEK_SET);
+    body.resize(n > 0 ? static_cast<size_t>(n) : 0);
+    bool ok = std::fread(body.data(), 1, body.size(), f) == body.size();
+    std::fclose(f);
+    if (!ok) body.clear();
+    return ok ? 200 : 500;
+}
+
 int fetchUrl(const std::string& url, std::vector<std::uint8_t>& body, const FetchOptions& options, TileCache* cache,
              std::atomic<bool>* offline, const std::string& userAgent) {
     body.clear();
