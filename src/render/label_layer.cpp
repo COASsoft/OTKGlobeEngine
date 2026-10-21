@@ -270,7 +270,7 @@ void LabelLayer::keys(const GeoRect& tile, double texelDeg, std::vector<std::pai
     const double size = tier == Fine ? labels::kFineCell : labels::kCoarseCell;
     const int cols = tier == Fine ? labels::kFineCols : labels::kCoarseCols;
     const int rows = tier == Fine ? labels::kFineRows : labels::kCoarseRows;
-    const double margin = texelDeg * 4.0;
+    const double margin = texelDeg * 4.0 + (tier == Fine ? 0.3 : 1.1);
     const int c0 = std::clamp(static_cast<int>(std::floor((tile.west - margin + 180.0) / size)), 0, cols - 1);
     const int c1 = std::clamp(static_cast<int>(std::floor((tile.east + margin + 180.0) / size)), 0, cols - 1);
     const int r0 = std::clamp(static_cast<int>(std::floor((tile.south - margin + 90.0) / size)), 0, rows - 1);
