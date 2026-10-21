@@ -2513,7 +2513,6 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                     uvx2[3] = 0.0f;
                     blend = static_cast<float>(t * t * (3 - 2 * t));
                     fading = true;
-                    upgrading = true;
                 }
             }
         }
