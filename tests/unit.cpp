@@ -227,6 +227,45 @@ int main() {
     }
 
     {
+        auto zipPath = (std::filesystem::temp_directory_path() / "ote_iconset.zip").string();
+        std::filesystem::remove(zipPath);
+        std::vector<std::uint8_t> pixels(16 * 16 * 4, 255);
+        size_t pngSize = 0;
+        void* png = tdefl_write_image_to_png_file_in_memory(pixels.data(), 16, 16, 4, &pngSize);
+        std::string xml = "<iconset version=\"1\" name=\"Test\" uid=\"test-set-uid\"><icon name=\"pin.png\" groupName=\"Grp\"/></iconset>";
+        mz_zip_add_mem_to_archive_file_in_place(zipPath.c_str(), "iconset.xml", xml.data(), xml.size(), nullptr, 0, MZ_BEST_COMPRESSION);
+        mz_zip_add_mem_to_archive_file_in_place(zipPath.c_str(), "Grp/pin.png", png, pngSize, nullptr, 0, MZ_BEST_COMPRESSION);
+        mz_free(png);
+        check(registerIconset(zipPath) == "test-set-uid", "atak iconset registers");
+        std::string cot =
+            "<events>"
+            "<event version=\"2.0\" uid=\"m1\" type=\"a-f-G\" time=\"2026-10-21T00:00:00Z\" start=\"2026-10-21T00:00:00Z\" stale=\"2026-10-22T00:00:00Z\" how=\"h-e\">"
+            "<point lat=\"10\" lon=\"20\" hae=\"9999999\" ce=\"9999999\" le=\"9999999\"/>"
+            "<detail><usericon iconsetpath=\"test-set-uid/Grp/pin.png\"/></detail></event>"
+            "<event version=\"2.0\" uid=\"rb\" type=\"u-rb-a\" time=\"2026-10-21T00:00:00Z\" start=\"2026-10-21T00:00:00Z\" stale=\"2026-10-22T00:00:00Z\" how=\"h-e\">"
+            "<point lat=\"0\" lon=\"0\" hae=\"9999999\" ce=\"9999999\" le=\"9999999\"/>"
+            "<detail><range value=\"1000\"/><bearing value=\"90\"/><color value=\"-65536\"/></detail></event>"
+            "<event version=\"2.0\" uid=\"d\" type=\"u-d-f\" time=\"2026-10-21T00:00:00Z\" start=\"2026-10-21T00:00:00Z\" stale=\"2026-10-22T00:00:00Z\" how=\"h-e\">"
+            "<point lat=\"0\" lon=\"0\" hae=\"9999999\" ce=\"9999999\" le=\"9999999\"/>"
+            "<detail><link point=\"0,0\"/><link point=\"0,1\"/><strokeStyle value=\"dashed\"/></detail></event>"
+            "</events>";
+        ImportResult r = importBytes(std::vector<std::uint8_t>(cot.begin(), cot.end()), "cot");
+        bool icon = false, rb = false, dashed = false;
+        for (const auto& f : r.data.features) {
+            if (f.uid == "m1") icon = f.style.iconImage && f.style.iconImage->width == 16;
+            if (f.uid == "rb" && !f.geometries.empty() && f.geometries[0].points.size() == 2) {
+                const Coord& e = f.geometries[0].points[1];
+                rb = std::abs(e.lat) < 1e-6 && std::abs(e.lon * 111319.49 - 1000.0) < 2.0 && f.style.strokeColor == 0xFFFF0000u;
+            }
+            if (f.uid == "d") dashed = f.style.dash == 12;
+        }
+        check(icon, "cot usericon from a registered iconset");
+        check(rb, "cot range and bearing line");
+        check(dashed, "cot dashed stroke style");
+        clearIconsets();
+    }
+
+    {
         std::string wms = "<customWmsMapSource><name>W</name><url>https://h/wms</url><layers>a</layers></customWmsMapSource>";
         check(detectFormat(std::vector<std::uint8_t>(wms.begin(), wms.end()), "w.xml") == "mobac", "mobac wms source detection");
         std::string lj = "{\"tilejson\":\"2.1.0\",\"format\":\"quantized-mesh-1.0\",\"tiles\":[\"{z}/{x}/{y}.terrain\"]}";
