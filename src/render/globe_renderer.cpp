@@ -2401,7 +2401,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         if (labelsOn_) {
             Bounds lb = bounds(job.key);
             double texel = jobTexel.count(job.key) ? jobTexel[job.key] : (lb.north - lb.south) / kSurfaceSize;
-            labels_.drawSurface({lb.west, lb.south, lb.east, lb.north}, texel, dpiScale_, kSurfaceSize);
+            labels_.drawSurface({lb.west, lb.south, lb.east, lb.north}, texel, dpiScale_);
         }
         if (job.featureCount > 0 && (job.featureFirst + job.featureCount) * 6 * sizeof(float) <= kSurfaceBufferBytes)
             features_.drawSurface(featureBuffer_, job.featureFirst, job.featureCount);
