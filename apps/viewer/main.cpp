@@ -80,6 +80,12 @@ struct ViewerState {
     std::string exportPath;
     int cacheLimit = 0;
     std::vector<std::string> featureFiles;
+    std::vector<std::string> openPaths;
+    std::vector<ote::ImageryLayer> addedLayers;
+    std::vector<ote::ElevationLayer> elevation;
+    std::string status;
+    double statusTime = 0;
+    bool viewGiven = false;
     std::vector<std::string> tilesets;
     double stereo = -1.0;
     double sunTime = -1.0;
