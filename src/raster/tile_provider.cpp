@@ -665,19 +665,7 @@ private:
 int fetchUrl(const std::string& url, std::vector<std::uint8_t>& body, const FetchOptions& options, TileCache* cache,
              std::atomic<bool>* offline, const std::string& userAgent) {
     body.clear();
-    if (url.rfind("file://", 0) == 0) {
-        std::string path = url.substr(7);
-        if (path.size() > 2 && path[0] == '/' && path[2] == ':') path = path.substr(1);
-        FILE* f = std::fopen(path.c_str(), "rb");
-        if (!f) return 404;
-        std::fseek(f, 0, SEEK_END);
-        long n = std::ftell(f);
-        std::fseek(f, 0, SEEK_SET);
-        body.resize(n > 0 ? static_cast<size_t>(n) : 0);
-        bool ok = std::fread(body.data(), 1, body.size(), f) == body.size();
-        std::fclose(f);
-        return ok ? 200 : 500;
-    }
+    if (url.rfind("file://", 0) == 0) return readLocalUrl(url, body);
     const bool useCache = options.cache && cache && cache->isOpen();
     const std::string key = "url|" + stripCredentials(url);
     std::int64_t expires = 0;
