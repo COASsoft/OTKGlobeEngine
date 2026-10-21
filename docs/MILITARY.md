@@ -1,6 +1,6 @@
 # Military use
 
-What the engine offers for tactical and mission-planning applications today, and what would add the most value next.
+What the engine offers for tactical and mission-planning applications.
 
 ## In the engine
 
