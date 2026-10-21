@@ -202,6 +202,7 @@ private:
         bool refine = false;
         bool nearRefine = false;
         double distance = 0;
+        double ratio = 0;
     };
     struct Fade {
         double start = 0;
