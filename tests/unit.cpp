@@ -179,6 +179,37 @@ int main() {
     }
 
     {
+        Engine engine;
+        engine.setViewport(1000, 500, 1.0f);
+        auto path = (std::filesystem::temp_directory_path() / "ote_region.geojson").string();
+        std::ofstream(path) << R"({"type":"FeatureCollection","features":[)"
+                               R"({"type":"Feature","geometry":{"type":"Point","coordinates":[-122.5,47.0]},"properties":{}},)"
+                               R"({"type":"Feature","geometry":{"type":"LineString","coordinates":[[-122.0,47.5],[-121.5,46.5]]},"properties":{}}]})";
+        std::vector<std::uint64_t> ids = engine.loadFeatures(path);
+        Region r;
+        bool ok = ids.size() == 2 && engine.featuresRegion(ids, r);
+        check(ok && std::abs(r.west + 122.5) < 1e-9 && std::abs(r.east + 121.5) < 1e-9 && std::abs(r.south - 46.5) < 1e-9 &&
+                  std::abs(r.north - 47.5) < 1e-9,
+              "region of loaded features");
+        View v = engine.viewForRegion(r);
+        double expectGsd = std::max(111320.0 * std::cos(47.0 * 3.14159265358979323846 / 180.0) / 1000.0, 110574.0 / 500.0) * 1.2;
+        check(std::abs(v.lat - 47.0) < 1e-9 && std::abs(v.lon + 122.0) < 1e-9 && std::abs(v.gsd - expectGsd) < 0.01 && v.tilt == 0.0,
+              "view that fits a region");
+        Feature a, b;
+        a.geometries.push_back({GeometryType::Point, {{10.0, 179.5, 0}}, {}});
+        b.geometries.push_back({GeometryType::Point, {{10.5, -179.5, 0}}, {}});
+        Region ar;
+        ok = engine.featuresRegion({engine.addFeature(a), engine.addFeature(b)}, ar);
+        View av = engine.viewForRegion(ar);
+        check(ok && std::abs(ar.west - 179.5) < 1e-9 && std::abs(ar.east + 179.5) < 1e-9 && std::abs(std::abs(av.lon) - 180.0) < 1e-9 &&
+                  av.gsd < 300.0,
+              "region across the antimeridian");
+        View pv = engine.viewForRegion({-122.0, 47.0, -122.0, 47.0});
+        check(!engine.featuresRegion({}, r) && std::abs(pv.gsd - 300.0 / 500.0 * 1.2) < 1e-9, "empty and single-point regions");
+        std::filesystem::remove(path, ec);
+    }
+
+    {
         ImageryLayer l;
         l.url = "https://h/{z}/{reverseY}/{x}?bbox={bbox-epsg-4326}&w={westDegrees}&r={reverseX}&q={quadkey}&s={width}x{height}{r}";
         l.maxZoom = 10;
