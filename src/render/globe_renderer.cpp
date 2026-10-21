@@ -1596,6 +1596,12 @@ void GlobeRenderer::dropImagery(ImageryTexture& t) {
     t = ImageryTexture{};
 }
 
+bool GlobeRenderer::sparseLayer(int l) const {
+    if (l < 0 || l >= static_cast<int>(layers_.size())) return false;
+    if (l < static_cast<int>(vectorLayers_.size()) && vectorLayers_[l]) return true;
+    return l < static_cast<int>(layerOpacity_.size()) && layerOpacity_[l] >= 0.0f && layerOpacity_[l] < 0.6f;
+}
+
 bool GlobeRenderer::standIn(const Camera& cam, const QuadKey& k) const {
     if (k.level + 2 > maxRefine()) return false;
     return info(cam, k).ratio > 3.0;
