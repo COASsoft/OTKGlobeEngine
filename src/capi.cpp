@@ -668,10 +668,9 @@ void ote_view_for_region(const ote_engine* e, double west, double south, double 
 }
 
 int ote_load_features_region(ote_engine* e, const char* path, double* west, double* south, double* east, double* north) {
-    std::vector<std::uint64_t> ids = e->engine.loadFeatures(path ? path : "");
-    ote::Region r;
-    writeRegion(e->engine.featuresRegion(ids, r), r, west, south, east, north);
-    return static_cast<int>(ids.size());
+    ote::LoadedData d = e->engine.loadData(path ? path : "");
+    writeRegion(d.hasRegion, d.region, west, south, east, north);
+    return static_cast<int>(d.features.size() + d.overlays.size() + d.models.size());
 }
 
 int ote_tileset_region(const ote_engine* e, uint64_t id, double* west, double* south, double* east, double* north) {
