@@ -10,4 +10,7 @@ namespace ote {
 bool decodeQuantizedMesh(const std::vector<std::uint8_t>& data, double west, double south, double east, double north,
                          int gridSize, HeightGrid& out);
 
+bool decodeHeightmapTerrain(const std::vector<std::uint8_t>& data, double west, double south, double east, double north,
+                            HeightGrid& out);
+
 }
