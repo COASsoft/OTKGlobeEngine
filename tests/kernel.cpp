@@ -131,6 +131,22 @@ int main() {
     std::string text(rewritten.begin(), rewritten.end());
     check(hasUnit(importBytes(rewritten, "cot")) && text.find("__otk_attributes") != std::string::npos, "cot attributes round trip");
 
+    if (placesAvailable()) {
+        auto named = [](const std::vector<Place>& list, const char* name) {
+            for (const Place& p : list)
+                if (p.name == name) return true;
+            return false;
+        };
+        std::vector<Place> towns = placesNear(47.0379, -122.9007, 20000.0, 50);
+        check(named(towns, "Olympia") && !towns.empty() && towns.front().distanceMeters < 5000.0, "built-in place names near Olympia");
+        check(named(placesNear(47.4, -120.5, 400000.0, 10, {PlaceKind::State}), "WASHINGTON"), "built-in state label");
+        check(named(placesNear(39.5, -98.0, 800000.0, 5, {PlaceKind::Country}), "United States"), "built-in country label");
+        std::vector<Place> capitals = placesNear(38.9, -77.03, 30000.0, 20);
+        bool capital = false;
+        for (const Place& p : capitals) capital = capital || (p.capital && p.name == "Washington");
+        check(capital, "built-in national capital");
+    }
+
     std::printf("%d failure(s)\n", failures);
     return failures == 0 ? 0 : 1;
 }
