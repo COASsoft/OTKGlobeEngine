@@ -2546,18 +2546,27 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     for (auto& dt : tiles) drawn_[dt.key] = frame_;
     if (snapshotShown_ && snapshotFade_ < 0.0) {
         bool ready = true;
+        size_t covered = 0;
         for (const auto& dt : tiles) {
             auto s = surface_.find(dt.key);
-            if (s == surface_.end() || s->second.version < switchVersion_ || !(s->second.complete || s->second.presentable)) {
-                ready = false;
-                break;
+            const bool own = s != surface_.end() && s->second.version >= switchVersion_ && (s->second.complete || s->second.presentable);
+            if (!own) ready = false;
+            bool current = s != surface_.end() && s->second.version >= switchVersion_;
+            for (int up = 1; !current && up <= dt.key.level; ++up) {
+                auto a = surface_.find(QuadKey{dt.key.level - up, dt.key.x >> up, dt.key.y >> up});
+                current = a != surface_.end() && a->second.version >= switchVersion_;
             }
+            if (current) ++covered;
         }
         const bool moved = length(cam.eye() - snapshotEye_) > std::max(0.05, cam.gsd * 0.5) ||
-                           std::abs(cam.azimuth - snapshotAzimuth_) > 0.01 || std::abs(cam.tilt - snapshotTilt_) > 0.01;
-        if (ready || moved || tnow - snapshotStart_ > 1.5) {
+                           std::abs(cam.azimuth - snapshotAzimuth_) > 0.01 || std::abs(cam.tilt - snapshotTilt_) > 0.01 ||
+                           width != snapshotWidth_ || height != snapshotHeight_;
+        const double held = tnow - snapshotStart_;
+        if (moved) {
+            snapshotShown_ = false;
+        } else if (ready || (held > 1.5 && covered == tiles.size()) || (held > 3.0 && covered * 10 >= tiles.size() * 9) || held > 5.0) {
             snapshotFade_ = tnow;
-            snapshotFadeLength_ = moved ? 0.15 : 0.4;
+            snapshotFadeLength_ = 0.4;
         }
     }
     for (auto it = retiring_.begin(); it != retiring_.end();) {
