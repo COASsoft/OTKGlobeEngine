@@ -322,6 +322,58 @@ void kmlGroundOverlays(const pugi::xml_document& doc, const Resolver& resolve, s
     }
 }
 
+std::string normalizedPath(const std::string& p) {
+    std::vector<std::string> parts;
+    size_t pos = 0;
+    std::string s = p;
+    std::replace(s.begin(), s.end(), '\\', '/');
+    while (pos <= s.size()) {
+        size_t e = s.find('/', pos);
+        if (e == std::string::npos) e = s.size();
+        std::string part = s.substr(pos, e - pos);
+        if (part == "..") {
+            if (!parts.empty()) parts.pop_back();
+        } else if (!part.empty() && part != ".") {
+            parts.push_back(part);
+        }
+        pos = e + 1;
+    }
+    std::string out;
+    for (const auto& part : parts) out += (out.empty() ? "" : "/") + part;
+    return out;
+}
+
+void kmlModel(const pugi::xml_node& m, const Resolver& resolve, const std::string& name, std::vector<ModelInstance>& out) {
+    if (!resolve || out.size() >= 256) return;
+    std::string href = trimmed(m.child("Link").child_value("href"));
+    if (href.empty()) return;
+    std::vector<std::uint8_t> bytes = resolve(href);
+    if (bytes.empty()) return;
+    std::string dir = href.substr(0, href.find_last_of("/\\") == std::string::npos ? 0 : href.find_last_of("/\\") + 1);
+    AssetReader read = [resolve, dir](const std::string& f) {
+        std::vector<std::uint8_t> b = resolve(normalizedPath(dir + f));
+        if (b.empty()) b = resolve(normalizedPath(f));
+        return b;
+    };
+    std::vector<std::uint8_t> glb;
+    std::string l = lower(href);
+    if (bytes.size() > 4 && std::memcmp(bytes.data(), "glTF", 4) == 0) glb = std::move(bytes);
+    else glb = modelToGlb(l, bytes, read);
+    if (glb.empty()) return;
+    ModelInstance mi;
+    mi.name = name;
+    mi.glb = std::move(glb);
+    pugi::xml_node loc = m.child("Location");
+    mi.placement.position = {loc.child("latitude").text().as_double(), loc.child("longitude").text().as_double(), loc.child("altitude").text().as_double()};
+    mi.placement.altitudeMode = kmlAltitude(m);
+    pugi::xml_node o = m.child("Orientation");
+    mi.placement.heading = o.child("heading").text().as_double();
+    mi.placement.pitch = o.child("tilt").text().as_double();
+    mi.placement.roll = o.child("roll").text().as_double();
+    mi.placement.scale = m.child("Scale").child("x").text().as_double(1.0);
+    out.push_back(std::move(mi));
+}
+
 void parseKmlDocument(const char* text, size_t size, const Resolver& resolve, const std::string& baseUrl, int depth, KmlBudget& budget,
                       std::vector<Feature>& out, std::vector<GroundOverlay>* overlays, std::vector<ModelInstance>* models) {
     pugi::xml_document doc;
