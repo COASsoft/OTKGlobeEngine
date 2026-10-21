@@ -18,7 +18,7 @@ Formats are detected from content first and extension second: zip archives are t
 
 * URL templates accept `{z}`, `{x}`, `{y}`, `{-y}`, `{s}`, `{r}`, `{quadkey}`, `{reverseX}`, `{reverseY}`, `{reverseZ}`, `{westDegrees}`, `{southDegrees}`, `{eastDegrees}`, `{northDegrees}` (and the `Projected` variants), `{width}`, `{height}`, `{bbox-epsg-3857}` and `{bbox-epsg-4326}`, so Cesium, MapLibre and Leaflet templates work unchanged.
 * `ImageryLayer::headers` and `ElevationLayer::headers` add request headers (API keys, `Authorization`, `Referer`) to every tile and metadata request.
-* Cesium terrain loads from a `layer.json` URL, a `{z}/{x}/{y}.terrain` template or `ion://<asset id>?access_token=<token>` (add `&server=<url>` for a self-hosted ion server). quantized-mesh-1.0 and heightmap-1.0 tiles are both read, the `available` ranges limit requests to tiles that exist, and ion tokens are refreshed when they expire.
+* Cesium terrain loads from a `layer.json` URL, a local terrain folder or `layer.json` path (for example cesium-terrain-builder output, gzipped or not), a `{z}/{x}/{y}.terrain` template or `ion://<asset id>?access_token=<token>` (add `&server=<url>` for a self-hosted ion server). quantized-mesh-1.0 and heightmap-1.0 tiles are both read, the `available` ranges limit requests to tiles that exist, and ion tokens are refreshed when they expire.
 
 ## KML
 
