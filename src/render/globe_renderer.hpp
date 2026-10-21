@@ -55,8 +55,10 @@ public:
     bool init();
     void shutdown();
     void setLayers(const std::vector<ImageryLayer>& layers);
+    void applyLayers();
+    void setLayerList(const std::vector<ImageryLayer>& layers);
     bool shown(int l) const { return l >= 0 && l < static_cast<int>(layers_.size()) && layers_[l].visible && layers_[l].opacity > 0.0f; }
-    const std::vector<ImageryLayer>& layers() const { return layers_; }
+    const std::vector<ImageryLayer>& layers() const { return userLayers_; }
     const std::vector<TileMatrix>& matrices() const { return matrices_; }
     void setCacheDirectory(const std::string& dir);
     const std::string& cacheDirectory() const { return cacheDir_; }
@@ -97,6 +99,8 @@ public:
     double gridStep(const Camera& cam, int type) const;
     void setLabels(bool enabled);
     bool labels() const { return labelsOn_; }
+    void setLabelsSource(const std::string& source);
+    const std::string& labelsSource() const { return labelsSource_; }
     void setSkyVisible(bool visible) { skyVisible_ = visible; }
     void setGroundColor(float r, float g, float b) {
         ground_[0] = r;
@@ -188,8 +192,10 @@ private:
         std::shared_ptr<VectorTile> vector;
         sg_buffer fill{};
         sg_buffer line{};
+        sg_buffer roads{};
         int fillCount = 0;
         int lineCount = 0;
+        int roadCount = 0;
     };
     struct DrawTile {
         QuadKey key;
@@ -316,6 +322,9 @@ private:
     double slopeMax_ = 45.0;
     std::string cacheDir_;
     std::vector<ImageryLayer> layers_;
+    std::vector<ImageryLayer> userLayers_;
+    std::string labelsSource_ = "https://tiles.openfreemap.org/planet";
+    int overlayLayer_ = -1;
     std::vector<TileMatrix> matrices_;
     std::vector<bool> vectorLayers_;
     std::unordered_map<QuadKey, TerrainTile, QuadKeyHash> terrain_;
