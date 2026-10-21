@@ -2432,6 +2432,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         sg_buffer vbuf;
         sg_view view;
         sg_view view2;
+        sg_view view3;
         globe_vs_params_t vsp;
         Vec3 center;
         float blend;
