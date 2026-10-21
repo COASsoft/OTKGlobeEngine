@@ -136,6 +136,8 @@ public:
     const FeatureLayer& features() const { return features_; }
     const TileLoader& loader() const { return loader_; }
     void setImageryScale(double s) { imageryScale_ = s; }
+    void setLodMorph(double fraction) { lodMorph_ = std::clamp(fraction, 0.0, 1.0); }
+    double lodMorph() const { return lodMorph_; }
     void setDpiScale(double s) { dpiScale_ = s; }
     void render(Camera& cam, const sg_swapchain* swapchain, const sg_attachments* attachments, int width, int height,
                 const std::vector<RenderView>* views = nullptr);
