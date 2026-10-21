@@ -118,7 +118,9 @@ Android: `python scripts/android_apk.py --install --run` builds, signs and insta
 
 OpenGL on Windows (to check the GL path used on Linux and Android): add `-DOTE_GFX_BACKEND=SOKOL_GLCORE -DOTE_SHDC_LANG=glsl410` to the CMake configure.
 
-Tests: `ctest --test-dir build/windows` runs the unit tests (geodesy, MGRS, tile matrices, camera, geoid, file parsers, quantized mesh); CI runs them on Windows, Linux, macOS, FreeBSD, OpenBSD and NetBSD.
+Kernel only (headless servers and tools): `cmake -S . -B build -G Ninja -DOTE_ENGINE=OFF && cmake --build build`.
+
+Tests: `ctest --test-dir build/windows` runs the kernel tests (`ote_kernel_test`, linked against the kernel alone) and the engine unit tests (geodesy, MGRS, tile matrices, camera, geoid, file parsers, quantized mesh); CI runs them on Windows, Linux, macOS, FreeBSD, OpenBSD and NetBSD, and builds the kernel on its own without graphics packages.
 
 Packages: `cpack --config build/CPackConfig.cmake` makes the platform packages.
 
