@@ -377,7 +377,12 @@ void TileLoader::finish(const TileId& id, int gen, const std::shared_ptr<TilePro
         tile.permanent = ++decodeFailures_[id] >= 3;
     };
     if (res.status == 200 && provider->vector()) {
-        tile.vector = decodeVectorTile(res.data, id.z, id.x, id.y);
+        bool overlay = false;
+        {
+            std::lock_guard lock(mutex_);
+            overlay = id.layer >= 0 && id.layer < static_cast<int>(layers_.size()) && layers_[id.layer].labels;
+        }
+        tile.vector = overlay ? decodeOverlayTile(res.data, id.z, id.x, id.y) : decodeVectorTile(res.data, id.z, id.x, id.y);
         tile.ok = tile.vector != nullptr;
         if (!tile.ok) undecodable();
     } else if (res.status == 200 && res.raw) {
