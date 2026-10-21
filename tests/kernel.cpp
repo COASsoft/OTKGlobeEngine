@@ -132,7 +132,9 @@ int main() {
     std::string text(rewritten.begin(), rewritten.end());
     check(hasUnit(importBytes(rewritten, "cot")) && text.find("__otk_attributes") != std::string::npos, "cot attributes round trip");
 
-    if (placesAvailable()) {
+#if defined(OTK_LABELS)
+    check(placesAvailable(), "built-in labels data");
+    {
         auto named = [](const std::vector<Place>& list, const char* name) {
             for (const Place& p : list)
                 if (p.name == name) return true;
