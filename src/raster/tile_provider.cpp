@@ -158,19 +158,7 @@ private:
 
     FetchResult readFile(int z, int x, int y) {
         FetchResult r;
-        std::string path = tileUrl(layer_, matrix_, z, x, y).substr(7);
-        if (path.size() > 2 && path[0] == '/' && path[2] == ':') path = path.substr(1);
-        FILE* f = std::fopen(path.c_str(), "rb");
-        if (!f) {
-            r.status = 404;
-            return r;
-        }
-        std::fseek(f, 0, SEEK_END);
-        long n = std::ftell(f);
-        std::fseek(f, 0, SEEK_SET);
-        r.data.resize(n > 0 ? static_cast<size_t>(n) : 0);
-        r.status = std::fread(r.data.data(), 1, r.data.size(), f) == r.data.size() ? 200 : 500;
-        std::fclose(f);
+        r.status = readLocalUrl(tileUrl(layer_, matrix_, z, x, y), r.data);
         return r;
     }
 
