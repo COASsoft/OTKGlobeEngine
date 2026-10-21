@@ -94,6 +94,7 @@ struct ViewerState {
     double hitX = 0, hitY = 0;
     bool terrain = true;
     bool grid = false;
+    bool labels = true;
     bool heat = false;
     std::uint64_t viewshed = 0;
     bool shotViewshed = false;
