@@ -627,13 +627,14 @@ std::vector<std::uint8_t> colladaToGlb(const std::string& text, const AssetReade
             std::string material = b != binding.end() ? b->second : symbol;
             auto me = materialEffect.find(material);
             Prim& prim = primFor(me != materialEffect.end() ? me->second : material);
+            std::map<std::tuple<long long, long long, long long>, std::uint32_t> seen;
             auto vertex = [&](const std::vector<long long>& poly, size_t corner) -> std::uint32_t {
                 long long pi = poly[corner * stride + posOff];
                 long long ni = nrmOff >= 0 ? poly[corner * stride + nrmOff] : -1;
                 long long ti = texOff >= 0 ? poly[corner * stride + texOff] : -1;
-                auto key = std::make_tuple(pi, ni, ti * 65536 + static_cast<long long>(reinterpret_cast<std::uintptr_t>(&world) & 0xFFFF));
-                auto it = prim.seen.find(key);
-                if (it != prim.seen.end()) return it->second;
+                auto key = std::make_tuple(pi, ni, ti);
+                auto it = seen.find(key);
+                if (it != seen.end()) return it->second;
                 std::uint32_t id = static_cast<std::uint32_t>(prim.pos.size() / 3);
                 double x = 0, y = 0, z = 0;
                 if (pi >= 0 && static_cast<size_t>(pi) * pos->stride + 2 < pos->data.size()) {
