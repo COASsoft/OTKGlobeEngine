@@ -114,6 +114,34 @@ int main() {
     std::vector<std::uint8_t> raw{1, 2, 3, 4};
     check(gunzip(raw) == raw, "gunzip passthrough");
 
+    {
+        std::ifstream in(data("overlay_z14.mvt"), std::ios::binary);
+        std::vector<std::uint8_t> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        auto tile = decodeOverlayTile(bytes, 14, 2600, 5760);
+        auto has = [&](MarkType type, const std::string& text) {
+            for (const TileMark& m : tile->marks)
+                if (m.type == type && m.text == text) return true;
+            return false;
+        };
+        bool shield = false;
+        for (const TileMark& m : tile->marks) shield = shield || (m.type == MarkType::Shield && m.text == "5" && m.network == "us-interstate");
+        check(tile && tile->overlay && tile->roads.size() == 3 * 6, "overlay roads clipped to the tile, rail skipped");
+        float west = 1e9f, east = -1e9f;
+        for (size_t i = 0; tile && i + 5 < tile->roads.size(); i += 6) {
+            west = std::min({west, tile->roads[i], tile->roads[i + 2]});
+            east = std::max({east, tile->roads[i], tile->roads[i + 2]});
+        }
+        check(west >= -1e-6f && east <= 360.0f / 16384.0f + 1e-6f, "overlay roads stay inside the tile");
+        check(has(MarkType::Road, "22nd Ave SE") && shield, "overlay road names and shields");
+        check(has(MarkType::Place, "CASTLEWOOD") && !has(MarkType::Place, "Olympia"), "overlay neighbourhoods");
+        check(has(MarkType::Park, "Watershed Park") && has(MarkType::Water, "Chambers Lake") && !has(MarkType::Water, "Centennial Fountain") &&
+                  has(MarkType::Waterway, "Indian Creek"),
+              "overlay parks and water");
+        check(shortRoadName("North Street Southeast") == "North Street SE" && shortRoadName("Capitol Way South") == "Capitol Way S" &&
+                  shortRoadName("North 1st Street") == "N 1st St" && shortRoadName("Boulevard Road Southeast") == "Boulevard Rd SE",
+              "short road names");
+    }
+
     auto kml = parseFeatures(data("styles.kml"));
     check(kml.size() == 3 && kml[0].name == "Rainier Summit" && kml[0].style.iconColor == 0xFFFF0000, "kml styles");
     auto json = parseFeatures(data("olympia.geojson"));
