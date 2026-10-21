@@ -2595,7 +2595,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             vsp.morph[0] = static_cast<float>(texel / (cam.pixelSizeAt(1.0) * threshold));
             vsp.morph[1] = static_cast<float>(0.5 * (1.0 + lodMorph_));
             vsp.morph[2] = static_cast<float>(0.5 * lodMorph_);
-            vsp.morph[3] = 1.0f;
+            vsp.morph[3] = morphGain;
         }
         gfs.flags[2] = blend;
         if (views && views->size() > 1) terrainDraws.push_back({tt.vbuf, view, view2, view3, vsp, tt.center, blend});
