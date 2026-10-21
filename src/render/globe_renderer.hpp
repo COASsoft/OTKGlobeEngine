@@ -420,6 +420,7 @@ private:
     int terrainEpoch_ = 0;
     double imageryScale_ = 1.0;
     double lodMorph_ = 1.0;
+    std::unordered_map<QuadKey, std::pair<double, std::uint64_t>, QuadKeyHash> morphSince_;
     double dpiScale_ = 1.0;
     double exaggeration_ = 1.0;
     bool terrainEnabled_ = true;
