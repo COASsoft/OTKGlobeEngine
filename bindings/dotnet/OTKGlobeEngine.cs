@@ -209,7 +209,7 @@ namespace OTKGlobeEngine
         [DllImport(Lib)] public static extern void otk_set_grid(IntPtr e, int enabled);
         [DllImport(Lib)] public static extern void otk_set_labels(IntPtr e, int enabled);
         [DllImport(Lib)] public static extern int otk_labels(IntPtr e);
-        [DllImport(Lib, CharSet = CharSet.Ansi)] public static extern void otk_set_labels_source(IntPtr e, string urlOrPath);
+        [DllImport(Lib)] public static extern void otk_set_labels_source(IntPtr e, [MarshalAs(UnmanagedType.LPUTF8Str)] string urlOrPath);
         [DllImport(Lib)] public static extern ulong otk_viewshed(IntPtr e, double lat, double lon, double height, double radius);
         [DllImport(Lib)] public static extern int otk_to_mgrs(double lat, double lon, int digits, byte[] output, int capacity);
         [DllImport(Lib)] public static extern int otk_from_mgrs([MarshalAs(UnmanagedType.LPUTF8Str)] string mgrs, out double lat, out double lon);
