@@ -459,10 +459,10 @@ void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dp
             if (!project(e, sx, sy) || sx < -40 || sy < -20 || sx > W + 40 || sy > H + 20) continue;
             const double z = zoomAt(p.lat, length(e - eye));
             if (z < minz || (p.maxZoom != 255 && z >= p.maxZoom * 0.1)) continue;
-            float base = 1.5f;
+            float base = 0.8f;
             switch (p.kind) {
             case labels::Kind::Country: base = 0.0f; break;
-            case labels::Kind::State: base = 1.0f; break;
+            case labels::Kind::State: base = 1.4f; break;
             case labels::Kind::Suburb: base = 3.0f; break;
             case labels::Kind::County: base = 4.0f; break;
             default: break;
