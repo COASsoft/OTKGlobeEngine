@@ -682,11 +682,11 @@ std::vector<Feature> parseShapefile(const std::filesystem::path& path) {
         }
         int base = type % 10;
         if (type != 0 && (base == 1)) {
-            f.geometries.push_back({GeometryType::Point, {Coord{le64(c + 12), le64(c + 4), 0}}, {}});
+            f.geometries.push_back({GeometryType::Point, {coord(le64(c + 4), le64(c + 12))}, {}});
         } else if (type != 0 && base == 8) {
             int n = le32(c + 36);
             for (int i = 0; i < n; ++i)
-                f.geometries.push_back({GeometryType::Point, {Coord{le64(c + 40 + i * 16 + 8), le64(c + 40 + i * 16), 0}}, {}});
+                f.geometries.push_back({GeometryType::Point, {coord(le64(c + 40 + i * 16), le64(c + 40 + i * 16 + 8))}, {}});
         } else if (base == 3 || base == 5) {
             int parts = le32(c + 36), points = le32(c + 40);
             const std::uint8_t* pp = c + 44;
