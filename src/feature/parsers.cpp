@@ -694,10 +694,13 @@ std::vector<Feature> parseShapefile(const std::filesystem::path& path) {
             for (int i = 0; i < parts; ++i) {
                 int s = le32(pp + i * 4), e = i + 1 < parts ? le32(pp + (i + 1) * 4) : points;
                 std::vector<Coord> ring;
-                double area = 0;
+                double area = 0, px = 0, py = 0;
                 for (int k = s; k < e; ++k) {
-                    ring.push_back({le64(pts + k * 16 + 8), le64(pts + k * 16), 0});
-                    if (k > s) area += (ring[k - s].lon - ring[k - s - 1].lon) * (ring[k - s].lat + ring[k - s - 1].lat);
+                    double x = le64(pts + k * 16), y = le64(pts + k * 16 + 8);
+                    ring.push_back(coord(x, y));
+                    if (k > s) area += (x - px) * (y + py);
+                    px = x;
+                    py = y;
                 }
                 if (base == 3) {
                     f.geometries.push_back({GeometryType::LineString, ring, {}});
