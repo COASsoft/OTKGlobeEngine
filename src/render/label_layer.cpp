@@ -540,6 +540,7 @@ void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dp
         const float bottom = (n - 1.0f) * pitch * 0.5f + em * 0.24f;
         std::array<float, 4> box{};
         float textX = 0.0f;
+        float cx = c.x, cy = c.y;
         bool ok = false;
         if (s.dot > 0.0f) {
             const float gap = s.dot + 3.5f * static_cast<float>(dpi);
@@ -551,9 +552,16 @@ void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dp
                 ok = box[0] >= 0 && box[2] <= W && box[1] >= 0 && box[3] <= H && free(box);
             }
         } else {
-            textX = c.x - w * 0.5f;
-            box = {textX - s.padding, c.y + top - s.padding, textX + w + s.padding, c.y + bottom + s.padding};
-            ok = box[0] >= -w * 0.25f && box[2] <= W + w * 0.25f && box[1] >= 0 && box[3] <= H && free(box);
+            const bool area = p.kind == labels::Kind::Country || p.kind == labels::Kind::State || p.kind == labels::Kind::County;
+            const float h = bottom - top;
+            const float shifts[5][2] = {{0.0f, 0.0f}, {0.0f, -0.9f * h}, {0.0f, 0.9f * h}, {-0.3f * w, 0.0f}, {0.3f * w, 0.0f}};
+            for (int k = 0; k < (area ? 5 : 1) && !ok; ++k) {
+                cx = c.x + shifts[k][0];
+                cy = c.y + shifts[k][1];
+                textX = cx - w * 0.5f;
+                box = {textX - s.padding, cy + top - s.padding, textX + w + s.padding, cy + bottom + s.padding};
+                ok = box[0] >= -w * 0.25f && box[2] <= W + w * 0.25f && box[1] >= 0 && box[3] <= H && free(box);
+            }
         }
         if (!ok) continue;
         take(box);
