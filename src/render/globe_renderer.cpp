@@ -2785,7 +2785,32 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         }
     }
     features_.drawOverlay(dc, ground, dpiScale_, flipSurface_, &vectorLabels);
+    if (!capture && snapshotShown_) {
+        float alpha = 1.0f;
+        if (snapshotFade_ >= 0.0) {
+            const double t = std::clamp((tnow - snapshotFade_) / snapshotFadeLength_, 0.0, 1.0);
+            alpha = static_cast<float>(1.0 - t * t * (3.0 - 2.0 * t));
+            if (t >= 1.0) snapshotShown_ = false;
+        }
+        drawSnapshot(alpha);
+    }
     sg_end_pass();
+    if (capture) {
+        sg_pass show{};
+        show.action.colors[0].load_action = SG_LOADACTION_CLEAR;
+        show.action.colors[0].clear_value = {clear_[0], clear_[1], clear_[2], 1.0f};
+        if (mainSwapchain) show.swapchain = *mainSwapchain;
+        if (mainAttachments) show.attachments = *mainAttachments;
+        sg_begin_pass(&show);
+        drawSnapshot(1.0f);
+        sg_end_pass();
+        snapshotShown_ = true;
+        snapshotStart_ = tnow;
+        snapshotFade_ = -1.0;
+        snapshotEye_ = cam.eye();
+        snapshotAzimuth_ = cam.azimuth;
+        snapshotTilt_ = cam.tilt;
+    }
     if (views)
         for (size_t vi = 1; vi < views->size(); ++vi) {
             const RenderView& v = (*views)[vi];
