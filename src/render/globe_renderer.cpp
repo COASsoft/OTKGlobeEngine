@@ -2250,10 +2250,13 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         double jr = (jb.north - jb.south) * kDegToRad * kWgs84A * 0.75;
         double jd = std::max(length(jc - cam.eye()) - jr, cam.eyeAboveGround());
         double texelDeg = std::min((jb.north - jb.south) / kSurfaceSize, cam.pixelSizeAt(jd) / 111320.0);
-        if (labelsOn_ && !labels_.prepare({jb.west, jb.south, jb.east, jb.north}, texelDeg)) {
+        const double labelDeg = std::max(cam.pixelSizeAt(std::max(length(jc - cam.eye()), cam.eyeAboveGround())) / 111320.0,
+                                         (jb.north - jb.south) / kSurfaceSize * 0.85);
+        if (labelsOn_ && !labels_.prepare({jb.west, jb.south, jb.east, jb.north}, labelDeg)) {
             buildSurfaceJob(needs_[i].key, needs_[i].priority, nullptr, nullptr, nullptr, 0, placeholder);
             continue;
         }
+        jobLabel[job.key] = labelDeg;
         size_t vectorStart = fverts.size();
         buildSurfaceJob(job.key, needs_[i].priority, &job, &verts, nullptr, texelDeg, job.standIn);
         if (job.hollow > 0) {
