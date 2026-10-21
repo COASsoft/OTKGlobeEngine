@@ -75,7 +75,8 @@ std::vector<FormatInfo> buildFormats() {
         f("mvt", "Mapbox Vector Tiles / TileJSON", {".pbf", ".mvt"}, K::Tiles, true, false, false, true, "ImageryLayer type Mvt",
           "Fills, lines and labels rendered into the surface"),
         f("xyz", "XYZ / TMS / quadkey tile URLs", {}, K::Tiles, true, false, false, true, "ImageryLayer type Url",
-          "{z}{x}{y}{-y}{q}{s} templates, Web Mercator or geographic"),
+          "{z}{x}{y}{-y}{q}{s} templates plus Cesium and MapLibre placeholders ({reverseY}, {westDegrees}, {bbox-epsg-3857}, {bbox-epsg-4326}, "
+          "{width}, {height}, …); Web Mercator or geographic; custom request headers"),
         f("wms", "OGC WMS 1.1.1 / 1.3.0", {}, K::Tiles, true, false, false, true, "ImageryLayer type Wms", "EPSG:3857 and EPSG:4326"),
         f("wmts", "OGC WMTS", {}, K::Tiles, true, false, false, true, "ImageryLayer type Wmts", "REST and KVP templates"),
         f("mbtiles", "MBTiles", {".mbtiles"}, K::Tiles, true, true, false, true, "ImageryLayer type MBTiles / downloadRegion",
