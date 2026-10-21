@@ -419,6 +419,7 @@ private:
     int imageryVersion_ = 0;
     int terrainEpoch_ = 0;
     double imageryScale_ = 1.0;
+    double lodMorph_ = 0.5;
     double dpiScale_ = 1.0;
     double exaggeration_ = 1.0;
     bool terrainEnabled_ = true;
