@@ -423,7 +423,7 @@ std::string tileUrl(const ImageryLayer& layer, const TileMatrix& m, int z, int x
         return url;
     }
     int yy = layer.tms ? (1 << z) - 1 - y : y;
-    if (url.find('{') != std::string::npos && z >= 0 && z < static_cast<int>(m.levels.size())) {
+    if (url.find('{') != std::string::npos && m.hasLevel(z)) {
         double minX, minY, maxX, maxY;
         m.tileBounds(z, x, y, minX, minY, maxX, maxY);
         const int srid = m.srid == 4326 ? 4326 : 3857;
