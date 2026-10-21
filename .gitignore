@@ -15,3 +15,5 @@
 /bindings/dotnet/runtimes/
 /dist/
 __pycache__/
+/research/
+/screenshots/atak/
