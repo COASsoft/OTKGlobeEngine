@@ -128,6 +128,7 @@ ote_viewer [file or folder ...] [--view lat,lon,gsd,tilt,azimuth] [--preset 0..3
            [--zoom-test lat,lon,gsd,tilt,az,seconds] [--zoom-start s] [--diag 1]
 ```
 
+- Drop files or folders on the window, or pass them as arguments, to open them: KML/KMZ (with overlays and models), GeoJSON, GPX, Shapefile, CoT, CSV, GML, TAK data packages, ATAK iconsets, MBTiles, PMTiles, GeoPackage, osmdroid/RMaps/OsmAnd archives, MOBAC sources, DTED/HGT files or folders, Cesium terrain folders, 3D Tiles, LAS, glTF/OBJ/COLLADA models (placed at the view centre) and, with GDAL, GeoTIFF imagery and DEMs. The view flies to what was loaded and the title bar reports what was added.
 - Input is handled by the engine's shared controller (`engine.input()`, `ote_pointer_*` in the C ABI), so every host behaves the same:
   - Mouse: left drag pans (with inertia), wheel zooms at the cursor, right or middle drag (or Ctrl/Alt + left) rotates and tilts, double click zooms in; Shift + wheel tilts, Alt + wheel rotates.
   - Touch and pen: one finger pans with fling, pinch zooms about the fingers, twist rotates past a 10° threshold, two-finger vertical drag (or three fingers) tilts, double tap zooms in, double-tap-and-drag zooms continuously, two-finger tap zooms out, long press reports a callback. Windows touchscreens and pens use `WM_POINTER`.
