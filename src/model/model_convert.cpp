@@ -600,24 +600,30 @@ std::vector<std::uint8_t> colladaToGlb(const std::string& text, const AssetReade
                 }
             }
             if (!pos || posOff < 0 || stride == 0) continue;
+            auto slice = [](const std::vector<double>& d, size_t a, size_t b) {
+                std::vector<long long> r;
+                r.reserve(b - a);
+                for (size_t i = a; i < b; ++i) r.push_back(static_cast<long long>(d[i]));
+                return r;
+            };
+            const size_t step = static_cast<size_t>(stride);
             std::vector<std::vector<long long>> polygons;
             if (kind == "polygons") {
                 for (auto p : part.children("p")) {
                     std::vector<double> d = numbers(p.child_value());
-                    polygons.emplace_back(d.begin(), d.end());
+                    polygons.push_back(slice(d, 0, d.size()));
                 }
             } else {
                 std::vector<double> d = numbers(part.child_value("p"));
                 if (kind == "triangles") {
-                    for (size_t s = 0; s + 3 * stride <= d.size(); s += 3 * stride)
-                        polygons.emplace_back(d.begin() + static_cast<std::ptrdiff_t>(s), d.begin() + static_cast<std::ptrdiff_t>(s + 3 * stride));
+                    for (size_t s = 0; s + 3 * step <= d.size(); s += 3 * step) polygons.push_back(slice(d, s, s + 3 * step));
                 } else {
                     std::vector<double> counts = numbers(part.child_value("vcount"));
                     size_t s = 0;
                     for (double c : counts) {
-                        size_t n = static_cast<size_t>(c) * stride;
+                        size_t n = static_cast<size_t>(c) * step;
                         if (s + n > d.size()) break;
-                        polygons.emplace_back(d.begin() + static_cast<std::ptrdiff_t>(s), d.begin() + static_cast<std::ptrdiff_t>(s + n));
+                        polygons.push_back(slice(d, s, s + n));
                         s += n;
                     }
                 }
