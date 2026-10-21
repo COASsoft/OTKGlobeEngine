@@ -210,7 +210,7 @@ std::string detectFormat(const std::vector<std::uint8_t>& b, const std::string& 
         if (root == "gpx") return "gpx";
         if (root == "featurecollection" || root == "featurecollectiontype" || ext == ".gml") return "gml";
         if (root == "missionpackagemanifest") return "tak-package";
-        if (root == "custommapsource" || root == "custommultilayermapsource") return "mobac";
+        if (root == "custommapsource" || root == "custommultilayermapsource" || root == "customwmsmapsource") return "mobac";
     }
     size_t i = 0;
     while (i < b.size() && std::isspace(b[i])) ++i;
