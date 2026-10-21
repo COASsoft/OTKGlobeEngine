@@ -2558,21 +2558,25 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         sg_view view3 = view;
         float uvx3[4] = {uvx[0], uvx[1], uvx[2], uvx[3]};
         bool morphing = false;
+        bool spatial = false;
         const bool edgeBlend = lodBlend_ && lodUp > 0;
         const bool morphBlend = lodMorph_ > 0.0 && dt.key.level > kMinLevel;
-        if (src.level == dt.key.level && (edgeBlend || morphBlend)) {
+        if (!retiringShown && src.level == dt.key.level && (edgeBlend || morphBlend)) {
             const int up = lodUp > 0 ? lodUp : 1;
             const QuadKey want{dt.key.level - up, dt.key.x >> up, dt.key.y >> up};
             sg_view pv = view;
             float pu[4] = {uvx[0], uvx[1], uvx[2], uvx[3]};
             QuadKey got = source(dt.key, up, pv, pu);
-            if (got.level >= 0 && got.level < src.level) {
+            auto ancestor = got.level >= 0 ? surface_.find(got) : surface_.end();
+            const bool sameGeneration = ancestor != surface_.end() &&
+                                        (ancestor->second.version >= switchVersion_) == (shownVersion >= switchVersion_);
+            if (got.level >= 0 && got.level < src.level && sameGeneration) {
                 view3 = pv;
                 std::memcpy(uvx3, pu, sizeof(pu));
                 if (edgeBlend)
                     for (int e = 0; e < 4; ++e) lodEdges[e] = coarser[e] > 0 ? 1.0f : 0.0f;
-                auto parentSurface = surface_.find(want);
-                morphing = morphBlend && got.level == want.level && parentSurface != surface_.end() && parentSurface->second.complete;
+                morphing = morphBlend && got.level == want.level && ancestor->second.complete;
+                spatial = edgeBlend || morphing;
             }
             if (got.level != want.level && blendParents_.size() < 256) blendParents_.push_back({want, dt.distance * 2.0});
         }
