@@ -1584,13 +1584,7 @@ void GlobeRenderer::dropImagery(ImageryTexture& t) {
 
 bool GlobeRenderer::standIn(const Camera& cam, const QuadKey& k) const {
     if (k.level + 2 > maxRefine()) return false;
-    Bounds b = bounds(k);
-    Vec3 c = geodeticToEcef(0.5 * (b.south + b.north), 0.5 * (b.west + b.east), 0.0);
-    double r = (b.north - b.south) * kDegToRad * kWgs84A * 0.75;
-    double d = std::max(length(c - cam.eye()) - r, cam.eyeAboveGround());
-    double texel = (b.north - b.south) / kSurfaceSize;
-    double pixel = cam.pixelSizeAt(d) / 111320.0;
-    return pixel > 0 && texel / pixel > 3.0;
+    return info(cam, k).ratio > 3.0;
 }
 
 bool GlobeRenderer::buildSurfaceJob(const QuadKey& k, double priority, SurfaceJob* job, std::vector<float>* verts,
