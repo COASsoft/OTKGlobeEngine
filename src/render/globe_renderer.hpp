@@ -379,6 +379,7 @@ private:
     std::uint64_t nextOverlay_ = 1;
     std::array<bool, 3> gridOn_{};
     std::array<double, 3> gridSpacing_{0, 0, 0};
+    bool labelsOn_ = true;
     bool skyVisible_ = true;
     float clear_[3] = {0.0f, 0.0f, 0.0f};
     float ground_[3] = {10 / 255.0f, 30 / 255.0f, 62 / 255.0f};
