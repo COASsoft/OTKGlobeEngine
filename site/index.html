@@ -1,42 +1,10 @@
-<html><title>OpenTAKEngine</title>
+<h1>@NAME@</h1>
 
-<table border=0 cellpadding=0 cellspacing=0>
-<tr>
-<td valign=top>
-<b>About</b>
-<ul>
-  <li><a href=index.html>Home</a></li>
-  <li><a href=screenshots.html>Screenshots</a></li>
-</ul>
-<b>Code</b>
-<ul>
-  <li><a href=download.html>Download</a></li>
-  <li><a href=https://github.com/grangedevgroup-code/OpenTAKEngine>GitHub</a></li>
-  <li><a href=https://gitlab.com/grangedevgroup/OpenTAKEngine>GitLab</a></li>
-  <li><a href=https://github.com/grangedevgroup-code/OpenTAKEngine/blob/main/CHANGELOG.md>Changelog</a></li>
-</ul>
-<b>Docs</b>
-<ul>
-  <li><a href=https://github.com/grangedevgroup-code/OpenTAKEngine/blob/main/README.md>README</a></li>
-  <li><a href=https://github.com/grangedevgroup-code/OpenTAKEngine/blob/main/docs/EMBEDDING.md>Embedding</a></li>
-  <li><a href=https://github.com/grangedevgroup-code/OpenTAKEngine/blob/main/docs/OFFLINE.md>Offline</a></li>
-  <li><a href=https://github.com/grangedevgroup-code/OpenTAKEngine/blob/main/docs/FORMATS.md>Formats</a></li>
-  <li><a href=https://github.com/grangedevgroup-code/OpenTAKEngine/blob/main/docs/PHOTOREALISM.md>3D Tiles</a></li>
-  <li><a href=https://github.com/grangedevgroup-code/OpenTAKEngine/blob/main/docs/XR.md>VR and AR</a></li>
-  <li><a href=https://github.com/grangedevgroup-code/OpenTAKEngine/blob/main/docs/MILITARY.md>Military</a></li>
-</ul>
-<b>Other</b>
-<ul>
-  <li><a href=https://github.com/grangedevgroup-code/OpenTAKEngine/issues>Issues</a></li>
-  <li><a href=https://github.com/grangedevgroup-code/OpenTAKEngine/blob/main/SECURITY.md>Security</a></li>
-  <li><a href=https://github.com/grangedevgroup-code/OpenTAKEngine/blob/main/LICENSE>License</a></li>
-</ul>
-</td>
-<td valign=top>
+<p>@NAME@ is a map engine.  It draws a 3D globe with satellite imagery,
+terrain, map features, military symbols and 3D models, and it keeps working
+when the network goes away.</p>
 
-<p>OpenTAKEngine is a map engine.  It draws a 3D globe with satellite
-imagery, terrain, map features, military symbols and 3D models, and it keeps
-working when the network goes away.</p>
+<p><a href=screenshots.html><img src=shots/05_rainier_terrain.png alt="Terrain around Mount Rainier"></a></p>
 
 <p>It's written in C++ and runs on Windows, Linux, macOS, iOS, Android,
 FreeBSD, OpenBSD and NetBSD.  Programs use it through a plain C API, so it can
@@ -48,47 +16,62 @@ it was written from scratch and contains no TAK code.  It is not affiliated
 with, endorsed by, or associated with tak.gov, the TAK Product Center, or the
 makers of any TAK product.</p>
 
-<p>What it does:</p>
+<h2>Kernel and engine</h2>
+
+<p>Like TAK, it comes in two layers.  The <b>kernel</b> holds the
+geospatial and data services and needs no graphics hardware: file formats,
+import planning, feature queries, elevation, line of sight, coordinates,
+geodesics, the magnetic model, the tile cache and the network layer.  Servers
+and tools can use it on its own.  The <b>engine</b> is the renderer built on
+top of it.  The <a href=overview.html#kernel-and-engine>overview</a> lists
+what each one contains.</p>
+
+<h2>What it does</h2>
 
 <ul>
-<li>Globe and flat map, imagery from tile servers, WMS, WMTS, MBTiles,
-GeoPackage and GDAL; terrain from DTED, SRTM, quantized-mesh and Terrarium.</li>
-<li>KML/KMZ, GeoJSON, GPX, Shapefile, CSV, CoT and TAK data packages, with
-labels and picking.</li>
+<li>Globe and flat map, imagery from tile servers, WMS, WMTS, MBTiles, PMTiles,
+GeoPackage, osmdroid, RMaps, OsmAnd and GDAL; terrain from DTED, SRTM,
+Cesium terrain (quantized-mesh and heightmap, online, ion or local folders),
+PMTiles and Terrarium.</li>
+<li>KML/KMZ with network links, models and extrusion, GeoJSON, GPX,
+Shapefile with projections, CSV, CoT with ATAK iconsets, and TAK data
+packages, with labels and picking.</li>
 <li>MIL-STD-2525 symbols, MGRS/UTM/GARS grids and coordinates, magnetic
-declination, range rings, bullseyes, line of sight, viewshed and contours.</li>
+declination, range rings, bullseyes, range and bearing, line of sight,
+viewshed and contours.</li>
 <li>Sun and moon, twilight times and night illumination for NVG planning;
 drone video footprints from MISB KLV metadata.</li>
-<li>glTF models and 3D Tiles: photogrammetry, Google Photorealistic 3D Tiles,
-Cesium ion, Draco and KTX2 compression.</li>
+<li>glTF, OBJ and COLLADA models and 3D Tiles: photogrammetry, Google
+Photorealistic 3D Tiles, Cesium ion, Draco and KTX2 compression.</li>
 <li>Offline and airgapped networks: a cache that serves old tiles when servers
 are unreachable, region downloads, MBTiles/GeoPackage transfer.</li>
 <li>VR and AR headsets through OpenXR, and side-by-side stereo.</li>
 </ul>
 
-<p>The license is the <a href=https://github.com/grangedevgroup-code/OpenTAKEngine/blob/main/LICENSE>Apache License 2.0</a>:
-use it for anything, change it, sell it, in open or closed products, without
-sharing your changes.  Copies you hand on keep the license text.  The libraries it bundles keep their
-own (mostly MIT-style) licenses, listed in
-<a href=https://github.com/grangedevgroup-code/OpenTAKEngine/blob/main/docs/THIRD_PARTY.md>THIRD_PARTY.md</a>.</p>
+<p>The <a href=formats.html>formats page</a> has the full compatibility
+matrix, and <a href=embedding.html>embedding</a> shows how to put the engine
+in an app.</p>
+
+<h2>License</h2>
+
+<p>The license is the <a href=license.html>Apache License 2.0</a>: use it for anything,
+change it, sell it, in open or closed products, without sharing your changes.
+Copies you hand on keep the license text.  The libraries it bundles keep their own (mostly MIT-style) licenses,
+listed in <a href=third-party.html>third-party licenses</a>.</p>
+
+<h2>Building</h2>
 
 <p>To build it from source you need CMake and a C++20 compiler:</p>
 
-<blockquote><pre>
-git clone https://github.com/grangedevgroup-code/OpenTAKEngine
-cd OpenTAKEngine
+<pre>
+git clone https://github.com/@REPO@
+cd @NAME@
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 build/apps/viewer/ote_viewer
-</pre></blockquote>
+</pre>
 
 <p>Bug reports and patches go to the
-<a href=https://github.com/grangedevgroup-code/OpenTAKEngine/issues>issue tracker</a>.
-Security problems go to the address in
-<a href=https://github.com/grangedevgroup-code/OpenTAKEngine/blob/main/SECURITY.md>SECURITY.md</a>
-instead.</p>
-
-</td>
-</tr>
-</table>
-</html>
+<a href="https://github.com/@REPO@/issues">issue tracker</a>.
+Security problems go to the address on the <a href=security.html>security
+page</a> instead.</p>
