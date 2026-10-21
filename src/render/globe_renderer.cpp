@@ -604,7 +604,8 @@ void GlobeRenderer::setLayers(const std::vector<ImageryLayer>& layers) {
     ++imageryVersion_;
     if (!same) {
         switchVersion_ = imageryVersion_;
-        snapshotWanted_ = fadeUpgrades_ && !snapshotShown_;
+        if (fadeUpgrades_ && !snapshotShown_) snapshotWanted_ = true;
+        else if (snapshotShown_ && snapshotFade_ < 0.0) snapshotStart_ = now();
     }
     busy_ = true;
 }
