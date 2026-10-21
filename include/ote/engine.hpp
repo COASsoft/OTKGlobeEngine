@@ -45,6 +45,7 @@ struct ImageryLayer {
     std::string wmsVersion = "1.1.1";
     std::string wmsExtra;
     std::string userAgent;
+    std::vector<std::pair<std::string, std::string>> headers;
     bool visible = true;
     std::shared_ptr<HostTileSource> source;
 };
