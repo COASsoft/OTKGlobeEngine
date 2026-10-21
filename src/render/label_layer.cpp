@@ -387,7 +387,6 @@ void LabelLayer::drawSurface(const GeoRect& tile, double texelDeg, double dpi, i
         sg_apply_uniforms(UB_bline_params, SG_RANGE(p));
         sg_draw(0, 6, b->count);
     }
-    if (applied) sg_apply_scissor_rect(0, 0, size, size, true);
 }
 
 void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dpi, const std::vector<GeoRect>& visible, int view) {
