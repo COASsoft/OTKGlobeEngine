@@ -631,25 +631,29 @@ std::string shortRoadName(const std::string& name) {
             if (w == l) return s;
         return {};
     };
+    auto type = [&](const std::string& w) -> std::string_view {
+        for (const auto& [l, s] : kTypes)
+            if (w == l) return s;
+        return {};
+    };
     const size_t n = words.size();
+    std::vector<std::string> shortened = words;
     for (size_t i = 0; i < n; ++i) {
         std::string_view c = compass(words[i]);
-        if (!c.empty() && ((i + 1 == n && i >= 2) || (i == 0 && n >= 3))) {
-            words[i] = std::string(c);
+        if (!c.empty()) {
+            const bool last = i + 1 == n && i >= 2;
+            const bool lead = i == 0 && n >= 3 && type(words[1]).empty();
+            if (last || lead) shortened[i] = std::string(c);
             continue;
         }
         if (i == 0) continue;
-        for (const auto& [l, s] : kTypes)
-            if (words[i] == l) {
-                const bool bareCompass = i == 1 && !compass(words[0]).empty();
-                if (!bareCompass) words[i] = std::string(s);
-                break;
-            }
+        std::string_view t = type(words[i]);
+        if (!t.empty() && !(i == 1 && !compass(words[0]).empty())) shortened[i] = std::string(t);
     }
     std::string out;
     for (size_t i = 0; i < n; ++i) {
         if (i) out += ' ';
-        out += words[i];
+        out += shortened[i];
     }
     return out;
 }
@@ -776,6 +780,10 @@ std::shared_ptr<VectorTile> decodeOverlayTile(const std::vector<std::uint8_t>& r
                 MvtFeature f = readMvtFeature(fr);
                 std::string name = pickName(layer, f);
                 if (name.empty() || f.parts.empty() || f.parts[0].empty()) continue;
+                bool minor = false;
+                for (std::string_view word : {"Fountain", "Pool", "Stormwater", "Detention", "Retention", "Treatment"})
+                    minor = minor || name.find(word) != std::string::npos;
+                if (minor) continue;
                 const auto& part = f.parts[0];
                 const std::array<double, 2> mid = part[part.size() / 2];
                 if (!inside(mid, extent)) continue;
