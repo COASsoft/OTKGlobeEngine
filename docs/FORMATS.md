@@ -111,4 +111,4 @@ Linked libraries and their licenses are listed in [THIRD_PARTY.md](THIRD_PARTY.m
 
 ## Planned adapters
 
-OBJ and COLLADA models, LAZ point clouds, and a CoT network adapter (TCP/UDP/TLS to TAK Server and mesh SA). CoT messages from any transport already parse with the `cot` adapter.
+LAZ point clouds and a CoT network adapter (TCP/UDP/TLS to TAK Server and mesh SA). CoT messages from any transport already parse with the `cot` adapter.
