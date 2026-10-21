@@ -378,9 +378,11 @@ void LabelLayer::drawSurface(const GeoRect& tile, double texelDeg, double dpi) {
             const BorderStyle& s = kLines[l];
             const bool hidden = (l == 3 && meters > kCountyMeters) || (l == 2 && meters > kStateMeters);
             p.width[l] = hidden ? 0.0f : s.width;
+            p.casing[l] = s.casing;
             p.dash_on[l] = s.on;
             p.dash_off[l] = s.off;
         }
+        std::memcpy(p.shade, kShade, sizeof(p.shade));
         std::memcpy(p.color0, kLines[0].color, sizeof(p.color0));
         std::memcpy(p.color1, kLines[1].color, sizeof(p.color1));
         std::memcpy(p.color2, kLines[2].color, sizeof(p.color2));
