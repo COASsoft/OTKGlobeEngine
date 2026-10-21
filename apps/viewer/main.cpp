@@ -236,7 +236,7 @@ void init() {
     state->engine.setOffline(state->offline);
     if (state->memory > 0) state->engine.setMemoryBudget(state->memory);
     {
-        std::vector<ote::ElevationLayer> elev;
+        std::vector<ote::ElevationLayer>& elev = state->elevation;
         if (!state->elevationDir.empty()) {
             ote::ElevationLayer d;
             d.type = ote::ElevationType::Directory;
