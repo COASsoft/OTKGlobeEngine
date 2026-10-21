@@ -229,6 +229,10 @@ OTE_API int ote_add_contours_in_view(ote_engine* e, double interval, int major_e
 OTE_API void ote_set_terrain_slope(ote_engine* e, int enabled, float opacity, double max_slope_degrees);
 OTE_API void ote_set_grid_type(ote_engine* e, ote_grid_type type);
 OTE_API void ote_view_region(const ote_engine* e, double* west, double* south, double* east, double* north);
+OTE_API void ote_view_for_region(const ote_engine* e, double west, double south, double east, double north, ote_view* out);
+OTE_API int ote_load_features_region(ote_engine* e, const char* path, double* west, double* south, double* east, double* north);
+OTE_API int ote_tileset_region(const ote_engine* e, uint64_t id, double* west, double* south, double* east, double* north);
+OTE_API int ote_point_cloud_region(const ote_engine* e, uint64_t id, double* west, double* south, double* east, double* north);
 
 #ifdef __cplusplus
 }
