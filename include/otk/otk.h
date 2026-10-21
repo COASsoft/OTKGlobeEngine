@@ -171,6 +171,7 @@ OTK_API uint64_t otk_add_model(otk_engine* e, const char* path, double lat, doub
 OTK_API void otk_set_grid(otk_engine* e, int enabled);
 OTK_API void otk_set_labels(otk_engine* e, int enabled);
 OTK_API int otk_labels(const otk_engine* e);
+OTK_API void otk_set_labels_source(otk_engine* e, const char* url_or_path);
 OTK_API uint64_t otk_add_tileset(otk_engine* e, const char* path_or_url, double max_sse);
 OTK_API uint64_t otk_add_tileset_ex(otk_engine* e, const char* path_or_url, double max_sse, const char* headers, int lighting,
                                     int cache_offline);
