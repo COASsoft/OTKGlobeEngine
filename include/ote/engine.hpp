@@ -216,6 +216,8 @@ public:
     void setLayerOpacity(int index, float opacity);
     void setLayerVisible(int index, bool visible);
     void setImageryScale(double scale);
+    void setLodMorph(double fraction);
+    double lodMorph() const;
     void setCacheDirectory(const std::string& dir);
     void setCacheEnabled(bool enabled);
     std::string cacheDirectory() const;
