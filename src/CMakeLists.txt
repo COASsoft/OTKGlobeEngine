@@ -32,10 +32,8 @@ add_library(ote_kernel STATIC
     feature/parsers.cpp
     feature/feature_query.cpp
     feature/text.cpp
-    feature/grid.cpp
     feature/milsym.cpp
-    model/model_convert.cpp
-    model/gltf_codecs.cpp)
+    model/model_convert.cpp)
 
 target_include_directories(ote_kernel
     PUBLIC
@@ -110,7 +108,9 @@ add_library(opentakengine STATIC
     input/input_controller.cpp
     core/camera.cpp
     feature/feature_layer.cpp
+    feature/grid.cpp
     model/model_layer.cpp
+    model/gltf_codecs.cpp
     model/tile_content.cpp
     model/pointcloud.cpp
     tiles3d/tileset.cpp
