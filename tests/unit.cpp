@@ -266,6 +266,48 @@ int main() {
     }
 
     {
+        struct Case {
+            const char* name;
+            const char* wkt;
+            double x, y, lat, lon;
+        };
+        const Case cases[] = {
+            {"utm 10n",
+             "PROJCS[\"WGS_1984_UTM_Zone_10N\",GEOGCS[\"GCS_WGS_1984\",DATUM[\"D_WGS_1984\",SPHEROID[\"WGS_1984\",6378137.0,298.257223563]],PRIMEM[\"Greenwich\",0.0],"
+             "UNIT[\"Degree\",0.0174532925199433]],PROJECTION[\"Transverse_Mercator\"],PARAMETER[\"False_Easting\",500000.0],PARAMETER[\"False_Northing\",0.0],"
+             "PARAMETER[\"Central_Meridian\",-123.0],PARAMETER[\"Scale_Factor\",0.9996],PARAMETER[\"Latitude_Of_Origin\",0.0],UNIT[\"Meter\",1.0]]",
+             647740.0771481959, 5373807.167313857, 48.5, -121.0},
+            {"washington south state plane feet",
+             "PROJCS[\"NAD_1983_HARN_StatePlane_Washington_South_FIPS_4602_Feet\",GEOGCS[\"GCS_North_American_1983_HARN\",DATUM[\"D_North_American_1983_HARN\","
+             "SPHEROID[\"GRS_1980\",6378137.0,298.257222101]],PRIMEM[\"Greenwich\",0.0],UNIT[\"Degree\",0.0174532925199433]],PROJECTION[\"Lambert_Conformal_Conic\"],"
+             "PARAMETER[\"False_Easting\",1640416.667],PARAMETER[\"False_Northing\",0.0],PARAMETER[\"Central_Meridian\",-120.5],"
+             "PARAMETER[\"Standard_Parallel_1\",47.3333333333333],PARAMETER[\"Standard_Parallel_2\",45.8333333333333],"
+             "PARAMETER[\"Latitude_Of_Origin\",45.3333333333333],UNIT[\"US survey foot\",0.304800609601219]]",
+             1041929.2727991173, 630713.8292937042, 47.0379, -122.9007},
+            {"conus albers",
+             "PROJCS[\"NAD_1983_Contiguous_USA_Albers\",GEOGCS[\"GCS_North_American_1983\",DATUM[\"D_North_American_1983\",SPHEROID[\"GRS_1980\",6378137.0,298.257222101]],"
+             "PRIMEM[\"Greenwich\",0.0],UNIT[\"Degree\",0.0174532925199433]],PROJECTION[\"Albers\"],PARAMETER[\"False_Easting\",0.0],PARAMETER[\"False_Northing\",0.0],"
+             "PARAMETER[\"Central_Meridian\",-96.0],PARAMETER[\"Standard_Parallel_1\",29.5],PARAMETER[\"Standard_Parallel_2\",45.5],PARAMETER[\"Latitude_Of_Origin\",23.0],"
+             "UNIT[\"Meter\",1.0]]",
+             -2103628.9104909617, 2863368.319785516, 46.0, -123.5},
+            {"web mercator",
+             "PROJCS[\"WGS_1984_Web_Mercator_Auxiliary_Sphere\",GEOGCS[\"GCS_WGS_1984\",DATUM[\"D_WGS_1984\",SPHEROID[\"WGS_1984\",6378137.0,298.257223563]],"
+             "PRIMEM[\"Greenwich\",0.0],UNIT[\"Degree\",0.0174532925199433]],PROJECTION[\"Mercator_Auxiliary_Sphere\"],PARAMETER[\"False_Easting\",0.0],"
+             "PARAMETER[\"False_Northing\",0.0],PARAMETER[\"Central_Meridian\",0.0],PARAMETER[\"Standard_Parallel_1\",0.0],PARAMETER[\"Auxiliary_Sphere_Type\",0.0],"
+             "UNIT[\"Meter\",1.0]]",
+             -13681243.342136879, 5948262.5126702115, 47.0379, -122.9007},
+        };
+        for (const Case& k : cases) {
+            PrjTransform p = parsePrj(k.wkt);
+            double lat = 0, lon = 0;
+            bool ok = p.projected() && p.inverse(k.x, k.y, lat, lon) && std::abs(lat - k.lat) < 1e-7 && std::abs(lon - k.lon) < 1e-7;
+            char msg[160];
+            std::snprintf(msg, sizeof(msg), "prj inverse %s (%.9f, %.9f)", k.name, lat, lon);
+            check(ok, msg);
+        }
+    }
+
+    {
         std::string wms = "<customWmsMapSource><name>W</name><url>https://h/wms</url><layers>a</layers></customWmsMapSource>";
         check(detectFormat(std::vector<std::uint8_t>(wms.begin(), wms.end()), "w.xml") == "mobac", "mobac wms source detection");
         std::string lj = "{\"tilejson\":\"2.1.0\",\"format\":\"quantized-mesh-1.0\",\"tiles\":[\"{z}/{x}/{y}.terrain\"]}";
