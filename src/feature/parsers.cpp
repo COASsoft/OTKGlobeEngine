@@ -382,13 +382,21 @@ void parseKmlDocument(const char* text, size_t size, const Resolver& resolve, co
         for (auto c : pm.children()) kmlGeometry(c, f);
         if (!f.geometries.empty()) out.push_back(std::move(f));
     }
+    kmlNetworkLinks(doc, resolve, baseUrl, depth, budget, out, overlays);
+}
+
+std::vector<Feature> parseKmlText(const char* text, size_t size, const Resolver& resolve = {},
+                                  std::vector<GroundOverlay>* overlays = nullptr) {
+    std::vector<Feature> out;
+    KmlBudget budget;
+    parseKmlDocument(text, size, withRemoteIcons(resolve), {}, 0, budget, out, overlays);
     return out;
 }
 
-std::vector<Feature> parseKmz(const std::vector<std::uint8_t>& bytes, std::vector<GroundOverlay>* overlays = nullptr) {
-    std::vector<Feature> out;
+void parseKmzDocument(const std::vector<std::uint8_t>& bytes, const Resolver& outer, const std::string& baseUrl, int depth, KmlBudget& budget,
+                      std::vector<Feature>& out, std::vector<GroundOverlay>* overlays) {
     mz_zip_archive zip{};
-    if (!mz_zip_reader_init_mem(&zip, bytes.data(), bytes.size(), 0)) return out;
+    if (!mz_zip_reader_init_mem(&zip, bytes.data(), bytes.size(), 0)) return;
     int index = mz_zip_reader_locate_file(&zip, "doc.kml", nullptr, 0);
     if (index < 0) {
         for (mz_uint i = 0; i < mz_zip_reader_get_num_files(&zip); ++i) {
