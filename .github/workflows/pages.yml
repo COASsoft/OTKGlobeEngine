@@ -5,8 +5,13 @@ on:
     branches: [main]
     paths:
       - 'site/**'
+      - 'docs/**'
+      - 'README.md'
+      - 'CHANGELOG.md'
+      - 'SECURITY.md'
+      - 'LICENSE'
       - 'screenshots/opentakengine/**'
-      - 'scripts/site_downloads.py'
+      - 'scripts/site_build.py'
       - '.github/workflows/pages.yml'
   release:
     types: [published]
@@ -33,11 +38,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          mkdir -p _site/shots
-          cp site/* _site/
-          cp screenshots/opentakengine/*.png _site/shots/
+          python3 -m pip install --quiet markdown==3.8
           gh api "repos/${{ github.repository }}/releases" > releases.json
-          python3 scripts/site_downloads.py releases.json _site/download.html
+          python3 scripts/site_build.py _site --releases releases.json --repo "${{ github.repository }}"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
