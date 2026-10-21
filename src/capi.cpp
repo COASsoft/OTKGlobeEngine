@@ -644,6 +644,46 @@ void ote_view_region(const ote_engine* e, double* west, double* south, double* e
     if (north) *north = r.north;
 }
 
+namespace {
+
+int writeRegion(bool ok, const ote::Region& r, double* west, double* south, double* east, double* north) {
+    if (!ok) return 0;
+    if (west) *west = r.west;
+    if (south) *south = r.south;
+    if (east) *east = r.east;
+    if (north) *north = r.north;
+    return 1;
+}
+
+}
+
+void ote_view_for_region(const ote_engine* e, double west, double south, double east, double north, ote_view* out) {
+    if (!out) return;
+    ote::View v = e->engine.viewForRegion({west, south, east, north});
+    out->lat = v.lat;
+    out->lon = v.lon;
+    out->gsd = v.gsd;
+    out->azimuth = v.azimuth;
+    out->tilt = v.tilt;
+}
+
+int ote_load_features_region(ote_engine* e, const char* path, double* west, double* south, double* east, double* north) {
+    std::vector<std::uint64_t> ids = e->engine.loadFeatures(path ? path : "");
+    ote::Region r;
+    writeRegion(e->engine.featuresRegion(ids, r), r, west, south, east, north);
+    return static_cast<int>(ids.size());
+}
+
+int ote_tileset_region(const ote_engine* e, uint64_t id, double* west, double* south, double* east, double* north) {
+    ote::Region r;
+    return writeRegion(e->engine.tilesetRegion(id, r), r, west, south, east, north);
+}
+
+int ote_point_cloud_region(const ote_engine* e, uint64_t id, double* west, double* south, double* east, double* north) {
+    ote::Region r;
+    return writeRegion(e->engine.pointCloudRegion(id, r), r, west, south, east, north);
+}
+
 int ote_to_mgrs(double lat, double lon, int digits, char* out, int capacity) {
     std::string s = ote::toMgrs(lat, lon, digits);
     if (!out || capacity <= 0) return static_cast<int>(s.size());
