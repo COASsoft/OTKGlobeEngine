@@ -3,9 +3,12 @@ layout(binding=0) uniform globe_vs_params {
     mat4 mvp;
     vec4 uv_xform;
     vec4 uv_xform2;
+    vec4 uv_xform3;
     vec4 skirt;
     vec4 center;
     vec4 edges;
+    vec4 eyerel;
+    vec4 morph;
 };
 
 in vec3 position;
@@ -15,9 +18,11 @@ in float height;
 
 out vec2 uv;
 out vec2 uv2;
+out vec2 uv3;
 out float light;
 out float elev;
 out float lodw;
+out float morphw;
 
 void main() {
     vec3 p = position;
@@ -25,6 +30,15 @@ void main() {
     gl_Position = mvp * vec4(p, 1.0);
     uv = texcoord0 * uv_xform.xy + uv_xform.zw;
     uv2 = texcoord0 * uv_xform2.xy + uv_xform2.zw;
+    uv3 = texcoord0 * uv_xform3.xy + uv_xform3.zw;
+    float mw = 0.0;
+    if (morph.w > 0.5) {
+        vec3 rel = position + eyerel.xyz;
+        float d = max(length(rel), 1.0);
+        float facing = max(abs(dot(rel / d, normalize(center.xyz + position))), 0.35);
+        mw = clamp((morph.y - morph.x * facing / d) / morph.z, 0.0, 1.0);
+    }
+    morphw = mw;
     light = shade;
     elev = height;
     float w = 1.0;
