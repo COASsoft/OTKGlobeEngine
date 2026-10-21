@@ -35,7 +35,7 @@ Website and downloads: https://grangedevgroup-code.github.io/OpenTAKEngine/
 
 **Terrain**
 - WGS84 quadtree, 33x33 post meshes with skirts, screen-space-error LOD, slope shading ("enhanced depth perception"), exaggeration, x-ray transparency
-- Terrarium and quantized-mesh elevation tiles, DTED 0-3 and SRTM HGT folders, GDAL DEMs, EGM96 geoid (heights are HAE)
+- Terrarium elevation tiles; Cesium terrain from `layer.json`, `{z}/{x}/{y}` templates or Cesium ion (quantized-mesh-1.0 and heightmap-1.0, tile availability, token refresh); DTED 0-3 and SRTM HGT folders, GDAL DEMs, EGM96 geoid (heights are HAE)
 - Line of sight, viewshed, elevation profile, elevation heat map
 
 **Vectors, labels and models**
