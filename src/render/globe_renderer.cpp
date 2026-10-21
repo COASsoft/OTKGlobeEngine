@@ -127,6 +127,7 @@ bool GlobeRenderer::init() {
     if (const char* v = std::getenv("OTE_UPGRADE_FADE")) fadeUpgrades_ = std::atoi(v) != 0;
     busyLog_ = std::getenv("OTE_BUSY_LOG") != nullptr;
     if (const char* v = std::getenv("OTE_MAX_DIVE")) maxDive_ = std::atoi(v);
+    if (const char* v = std::getenv("OTE_LOD_MORPH")) lodMorph_ = std::clamp(std::atof(v), 0.0, 1.0);
     if (const char* v = std::getenv("OTE_MARGIN")) marginPrefetch_ = std::max(1.0, std::atof(v));
     if (std::getenv("OTE_DIAG")) diagnostics_ = true;
     if (const char* pp = std::getenv("OTE_PROFILE")) {
