@@ -13,6 +13,7 @@
 #include <cctype>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <mutex>
 
 namespace ote {
