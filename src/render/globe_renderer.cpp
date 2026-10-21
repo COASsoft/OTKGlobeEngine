@@ -2596,6 +2596,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             ++invalidResources_;
             view3 = view;
             morphing = false;
+            spatial = false;
             for (float& e : lodEdges) e = 0.0f;
         }
         Mat4 mvp = dc.viewProjRel() * translation(tt.center - dc.eye());
