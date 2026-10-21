@@ -2547,10 +2547,12 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     if (snapshotShown_ && snapshotFade_ < 0.0) {
         bool ready = true;
         size_t covered = 0;
+        size_t owned = 0;
         for (const auto& dt : tiles) {
             auto s = surface_.find(dt.key);
             const bool own = s != surface_.end() && s->second.version >= switchVersion_ && (s->second.complete || s->second.presentable);
-            if (!own) ready = false;
+            if (own) ++owned;
+            else ready = false;
             bool current = s != surface_.end() && s->second.version >= switchVersion_;
             for (int up = 1; !current && up <= dt.key.level; ++up) {
                 auto a = surface_.find(QuadKey{dt.key.level - up, dt.key.x >> up, dt.key.y >> up});
