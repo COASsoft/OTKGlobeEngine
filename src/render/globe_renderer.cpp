@@ -586,6 +586,11 @@ void GlobeRenderer::setLayers(const std::vector<ImageryLayer>& layers) {
     }
     if (!vectorOnly && best > 0) usefulLevel_ = std::clamp(best, kMinLevel + 1, kMaxLevel);
     ++imageryVersion_;
+    if (!same && fadeUpgrades_) {
+        switchHold_ = true;
+        switchStart_ = now();
+        switchVersion_ = imageryVersion_;
+    }
     busy_ = true;
 }
 
