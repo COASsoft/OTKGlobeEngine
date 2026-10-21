@@ -121,5 +121,6 @@ public final class OTKGlobeEngine {
     static native long nativeHitTest(long h, double x, double y, double radius);
     static native long nativeAddTileset(long h, String pathOrUrl, double maxSse);
     static native void nativeSetGrid(long h, boolean enabled);
+    static native void nativeSetLabels(long h, boolean enabled);
     public static native String nativeToMgrs(double lat, double lon, int digits);
 }
