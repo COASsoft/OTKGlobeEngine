@@ -527,6 +527,85 @@ void FeatureLayer::drawOverlay(const Camera& cam, const GroundFn& ground, double
         const Feature& f = it.feature;
         if (!f.visible) continue;
         const float fade = f.stale > 0 && f.stale < nowSeconds ? 0.45f : 1.0f;
+        const bool raised = f.altitudeMode != AltitudeMode::ClampToGround;
+        if (raised) {
+            auto tri = [&](const Vec3& a, const Vec3& b, const Vec3& c, const float* col) {
+                double ax, ay, az, bx, by, bz, cx, cy, cz;
+                if (!project(a, ax, ay, az) || !project(b, bx, by, bz) || !project(c, cx, cy, cz)) return;
+                lw.vertex(nx(ax), ny(ay), static_cast<float>(az), 0, 0, col);
+                lw.vertex(nx(bx), ny(by), static_cast<float>(bz), 0, 0, col);
+                lw.vertex(nx(cx), ny(cy), static_cast<float>(cz), 0, 0, col);
+            };
+            float fill[4], stroke[4];
+            color4(f.style.fillColor, fill);
+            color4(f.style.strokeColor, stroke);
+            fill[3] *= fade;
+            stroke[3] *= fade;
+            if (f.extrude) {
+                float wall[4] = {fill[0], fill[1], fill[2], fill[3]};
+                if (wall[3] <= 0.0f) {
+                    std::copy(stroke, stroke + 4, wall);
+                    wall[3] *= 0.5f;
+                }
+                for (const Geometry& g : f.geometries) {
+                    if (g.type == GeometryType::Point) {
+                        for (const Coord& p : g.points) {
+                            double tx, ty, tz, bx, by, bz;
+                            if (!project(geodeticToEcef(p.lat, p.lon, altitude(it, p.lat, p.lon, p.alt, ground)), tx, ty, tz) ||
+                                !project(geodeticToEcef(p.lat, p.lon, ground(p.lat, p.lon)), bx, by, bz))
+                                continue;
+                            double half = std::max(1.0, f.style.strokeWidth * 0.5) * dpi;
+                            float zt = static_cast<float>(tz), zb = static_cast<float>(bz);
+                            lw.vertex(nx(tx - half), ny(ty), zt, 0, 0, stroke);
+                            lw.vertex(nx(tx + half), ny(ty), zt, 0, 0, stroke);
+                            lw.vertex(nx(bx + half), ny(by), zb, 0, 0, stroke);
+                            lw.vertex(nx(tx - half), ny(ty), zt, 0, 0, stroke);
+                            lw.vertex(nx(bx + half), ny(by), zb, 0, 0, stroke);
+                            lw.vertex(nx(bx - half), ny(by), zb, 0, 0, stroke);
+                        }
+                        continue;
+                    }
+                    if (wall[3] <= 0.0f) continue;
+                    std::vector<const std::vector<Coord>*> rings{&g.points};
+                    if (g.type == GeometryType::Polygon)
+                        for (const auto& h : g.holes) rings.push_back(&h);
+                    for (const auto* ring : rings) {
+                        const std::vector<Coord>& pts = *ring;
+                        size_t n = pts.size();
+                        size_t edges = g.type == GeometryType::Polygon ? n : (n > 0 ? n - 1 : 0);
+                        for (size_t i = 0; i < edges; ++i) {
+                            const Coord& a = pts[i];
+                            const Coord& b = pts[(i + 1) % n];
+                            Vec3 at = geodeticToEcef(a.lat, a.lon, altitude(it, a.lat, a.lon, a.alt, ground));
+                            Vec3 bt = geodeticToEcef(b.lat, b.lon, altitude(it, b.lat, b.lon, b.alt, ground));
+                            Vec3 ab = geodeticToEcef(a.lat, a.lon, ground(a.lat, a.lon));
+                            Vec3 bb = geodeticToEcef(b.lat, b.lon, ground(b.lat, b.lon));
+                            tri(at, bt, bb, wall);
+                            tri(at, bb, ab, wall);
+                        }
+                    }
+                }
+            }
+            if (fill[3] > 0.0f && !it.triangles.empty()) {
+                double sum = 0;
+                size_t count = 0;
+                for (const Geometry& g : f.geometries)
+                    if (g.type == GeometryType::Polygon)
+                        for (const Coord& p : g.points) {
+                            sum += p.alt;
+                            ++count;
+                        }
+                const double alt = count ? sum / static_cast<double>(count) : 0.0;
+                for (size_t i = 0; i + 2 < it.triangles.size(); i += 3) {
+                    const auto& a = it.triangles[i];
+                    const auto& b = it.triangles[i + 1];
+                    const auto& c = it.triangles[i + 2];
+                    tri(geodeticToEcef(a[1], a[0], altitude(it, a[1], a[0], alt, ground)),
+                        geodeticToEcef(b[1], b[0], altitude(it, b[1], b[0], alt, ground)),
+                        geodeticToEcef(c[1], c[0], altitude(it, c[1], c[0], alt, ground)), fill);
+                }
+            }
+        }
         if (f.altitudeMode != AltitudeMode::ClampToGround && (f.style.strokeColor >> 24) && f.style.strokeWidth > 0) {
             float c[4];
             color4(f.style.strokeColor, c);
