@@ -189,6 +189,112 @@ void kmlGeometry(const pugi::xml_node& g, Feature& f) {
 
 using Resolver = std::function<std::vector<std::uint8_t>(const std::string&)>;
 
+struct KmlBudget {
+    int links = 64;
+};
+
+std::string trimmed(const std::string& s) {
+    size_t a = s.find_first_not_of(" \t\r\n");
+    if (a == std::string::npos) return {};
+    size_t b = s.find_last_not_of(" \t\r\n");
+    return s.substr(a, b - a + 1);
+}
+
+bool remoteHref(const std::string& h) {
+    std::string l = lower(h.substr(0, 8));
+    return l.rfind("http://", 0) == 0 || l.rfind("https://", 0) == 0;
+}
+
+std::string joinUrl(const std::string& base, const std::string& href) {
+    if (remoteHref(href)) return href;
+    std::string b = base.substr(0, base.find('?'));
+    size_t scheme = b.find("://");
+    if (scheme == std::string::npos) return {};
+    size_t host = b.find('/', scheme + 3);
+    if (!href.empty() && href[0] == '/') return (host == std::string::npos ? b : b.substr(0, host)) + href;
+    std::string dir = host == std::string::npos ? b + "/" : b.substr(0, b.rfind('/') + 1);
+    std::string h = href;
+    while (h.rfind("./", 0) == 0) h = h.substr(2);
+    while (h.rfind("../", 0) == 0) {
+        h = h.substr(3);
+        size_t cut = dir.size() > 1 ? dir.rfind('/', dir.size() - 2) : std::string::npos;
+        if (cut != std::string::npos && host != std::string::npos && cut >= host) dir = dir.substr(0, cut + 1);
+    }
+    return dir + h;
+}
+
+std::vector<std::uint8_t> httpGet(const std::string& url) {
+    if (!remoteHref(url) || !net::hostAvailable(url)) return {};
+    net::Response r = net::get(url, "OpenTAKEngine/0.1");
+    if (r.status != 200 || r.body.size() > (std::size_t(64) << 20)) return {};
+    return std::move(r.body);
+}
+
+Resolver remoteResolver(const std::string& base) {
+    return [base](const std::string& href) { return httpGet(joinUrl(base, href)); };
+}
+
+Resolver withRemoteIcons(Resolver local) {
+    return [local](const std::string& href) -> std::vector<std::uint8_t> {
+        if (remoteHref(href)) return httpGet(href);
+        if (lower(href).rfind("file://", 0) == 0) {
+            std::string path = href.substr(7);
+            if (path.size() > 2 && path[0] == '/' && path[2] == ':') path = path.substr(1);
+            return readAll(std::filesystem::u8path(path));
+        }
+        return local ? local(href) : std::vector<std::uint8_t>{};
+    };
+}
+
+void parseKmlDocument(const char* text, size_t size, const Resolver& resolve, const std::string& baseUrl, int depth, KmlBudget& budget,
+                      std::vector<Feature>& out, std::vector<GroundOverlay>* overlays);
+void parseKmzDocument(const std::vector<std::uint8_t>& bytes, const Resolver& outer, const std::string& baseUrl, int depth, KmlBudget& budget,
+                      std::vector<Feature>& out, std::vector<GroundOverlay>* overlays);
+
+void kmlNetworkLinks(const pugi::xml_document& doc, const Resolver& resolve, const std::string& baseUrl, int depth, KmlBudget& budget,
+                     std::vector<Feature>& out, std::vector<GroundOverlay>* overlays) {
+    if (depth >= 4) return;
+    for (auto n : doc.select_nodes("//NetworkLink")) {
+        if (budget.links <= 0) return;
+        pugi::xml_node link = n.node().child("Link");
+        if (!link) link = n.node().child("Url");
+        std::string href = trimmed(link.child_value("href"));
+        if (href.empty()) continue;
+        --budget.links;
+        std::vector<std::uint8_t> bytes;
+        std::string childBase;
+        Resolver childResolve;
+        if (remoteHref(href) || !baseUrl.empty()) {
+            std::string url = baseUrl.empty() ? href : joinUrl(baseUrl, href);
+            std::string mode = trimmed(link.child_value("viewRefreshMode"));
+            std::string format = link.child("viewFormat") ? trimmed(link.child_value("viewFormat"))
+                                                           : (mode == "onStop" || mode == "onRegion" ? "BBOX=[bboxWest],[bboxSouth],[bboxEast],[bboxNorth]" : "");
+            std::string query = trimmed(link.child_value("httpQuery"));
+            std::string extra = format + (format.empty() || query.empty() ? "" : "&") + query;
+            for (auto [k, v] : {std::pair{"[bboxWest]", "-180"}, {"[bboxSouth]", "-90"}, {"[bboxEast]", "180"}, {"[bboxNorth]", "90"},
+                                {"[lookatLon]", "0"}, {"[lookatLat]", "0"}, {"[clientVersion]", "1"}, {"[clientName]", "OpenTAKEngine"},
+                                {"[language]", "en"}, {"[kmlVersion]", "2.2"}})
+                for (size_t p; (p = extra.find(k)) != std::string::npos;) extra.replace(p, std::strlen(k), v);
+            if (!extra.empty()) url += (url.find('?') == std::string::npos ? "?" : "&") + extra;
+            bytes = httpGet(url);
+            childBase = url;
+            childResolve = remoteResolver(url);
+        } else {
+            bytes = resolve ? resolve(href) : std::vector<std::uint8_t>{};
+            std::string prefix = href.substr(0, href.find_last_of("/\\") == std::string::npos ? 0 : href.find_last_of("/\\") + 1);
+            childResolve = [resolve, prefix](const std::string& h) {
+                if (remoteHref(h) || !resolve) return httpGet(h);
+                return resolve(prefix + h);
+            };
+        }
+        if (bytes.empty()) continue;
+        if (bytes.size() > 1 && bytes[0] == 'P' && bytes[1] == 'K')
+            parseKmzDocument(bytes, childResolve, childBase, depth + 1, budget, out, overlays);
+        else
+            parseKmlDocument(reinterpret_cast<const char*>(bytes.data()), bytes.size(), childResolve, childBase, depth + 1, budget, out, overlays);
+    }
+}
+
 void kmlGroundOverlays(const pugi::xml_document& doc, const Resolver& resolve, std::vector<GroundOverlay>& out) {
     for (auto n : doc.select_nodes("//GroundOverlay")) {
         pugi::xml_node g = n.node();
