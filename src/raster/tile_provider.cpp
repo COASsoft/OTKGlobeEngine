@@ -196,7 +196,7 @@ private:
             return;
         }
         std::vector<std::uint8_t> body;
-        net::Response res = net::get(layer_.url, ua_);
+        net::Response res = net::get(layer_.url, ua_, layer_.headers);
         if (res.status == 200 && !res.body.empty()) {
             body = std::move(res.body);
             if (useCache()) cache_->put(key_, -1, 0, 0, body, kNeverExpires, true);
