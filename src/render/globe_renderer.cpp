@@ -2277,15 +2277,11 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 SurfaceTile fresh = freshSurface();
                 if (sg_query_view_state(fresh.texture) == SG_RESOURCESTATE_VALID) {
                     auto old = retiring_.find(job.key);
-                    if (old != retiring_.end() && std::isinf(old->second.second)) {
-                        recycleSurface(*s);
-                    } else {
-                        if (old != retiring_.end()) {
-                            recycleSurface(old->second.first);
-                            retiring_.erase(old);
-                        }
-                        retiring_.emplace(job.key, std::make_pair(*s, switchHold_ ? std::numeric_limits<double>::infinity() : now()));
+                    if (old != retiring_.end()) {
+                        recycleSurface(old->second.first);
+                        retiring_.erase(old);
                     }
+                    retiring_.emplace(job.key, std::make_pair(*s, now()));
                     s->image = fresh.image;
                     s->attachment = fresh.attachment;
                     s->texture = fresh.texture;
