@@ -43,6 +43,7 @@ void main() {
     }
     morphw = mw;
     sgain = morph.w;
+    lows = max(vec3(4.0) + log2(max(vec3(uv_xform.x, uv_xform2.x, uv_xform3.x), vec3(1.0e-6))), vec3(0.0));
     light = shade;
     elev = height;
     float w = 1.0;
