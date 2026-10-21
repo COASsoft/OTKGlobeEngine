@@ -2501,7 +2501,6 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 }
             }
         }
-        bool upgrading = false;
         if (blend >= 1.0f && src.level == dt.key.level) {
             auto rt = retiring_.find(dt.key);
             if (rt != retiring_.end()) {
