@@ -149,6 +149,7 @@ int main() {
         for (const Place& p : capitals) capital = capital || (p.capital && p.name == "Washington");
         check(capital, "built-in national capital");
     }
+#endif
 
     std::printf("%d failure(s)\n", failures);
     return failures == 0 ? 0 : 1;
