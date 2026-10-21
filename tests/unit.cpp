@@ -151,6 +151,30 @@ int main() {
     }
 
     {
+        auto dir = std::filesystem::temp_directory_path() / "ote local terrain";
+        std::error_code ec;
+        std::filesystem::remove_all(dir, ec);
+        std::filesystem::create_directories(dir / "12" / "1319", ec);
+        std::filesystem::copy_file(data("qm_z12_x1319_y3117.terrain"), dir / "12" / "1319" / "3117.terrain", ec);
+        std::ofstream(dir / "layer.json") << R"({"tilejson":"2.1.0","format":"quantized-mesh-1.0","version":"1.2.0","scheme":"tms",)"
+                                             R"("tiles":["{z}/{x}/{y}.terrain?v={version}"],"projection":"EPSG:4326"})";
+        for (int variant = 0; variant < 3; ++variant) {
+            Engine engine;
+            ElevationLayer qm;
+            qm.type = ElevationType::QuantizedMesh;
+            qm.maxZoom = 12;
+            if (variant == 0) qm.path = dir.string();
+            else if (variant == 1) qm.url = (dir / "layer.json").string();
+            else qm.url = "file:///" + std::regex_replace((dir / "layer.json").generic_string(), std::regex(" "), "%20");
+            engine.setElevation({qm});
+            std::vector<double> h = engine.queryElevation({{47.0, -122.0, 0}});
+            check(h.size() == 1 && std::abs(h[0] - expect) < 2.0,
+                  (std::string("cesium terrain from a local ") + (variant == 0 ? "folder" : variant == 1 ? "layer.json path" : "file url")).c_str());
+        }
+        std::filesystem::remove_all(dir, ec);
+    }
+
+    {
         ImageryLayer l;
         l.url = "https://h/{z}/{reverseY}/{x}?bbox={bbox-epsg-4326}&w={westDegrees}&r={reverseX}&q={quadkey}&s={width}x{height}{r}";
         l.maxZoom = 10;
