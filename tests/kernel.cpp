@@ -5,6 +5,7 @@
 #include "otk/layers.hpp"
 #include "otk/mgrs.hpp"
 #include "otk/navigation.hpp"
+#include "otk/places.hpp"
 
 #include <cmath>
 #include <cstdio>
