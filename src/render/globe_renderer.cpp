@@ -1616,7 +1616,10 @@ bool GlobeRenderer::buildSurfaceJob(const QuadKey& k, double priority, SurfaceJo
         }
     for (int l = 0; l < static_cast<int>(matrices_.size()) && l < static_cast<int>(layers_.size()); ++l) {
       if (!shown(l)) continue;
-      if (standIn && l != baseLayer_ && !layers_[l].polarFill) continue;
+      if (standIn && l != baseLayer_ && !layers_[l].polarFill && sparseLayer(l)) {
+          if (job) job->overlaysOmitted = true;
+          continue;
+      }
       const TileMatrix& m = matrices_[l];
       double maxLat = maxLatitude(m.srid);
       double bandS[2], bandN[2];
