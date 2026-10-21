@@ -1,5 +1,6 @@
 #include "ote/features.hpp"
 
+#include "core/prj.hpp"
 #include "gdal/gdal_sources.hpp"
 #include "net/http.hpp"
 
