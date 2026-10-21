@@ -423,6 +423,31 @@ std::string tileUrl(const ImageryLayer& layer, const TileMatrix& m, int z, int x
         return url;
     }
     int yy = layer.tms ? (1 << z) - 1 - y : y;
+    if (url.find('{') != std::string::npos && z >= 0 && z < static_cast<int>(m.levels.size())) {
+        double minX, minY, maxX, maxY;
+        m.tileBounds(z, x, y, minX, minY, maxX, maxY);
+        const int srid = m.srid == 4326 ? 4326 : 3857;
+        const double west = unprojectX(srid, minX), east = unprojectX(srid, maxX);
+        const double south = unprojectY(srid, minY), north = unprojectY(srid, maxY);
+        replaceAll(url, "{westDegrees}", fmt(west));
+        replaceAll(url, "{southDegrees}", fmt(south));
+        replaceAll(url, "{eastDegrees}", fmt(east));
+        replaceAll(url, "{northDegrees}", fmt(north));
+        replaceAll(url, "{westProjected}", fmt(minX));
+        replaceAll(url, "{southProjected}", fmt(minY));
+        replaceAll(url, "{eastProjected}", fmt(maxX));
+        replaceAll(url, "{northProjected}", fmt(maxY));
+        replaceAll(url, "{bbox-epsg-4326}", fmt(west) + "," + fmt(south) + "," + fmt(east) + "," + fmt(north));
+        replaceAll(url, "{bbox-epsg-3857}", fmt(projectX(3857, west)) + "," + fmt(projectY(3857, std::max(south, -85.0511287798))) + "," +
+                                                fmt(projectX(3857, east)) + "," + fmt(projectY(3857, std::min(north, 85.0511287798))));
+        replaceAll(url, "{width}", std::to_string(layer.tileSize));
+        replaceAll(url, "{height}", std::to_string(layer.tileSize));
+        replaceAll(url, "{reverseX}", std::to_string(m.levels[z].matrixWidth - 1 - x));
+        replaceAll(url, "{reverseY}", std::to_string(m.levels[z].matrixHeight - 1 - y));
+        replaceAll(url, "{reverseZ}", std::to_string(layer.maxZoom - z));
+        replaceAll(url, "{quadkey}", quadkey(z, x, y));
+        replaceAll(url, "{r}", "");
+    }
     for (const char* k : {"{$z}", "{z}", "{TileMatrix}"}) replaceAll(url, k, std::to_string(z));
     for (const char* k : {"{$x}", "{x}", "{TileCol}"}) replaceAll(url, k, std::to_string(x));
     for (const char* k : {"{$y}", "{y}", "{TileRow}"}) replaceAll(url, k, std::to_string(yy));
