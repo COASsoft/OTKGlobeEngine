@@ -4,13 +4,20 @@
 #include "core/math.hpp"
 #include "elevation/quantized_mesh.hpp"
 #include "gdal/gdal_sources.hpp"
+#include "net/http.hpp"
+#include "raster/tile_cache.hpp"
 #include "raster/vector_tile.hpp"
 #include "raster/tile_provider.hpp"
 
 #include "ote/image.hpp"
 
+#include <nlohmann/json.hpp>
+
 #include <algorithm>
+#include <array>
+#include <atomic>
 #include <chrono>
+#include <mutex>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
