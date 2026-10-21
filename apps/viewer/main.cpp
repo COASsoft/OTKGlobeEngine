@@ -146,6 +146,8 @@ struct ViewerState {
 ViewerState* state = nullptr;
 FILE* logFile = nullptr;
 
+void openPath(const std::string& path);
+
 void fileLog(const char* tag, uint32_t level, uint32_t item, const char* msg, uint32_t line, const char* file, void*) {
     if (!logFile) return;
     std::fprintf(logFile, "[%s] level %u item %u line %u %s: %s\n", tag ? tag : "", level, item, line, file ? file : "",
