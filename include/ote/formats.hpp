@@ -59,4 +59,8 @@ std::vector<std::uint8_t> exportBytes(const std::vector<Feature>& features, cons
 
 std::string formatsMarkdown();
 
+std::string registerIconset(const std::string& zipOrDirectory);
+std::shared_ptr<const Image> iconsetImage(const std::string& iconsetPath);
+void clearIconsets();
+
 }
