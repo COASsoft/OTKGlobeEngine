@@ -649,6 +649,22 @@ std::vector<Feature> parseShapefile(const std::filesystem::path& path) {
     std::vector<Feature> out;
     std::vector<std::uint8_t> b = readAll(path);
     if (b.size() < 100 || be32(&b[0]) != 9994) return out;
+    std::filesystem::path prjPath = path;
+    prjPath.replace_extension(".prj");
+    std::vector<std::uint8_t> prjBytes = readAll(prjPath);
+    PrjTransform prj;
+    if (!prjBytes.empty()) {
+        prj = parsePrj(std::string(prjBytes.begin(), prjBytes.end()));
+        if (prj.kind == PrjTransform::Kind::Unsupported && gdalAvailable()) {
+            std::u8string u = path.u8string();
+            return parseWithOgr(std::string(u.begin(), u.end()));
+        }
+    }
+    auto coord = [&prj](double x, double y) {
+        Coord c{y, x, 0};
+        if (prj.projected()) prj.inverse(x, y, c.lat, c.lon);
+        return c;
+    };
     std::filesystem::path dbf = path;
     dbf.replace_extension(".dbf");
     DbfTable table = readDbf(dbf);
