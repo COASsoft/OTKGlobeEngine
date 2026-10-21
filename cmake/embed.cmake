@@ -1,9 +1,14 @@
 function(otk_embed target symbol file)
     get_filename_component(abs "${file}" ABSOLUTE)
     set(out "${CMAKE_CURRENT_BINARY_DIR}/embed/${symbol}.cpp")
+    if(MSVC)
+        set(mode ARRAY)
+    else()
+        set(mode STRING)
+    endif()
     add_custom_command(
         OUTPUT "${out}"
-        COMMAND ${CMAKE_COMMAND} -DIN=${abs} -DOUT=${out} -DSYMBOL=${symbol} -P "${PROJECT_SOURCE_DIR}/cmake/embed_run.cmake"
+        COMMAND ${CMAKE_COMMAND} -DIN=${abs} -DOUT=${out} -DSYMBOL=${symbol} -DMODE=${mode} -P "${PROJECT_SOURCE_DIR}/cmake/embed_run.cmake"
         DEPENDS "${abs}" "${PROJECT_SOURCE_DIR}/cmake/embed_run.cmake"
         COMMENT "embed ${symbol}"
         VERBATIM)
