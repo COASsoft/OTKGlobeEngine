@@ -359,6 +359,46 @@ int main() {
                   std::abs(dj["materials"][0]["pbrMetallicRoughness"]["baseColorFactor"][1].get<double>() - 1.0) < 1e-6;
         }
         check(dok, "collada z-up inches with node transform converts to glTF");
+
+        std::string texDae =
+            "<COLLADA><asset><unit meter=\"1\"/><up_axis>Z_UP</up_axis></asset>"
+            "<library_images><image id=\"img\"><init_from>../images/tex.png</init_from></image></library_images>"
+            "<library_effects><effect id=\"fx\"><profile_COMMON>"
+            "<newparam sid=\"surf\"><surface type=\"2D\"><init_from>img</init_from></surface></newparam>"
+            "<newparam sid=\"samp\"><sampler2D><source>surf</source></sampler2D></newparam>"
+            "<technique sid=\"c\"><lambert><diffuse><texture texture=\"samp\" texcoord=\"UV\"/></diffuse></lambert></technique>"
+            "</profile_COMMON></effect></library_effects>"
+            "<library_materials><material id=\"mat\"><instance_effect url=\"#fx\"/></material></library_materials>"
+            "<library_geometries><geometry id=\"g\"><mesh>"
+            "<source id=\"p\"><float_array count=\"9\">0 0 0 10 0 0 0 10 0</float_array><technique_common><accessor count=\"3\" stride=\"3\"/></technique_common></source>"
+            "<source id=\"t\"><float_array count=\"6\">0 0 1 0 0 1</float_array><technique_common><accessor count=\"3\" stride=\"2\"/></technique_common></source>"
+            "<vertices id=\"v\"><input semantic=\"POSITION\" source=\"#p\"/></vertices>"
+            "<triangles count=\"1\" material=\"sym\"><input semantic=\"VERTEX\" source=\"#v\" offset=\"0\"/>"
+            "<input semantic=\"TEXCOORD\" source=\"#t\" offset=\"1\" set=\"0\"/><p>0 0 1 1 2 2</p></triangles>"
+            "</mesh></geometry></library_geometries>"
+            "<library_visual_scenes><visual_scene id=\"s\"><node>"
+            "<instance_geometry url=\"#g\"><bind_material><technique_common><instance_material symbol=\"sym\" target=\"#mat\"/></technique_common></bind_material>"
+            "</instance_geometry></node></visual_scene></library_visual_scenes><scene><instance_visual_scene url=\"#s\"/></scene></COLLADA>";
+        std::string modelKml =
+            "<kml><Placemark><name>Tower</name><Model><altitudeMode>relativeToGround</altitudeMode>"
+            "<Location><longitude>-122.9</longitude><latitude>47.04</latitude><altitude>5</altitude></Location>"
+            "<Orientation><heading>45</heading><tilt>0</tilt><roll>0</roll></Orientation><Scale><x>2</x><y>2</y><z>2</z></Scale>"
+            "<Link><href>models/tower.dae</href></Link></Model></Placemark></kml>";
+        auto kmzPath = (std::filesystem::temp_directory_path() / "ote_model.kmz").string();
+        std::filesystem::remove(kmzPath);
+        mz_zip_add_mem_to_archive_file_in_place(kmzPath.c_str(), "doc.kml", modelKml.data(), modelKml.size(), nullptr, 0, MZ_BEST_COMPRESSION);
+        mz_zip_add_mem_to_archive_file_in_place(kmzPath.c_str(), "models/tower.dae", texDae.data(), texDae.size(), nullptr, 0, MZ_BEST_COMPRESSION);
+        mz_zip_add_mem_to_archive_file_in_place(kmzPath.c_str(), "images/tex.png", pngBytes.data(), pngBytes.size(), nullptr, 0, MZ_BEST_COMPRESSION);
+        ImportResult kmzModel = importData(kmzPath);
+        bool mok = kmzModel.data.models.size() == 1;
+        if (mok) {
+            const ModelInstance& m = kmzModel.data.models[0];
+            nlohmann::json mj = glbJson(m.glb);
+            mok = m.name == "Tower" && std::abs(m.placement.position.lat - 47.04) < 1e-9 && std::abs(m.placement.position.lon + 122.9) < 1e-9 &&
+                  m.placement.altitudeMode == AltitudeMode::RelativeToGround && std::abs(m.placement.heading - 45) < 1e-9 &&
+                  std::abs(m.placement.scale - 2) < 1e-9 && mj.is_object() && mj.contains("images") && mj["images"].size() == 1;
+        }
+        check(mok, "kmz model placemark with collada and texture");
     }
 
     {
