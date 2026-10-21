@@ -972,7 +972,7 @@ void event(const sapp_event* e) {
 void parseArgs(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
-        if (a.rfind("--", 0) != 0) {
+        if (!a.empty() && a[0] != '-') {
             state->openPaths.push_back(a);
             continue;
         }
