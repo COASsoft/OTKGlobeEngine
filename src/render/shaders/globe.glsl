@@ -23,6 +23,7 @@ out float light;
 out float elev;
 out float lodw;
 out float morphw;
+out float sgain;
 
 void main() {
     vec3 p = position;
