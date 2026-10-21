@@ -41,6 +41,7 @@
 #include "vector.glsl.h"
 #include "sky.glsl.h"
 #include "surface.glsl.h"
+#include "snapshot.glsl.h"
 
 #include "core/astro.hpp"
 
