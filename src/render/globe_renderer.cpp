@@ -1405,6 +1405,16 @@ void GlobeRenderer::processLoads() {
             failed_.erase(t.id);
             failCount_.erase(t.id);
         } else if (t.ok) {
+            if (t.id.layer >= 0 && t.id.layer < static_cast<int>(layerOpacity_.size()) && !t.rgba.empty()) {
+                size_t samples = 0, opaque = 0;
+                for (size_t a = 3; a < t.rgba.size(); a += 4 * 61) {
+                    ++samples;
+                    if (t.rgba[a] >= 128) ++opaque;
+                }
+                const float f = samples ? static_cast<float>(opaque) / static_cast<float>(samples) : 1.0f;
+                float& o = layerOpacity_[t.id.layer];
+                o = o < 0.0f ? f : o * 0.8f + f * 0.2f;
+            }
             sg_image_desc d{};
             d.width = t.width;
             d.height = t.height;
