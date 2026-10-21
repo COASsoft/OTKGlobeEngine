@@ -1,4 +1,5 @@
 #include "formats/adapters.hpp"
+#include "ote/navigation.hpp"
 
 #include <pugixml.hpp>
 
