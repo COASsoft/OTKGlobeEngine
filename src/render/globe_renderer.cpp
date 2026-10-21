@@ -907,6 +907,95 @@ GlobeRenderer::SurfaceTile GlobeRenderer::freshSurface() {
     return s;
 }
 
+bool GlobeRenderer::ensureSnapshotTarget(int width, int height) {
+    if (width <= 0 || height <= 0) return false;
+    if (snapshotWidth_ == width && snapshotHeight_ == height && snapshotTexture_.id) return true;
+    dropSnapshotTarget();
+    const sg_desc desc = sg_query_desc();
+    const sg_pixel_format color = desc.environment.defaults.color_format;
+    const sg_pixel_format depth = desc.environment.defaults.depth_format;
+    const int samples = std::max(1, desc.environment.defaults.sample_count);
+    sg_image_desc id{};
+    id.width = width;
+    id.height = height;
+    id.pixel_format = color;
+    id.sample_count = 1;
+    if (samples > 1) id.usage.resolve_attachment = true;
+    else id.usage.color_attachment = true;
+    snapshotImage_ = sg_make_image(&id);
+    if (samples > 1) {
+        sg_image_desc md{};
+        md.usage.color_attachment = true;
+        md.width = width;
+        md.height = height;
+        md.pixel_format = color;
+        md.sample_count = samples;
+        snapshotMsaa_ = sg_make_image(&md);
+        sg_view_desc cv{};
+        cv.color_attachment.image = snapshotMsaa_;
+        snapshotColor_ = sg_make_view(&cv);
+        sg_view_desc rv{};
+        rv.resolve_attachment.image = snapshotImage_;
+        snapshotResolve_ = sg_make_view(&rv);
+    } else {
+        sg_view_desc cv{};
+        cv.color_attachment.image = snapshotImage_;
+        snapshotColor_ = sg_make_view(&cv);
+    }
+    if (depth != SG_PIXELFORMAT_NONE) {
+        sg_image_desc dd{};
+        dd.usage.depth_stencil_attachment = true;
+        dd.width = width;
+        dd.height = height;
+        dd.pixel_format = depth;
+        dd.sample_count = samples;
+        snapshotDepth_ = sg_make_image(&dd);
+        sg_view_desc dv{};
+        dv.depth_stencil_attachment.image = snapshotDepth_;
+        snapshotDepthView_ = sg_make_view(&dv);
+    }
+    sg_view_desc tv{};
+    tv.texture.image = snapshotImage_;
+    snapshotTexture_ = sg_make_view(&tv);
+    snapshotWidth_ = width;
+    snapshotHeight_ = height;
+    const bool ok = sg_query_view_state(snapshotTexture_) == SG_RESOURCESTATE_VALID &&
+                    sg_query_view_state(snapshotColor_) == SG_RESOURCESTATE_VALID &&
+                    (samples == 1 || sg_query_view_state(snapshotResolve_) == SG_RESOURCESTATE_VALID) &&
+                    (depth == SG_PIXELFORMAT_NONE || sg_query_view_state(snapshotDepthView_) == SG_RESOURCESTATE_VALID);
+    if (!ok) dropSnapshotTarget();
+    return ok;
+}
+
+void GlobeRenderer::dropSnapshotTarget() {
+    for (sg_view* v : {&snapshotColor_, &snapshotResolve_, &snapshotDepthView_, &snapshotTexture_}) {
+        if (v->id) sg_destroy_view(*v);
+        *v = sg_view{};
+    }
+    for (sg_image* i : {&snapshotImage_, &snapshotMsaa_, &snapshotDepth_}) {
+        if (i->id) sg_destroy_image(*i);
+        *i = sg_image{};
+    }
+    snapshotWidth_ = 0;
+    snapshotHeight_ = 0;
+    snapshotShown_ = false;
+}
+
+void GlobeRenderer::drawSnapshot(float alpha) {
+    if (!snapshotTexture_.id || alpha <= 0.0f) return;
+    sg_apply_pipeline(snapshotPipeline_);
+    sg_bindings b{};
+    b.vertex_buffers[0] = skyBuffer_;
+    b.views[VIEW_tex] = snapshotTexture_;
+    b.samplers[SMP_smp] = imagerySampler_;
+    sg_apply_bindings(&b);
+    snapshot_params_t p{};
+    p.params[0] = alpha;
+    p.params[1] = flipSurface_ ? 1.0f : 0.0f;
+    sg_apply_uniforms(UB_snapshot_params, SG_RANGE(p));
+    sg_draw(0, 3, 1);
+}
+
 GlobeRenderer::NodeInfo GlobeRenderer::info(const Camera& cam, const QuadKey& k) const {
     NodeInfo ni;
     Bounds b = bounds(k);
