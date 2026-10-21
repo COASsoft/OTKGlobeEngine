@@ -25,6 +25,18 @@ struct VectorLabel {
     float size = 12.0f;
 };
 
+enum class MarkType : std::uint8_t { Road, Shield, Place, Park, Water, Waterway };
+
+enum class RoadClass : std::uint8_t { Motorway, MotorwayLink, Trunk, TrunkLink, Primary, Secondary, Tertiary, Minor, Service, Path, Tunnel, MinorTunnel };
+
+struct TileMark {
+    MarkType type = MarkType::Place;
+    std::uint8_t rank = 0;
+    std::string text;
+    std::string network;
+    std::vector<std::array<double, 2>> points;
+};
+
 struct VectorTile {
     std::vector<VectorLabel> labels;
     std::vector<VectorShape> fills;
@@ -34,9 +46,14 @@ struct VectorTile {
     double originLat = 0;
     std::vector<float> fillVertices;
     std::vector<float> lineVertices;
+    bool overlay = false;
+    std::vector<float> roads;
+    std::vector<TileMark> marks;
 };
 
 std::shared_ptr<VectorTile> decodeVectorTile(const std::vector<std::uint8_t>& data, int z, int x, int y);
+std::shared_ptr<VectorTile> decodeOverlayTile(const std::vector<std::uint8_t>& data, int z, int x, int y);
+std::string shortRoadName(const std::string& name);
 bool looksLikeVectorTile(const std::vector<std::uint8_t>& data);
 std::vector<std::uint8_t> gunzip(const std::vector<std::uint8_t>& data);
 
