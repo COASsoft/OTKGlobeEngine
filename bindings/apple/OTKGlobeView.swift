@@ -166,6 +166,10 @@ public final class OTKGlobeView: OTEPlatformView, MTKViewDelegate {
     public func addContoursInView(interval: Double, majorEvery: Int32 = 5) -> Int32 { otk_add_contours_in_view(engine, interval, majorEvery, 0) }
     public func setTerrainSlope(_ enabled: Bool) { otk_set_terrain_slope(engine, enabled ? 1 : 0, 0.6, 45) }
     public func setGridType(_ type: otk_grid_type) { otk_set_grid_type(engine, type) }
+    public var labels: Bool {
+        get { otk_labels(engine) != 0 }
+        set { otk_set_labels(engine, newValue ? 1 : 0) }
+    }
     public static func formatCoordinate(lat: Double, lon: Double, format: otk_coordinate_format, precision: Int32 = -1) -> String {
         var buffer = [CChar](repeating: 0, count: 128)
         otk_format_coordinate(lat, lon, format, precision, &buffer, Int32(buffer.count))
