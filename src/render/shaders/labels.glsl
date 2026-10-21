@@ -44,11 +44,8 @@ void main() {
 @end
 
 @fs bline_fs
-layout(binding=1) uniform bline_shade {
-    vec4 tint;
-};
-
 in vec4 color;
+in vec4 edge;
 in vec4 dist;
 in vec2 dash;
 out vec4 frag_color;
@@ -56,9 +53,9 @@ out vec4 frag_color;
 void main() {
     float d = abs(dist.x);
     float inner = color.a * clamp(dist.z + 0.5 - d, 0.0, 1.0);
-    float outer = tint.a * clamp(dist.z + dist.w + 0.5 - d, 0.0, 1.0);
+    float outer = edge.a * clamp(dist.z + dist.w + 0.5 - d, 0.0, 1.0);
     float a = inner + outer * (1.0 - inner);
-    vec3 rgb = a > 0.0 ? (color.rgb * inner + tint.rgb * outer * (1.0 - inner)) / a : color.rgb;
+    vec3 rgb = a > 0.0 ? (color.rgb * inner + edge.rgb * outer * (1.0 - inner)) / a : color.rgb;
     if (dash.x > 0.0) {
         float t = mod(dist.y, dash.x + dash.y);
         a *= clamp(min(t, dash.x - t) + 0.5, 0.0, 1.0);
