@@ -545,8 +545,12 @@ void Engine::setSunLighting(bool enabled, double unixSeconds) {
 
 std::uint64_t Engine::addTileset(const std::string& path, const TilesetOptions& options) {
     Vec3 c;
-    std::uint64_t id = impl_->globe.addTileset(path, options, &c);
-    if (id) impl_->tilesetCenters[id] = c;
+    double radius = 0;
+    std::uint64_t id = impl_->globe.addTileset(path, options, &c, &radius);
+    if (id) {
+        impl_->tilesetCenters[id] = c;
+        impl_->tilesetRadii[id] = radius;
+    }
     impl_->dirty = true;
     return id;
 }
@@ -554,13 +558,18 @@ std::uint64_t Engine::addTileset(const std::string& path, const TilesetOptions& 
 std::uint64_t Engine::addPointCloud(const std::string& path, std::size_t maxPoints, float size) {
     PointCloudInfo info;
     std::uint64_t id = impl_->globe.points().add(path, maxPoints, size, &info);
-    if (id) impl_->tilesetCenters[id | (1ull << 63)] =
-        geodeticToEcef((info.south + info.north) * 0.5, (info.west + info.east) * 0.5, (info.minHeight + info.maxHeight) * 0.5);
+    if (id) {
+        impl_->tilesetCenters[id | (1ull << 63)] =
+            geodeticToEcef((info.south + info.north) * 0.5, (info.west + info.east) * 0.5, (info.minHeight + info.maxHeight) * 0.5);
+        impl_->pointCloudRegions[id] = {info.west, info.south, info.east, info.north};
+    }
     impl_->dirty = true;
     return id;
 }
 
 bool Engine::removePointCloud(std::uint64_t id) {
+    impl_->tilesetCenters.erase(id | (1ull << 63));
+    impl_->pointCloudRegions.erase(id);
     impl_->dirty = true;
     return impl_->globe.points().remove(id);
 }
