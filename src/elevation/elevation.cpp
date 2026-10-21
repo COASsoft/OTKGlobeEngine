@@ -156,7 +156,11 @@ private:
         if (!inner_ && now < retryAt_) return nullptr;
         retryAt_ = now + 10.0;
         net::Headers headers(layer_.headers.begin(), layer_.headers.end());
-        std::string url = layer_.url;
+        std::string url = layer_.url.empty() ? layer_.path : layer_.url;
+        if (!url.empty() && url.find("://") == std::string::npos) {
+            std::replace(url.begin(), url.end(), '\\', '/');
+            url = "file://" + url;
+        }
         std::string query;
         std::string base;
         std::string templ;
