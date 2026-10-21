@@ -668,31 +668,14 @@ bool Engine::pointCloudRegion(std::uint64_t id, Region& out) const {
 }
 
 bool Engine::featuresRegion(const std::vector<std::uint64_t>& ids, Region& out) const {
-    double south = 90, north = -90, west = 180, east = -180, westShifted = 360, eastShifted = 0;
-    bool any = false;
+    RegionBuilder bounds;
     Feature f;
     for (std::uint64_t id : ids) {
         if (!impl_->globe.features().get(id, f)) continue;
         for (const Geometry& g : f.geometries)
-            for (const Coord& p : g.points) {
-                if (!std::isfinite(p.lat) || !std::isfinite(p.lon)) continue;
-                any = true;
-                south = std::min(south, p.lat);
-                north = std::max(north, p.lat);
-                west = std::min(west, p.lon);
-                east = std::max(east, p.lon);
-                double shifted = p.lon < 0 ? p.lon + 360.0 : p.lon;
-                westShifted = std::min(westShifted, shifted);
-                eastShifted = std::max(eastShifted, shifted);
-            }
+            for (const Coord& p : g.points) bounds.add(p.lat, p.lon);
     }
-    if (!any) return false;
-    if (eastShifted - westShifted < east - west) {
-        west = westShifted > 180.0 ? westShifted - 360.0 : westShifted;
-        east = eastShifted > 180.0 ? eastShifted - 360.0 : eastShifted;
-    }
-    out = {west, south, east, north};
-    return true;
+    return bounds.get(out);
 }
 
 View Engine::viewForRegion(const Region& region) const {
