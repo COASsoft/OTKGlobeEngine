@@ -61,8 +61,7 @@ bool pmtilesElevation(const std::string& path, const std::string& name, HeightEn
         return true;
     }
     return containsAny(meta, {"terrarium"}) || hasWord(meta, {"elevation", "dem", "dtm", "heightmap"}) ||
-           hasWord(std::filesystem::u8path(name).stem().u8string().empty() ? name : name,
-                   {"dem", "dtm", "dsm", "srtm", "elevation", "elev", "heightmap", "terrarium", "heights"});
+           hasWord(name, {"dem", "dtm", "dsm", "srtm", "elevation", "elev", "heightmap", "terrarium", "heights"});
 }
 
 }
