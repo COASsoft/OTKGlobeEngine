@@ -309,6 +309,58 @@ int main() {
     }
 
     {
+        auto glbJson = [](const std::vector<std::uint8_t>& glb) {
+            if (glb.size() < 20 || std::memcmp(glb.data(), "glTF", 4) != 0) return nlohmann::json();
+            std::uint32_t len = 0;
+            std::memcpy(&len, glb.data() + 12, 4);
+            return nlohmann::json::parse(glb.begin() + 20, glb.begin() + 20 + len, nullptr, false);
+        };
+        std::vector<std::uint8_t> pixels(4 * 4 * 4, 200);
+        size_t pngSize = 0;
+        void* png = tdefl_write_image_to_png_file_in_memory(pixels.data(), 4, 4, 4, &pngSize);
+        std::vector<std::uint8_t> pngBytes(static_cast<std::uint8_t*>(png), static_cast<std::uint8_t*>(png) + pngSize);
+        mz_free(png);
+        std::string mtl = "newmtl skin\nKd 1 0 0\nmap_Kd tex/skin.png\n";
+        std::string obj = "mtllib quad.mtl\nv 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nvt 0 0\nvt 1 0\nvt 1 1\nvt 0 1\nusemtl skin\nf 1/1 2/2 3/3 4/4\n";
+        AssetReader read = [&](const std::string& f) {
+            if (f == "quad.mtl") return std::vector<std::uint8_t>(mtl.begin(), mtl.end());
+            if (f == "tex/skin.png") return pngBytes;
+            return std::vector<std::uint8_t>{};
+        };
+        std::vector<std::uint8_t> glb = objToGlb(obj, read);
+        nlohmann::json j = glbJson(glb);
+        CpuModel cpu;
+        bool parsed = !glb.empty() && parseGltf(glb.data(), glb.size(), "quad.glb", {}, cpu);
+        bool ok = parsed && j.is_object() && j["accessors"][0]["count"] == 4 && j["accessors"][j["meshes"][0]["primitives"][0]["indices"].get<int>()]["count"] == 6 &&
+                  j.contains("images") && j["images"].size() == 1 && cpu.images.size() == 1;
+        check(ok, "obj with mtl and texture converts to glTF");
+
+        std::string dae =
+            "<COLLADA><asset><unit meter=\"0.0254\"/><up_axis>Z_UP</up_axis></asset>"
+            "<library_effects><effect id=\"fx\"><profile_COMMON><technique sid=\"c\"><lambert><diffuse><color>0 1 0 1</color></diffuse></lambert></technique>"
+            "</profile_COMMON></effect></library_effects>"
+            "<library_materials><material id=\"mat\"><instance_effect url=\"#fx\"/></material></library_materials>"
+            "<library_geometries><geometry id=\"g\"><mesh>"
+            "<source id=\"p\"><float_array count=\"9\">0 0 0 10 0 0 0 10 0</float_array><technique_common><accessor count=\"3\" stride=\"3\"/></technique_common></source>"
+            "<vertices id=\"v\"><input semantic=\"POSITION\" source=\"#p\"/></vertices>"
+            "<triangles count=\"1\" material=\"sym\"><input semantic=\"VERTEX\" source=\"#v\" offset=\"0\"/><p>0 1 2</p></triangles>"
+            "</mesh></geometry></library_geometries>"
+            "<library_visual_scenes><visual_scene id=\"s\"><node><translate>0 0 5</translate>"
+            "<instance_geometry url=\"#g\"><bind_material><technique_common><instance_material symbol=\"sym\" target=\"#mat\"/></technique_common></bind_material>"
+            "</instance_geometry></node></visual_scene></library_visual_scenes><scene><instance_visual_scene url=\"#s\"/></scene></COLLADA>";
+        std::vector<std::uint8_t> dglb = colladaToGlb(dae, {});
+        nlohmann::json dj = glbJson(dglb);
+        bool dok = dj.is_object() && dj["accessors"][0]["count"] == 3;
+        if (dok) {
+            auto mn = dj["accessors"][0]["min"], mx = dj["accessors"][0]["max"];
+            dok = std::abs(mn[0].get<double>()) < 1e-6 && std::abs(mn[1].get<double>() - 0.127) < 1e-6 && std::abs(mn[2].get<double>() + 0.254) < 1e-6 &&
+                  std::abs(mx[0].get<double>() - 0.254) < 1e-6 && std::abs(mx[1].get<double>() - 0.127) < 1e-6 && std::abs(mx[2].get<double>()) < 1e-6 &&
+                  std::abs(dj["materials"][0]["pbrMetallicRoughness"]["baseColorFactor"][1].get<double>() - 1.0) < 1e-6;
+        }
+        check(dok, "collada z-up inches with node transform converts to glTF");
+    }
+
+    {
         std::string wms = "<customWmsMapSource><name>W</name><url>https://h/wms</url><layers>a</layers></customWmsMapSource>";
         check(detectFormat(std::vector<std::uint8_t>(wms.begin(), wms.end()), "w.xml") == "mobac", "mobac wms source detection");
         std::string lj = "{\"tilejson\":\"2.1.0\",\"format\":\"quantized-mesh-1.0\",\"tiles\":[\"{z}/{x}/{y}.terrain\"]}";
