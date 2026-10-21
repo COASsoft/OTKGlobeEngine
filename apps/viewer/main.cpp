@@ -689,8 +689,11 @@ void showStatus(const std::string& s) {
     std::fflush(stdout);
 }
 
-void zoomTo(const ote::Region& region, double tilt) {
+void zoomTo(ote::Region region, double tilt, double padMeters = 0.0) {
     if (state->viewGiven) return;
+    const double dLat = padMeters / 110574.0;
+    const double dLon = padMeters / (111320.0 * std::max(std::cos(0.5 * (region.south + region.north) * 3.14159265358979323846 / 180.0), 0.01));
+    region = {region.west - dLon, region.south - dLat, region.east + dLon, region.north + dLat};
     ote::View v = state->engine.viewForRegion(region);
     v.tilt = tilt;
     if (state->shotPath.empty()) state->engine.flyTo(v, 2.5);
@@ -812,11 +815,11 @@ void openPath(const std::string& path) {
         ote::ModelPlacement m;
         m.position = {v.lat, v.lon, 0};
         std::uint64_t mid = eng.addModel(path, m);
-        if (mid) zoomTo({v.lon, v.lat, v.lon, v.lat}, 60.0);
+        if (mid) zoomTo({v.lon, v.lat, v.lon, v.lat}, 60.0, 250.0);
         showStatus(mid ? "Model " + name + " placed at the view centre" : "Could not open " + name);
     } else if (info && (info->kind == ote::DataKind::Vector || id == "tak-package")) {
         ote::LoadedData d = eng.loadData(path);
-        if (d.hasRegion) zoomTo(d.region, d.models.empty() ? 0.0 : 60.0);
+        if (d.hasRegion) zoomTo(d.region, d.models.empty() ? 0.0 : 60.0, d.models.empty() ? 0.0 : 250.0);
         std::string what = std::to_string(d.features.size()) + " features";
         if (!d.overlays.empty()) what += ", " + std::to_string(d.overlays.size()) + " overlays";
         if (!d.models.empty()) what += ", " + std::to_string(d.models.size()) + " models";
