@@ -586,6 +586,7 @@ void frame() {
         }
     }
     state->titleTimer += sapp_frame_duration();
+    state->statusTime = std::max(0.0, state->statusTime - sapp_frame_duration());
     if (state->titleTimer > 0.5) {
         state->titleTimer = 0;
         ote::Stats s = state->engine.stats();
