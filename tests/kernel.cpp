@@ -82,10 +82,15 @@ int main() {
     ImportPlan mobac = planImport(data("mobac_multilayer_wms.xml"));
     check(mobac.target == ImportTarget::Imagery && mobac.imagery.size() == 2, "import plan for a mobac source");
     check(planImport(data("pyramid.gltf")).target == ImportTarget::Model, "import plan for a model");
-    check(planImport(data("tiles3d")).target == ImportTarget::Tileset || planImport(data("tiles3d")).target == ImportTarget::Elevation,
-          "import plan for a folder");
-    auto dir = std::filesystem::temp_directory_path() / "ote_kernel_terrain";
     std::error_code ec;
+    auto tileset = std::filesystem::temp_directory_path() / "ote_kernel_tileset";
+    std::filesystem::create_directories(tileset, ec);
+    std::ofstream(tileset / "tileset.json") << R"({"asset":{"version":"1.0"},"geometricError":10,"root":{"geometricError":0}})";
+    ImportPlan ts = planImport(tileset.string());
+    check(ts.target == ImportTarget::Tileset && ts.resource.size() > 12 && ts.resource.substr(ts.resource.size() - 12) == "tileset.json",
+          "import plan for a 3d tiles folder");
+    std::filesystem::remove_all(tileset, ec);
+    auto dir = std::filesystem::temp_directory_path() / "ote_kernel_terrain";
     std::filesystem::create_directories(dir, ec);
     std::ofstream(dir / "layer.json") << R"({"format":"quantized-mesh-1.0","tiles":["{z}/{x}/{y}.terrain"]})";
     ImportPlan terrain = planImport(dir.string());
