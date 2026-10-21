@@ -406,6 +406,8 @@ int main() {
         check(detectFormat(std::vector<std::uint8_t>(wms.begin(), wms.end()), "w.xml") == "mobac", "mobac wms source detection");
         std::string lj = "{\"tilejson\":\"2.1.0\",\"format\":\"quantized-mesh-1.0\",\"tiles\":[\"{z}/{x}/{y}.terrain\"]}";
         check(detectFormat(std::vector<std::uint8_t>(lj.begin(), lj.end()), "layer.json") == "quantized-mesh", "cesium layer.json detection");
+        std::string pm = std::string("PMTiles\x03", 8) + std::string(119, '\0');
+        check(detectFormat(std::vector<std::uint8_t>(pm.begin(), pm.end()), "archive.bin") == "pmtiles", "pmtiles detection by content");
     }
 
     {
