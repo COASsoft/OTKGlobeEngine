@@ -313,6 +313,11 @@ namespace OTKGlobeEngine
             Native.otk_frame_xr(Handle, views, views.Length, targetWidth, targetHeight, dpiScale);
         public bool Terrain { set => Native.otk_set_terrain(Handle, value ? 1 : 0); }
         public bool Grid { set => Native.otk_set_grid(Handle, value ? 1 : 0); }
+        public bool Labels
+        {
+            get => Native.otk_labels(Handle) != 0;
+            set => Native.otk_set_labels(Handle, value ? 1 : 0);
+        }
 
         public View View
         {
