@@ -82,6 +82,8 @@ int main() {
     ImportPlan pm = planImport(data("dem-1234-z10.pmtiles"));
     check(pm.target == ImportTarget::Elevation && pm.elevation.size() == 1 && pm.elevation[0].type == ElevationType::PMTiles,
           "import plan for a pmtiles dem");
+    check(pm.hasRegion && pm.region.south < 44.928 && pm.region.north > 44.928 && pm.region.west < -111.0885 && pm.region.east > -111.0885,
+          "pmtiles extent from the header");
     ImportPlan mobac = planImport(data("mobac_multilayer_wms.xml"));
     check(mobac.target == ImportTarget::Imagery && mobac.imagery.size() == 2, "import plan for a mobac source");
     check(planImport(data("pyramid.gltf")).target == ImportTarget::Model, "import plan for a model");
@@ -95,11 +97,12 @@ int main() {
     std::filesystem::remove_all(tileset, ec);
     auto dir = std::filesystem::temp_directory_path() / "ote_kernel_terrain";
     std::filesystem::create_directories(dir, ec);
-    std::ofstream(dir / "layer.json") << R"({"format":"quantized-mesh-1.0","tiles":["{z}/{x}/{y}.terrain"]})";
+    std::ofstream(dir / "layer.json") << R"({"format":"quantized-mesh-1.0","tiles":["{z}/{x}/{y}.terrain"],"bounds":[-123,46,-122,47]})";
     ImportPlan terrain = planImport(dir.string());
     check(terrain.target == ImportTarget::Elevation && terrain.elevation.size() == 1 &&
               terrain.elevation[0].type == ElevationType::QuantizedMesh,
           "import plan for a cesium terrain folder");
+    check(terrain.hasRegion && terrain.region.west == -123 && terrain.region.north == 47, "cesium terrain extent from layer.json");
     std::filesystem::remove_all(dir, ec);
     ImportPlan missing = planImport(data("does-not-exist.kml"));
     check(missing.target == ImportTarget::Unsupported && !missing.message.empty(), "import plan for a missing file");

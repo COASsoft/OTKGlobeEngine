@@ -1,13 +1,20 @@
 #include "ote/importer.hpp"
 
+#include "db/sqlite.hpp"
 #include "gdal/gdal_sources.hpp"
 #include "ote/formats.hpp"
 #include "raster/pmtiles.hpp"
 
+#include <json.hpp>
+
 #include <algorithm>
 #include <cctype>
+#include <cmath>
+#include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <initializer_list>
+#include <iterator>
 
 namespace ote {
 
@@ -62,6 +69,49 @@ bool pmtilesElevation(const std::string& path, const std::string& name, HeightEn
     }
     return containsAny(meta, {"terrarium"}) || hasWord(meta, {"elevation", "dem", "dtm", "heightmap"}) ||
            hasWord(name, {"dem", "dtm", "dsm", "srtm", "elevation", "elev", "heightmap", "terrarium", "heights"});
+}
+
+bool usefulRegion(const Region& r) {
+    return std::isfinite(r.west) && std::isfinite(r.south) && std::isfinite(r.east) && std::isfinite(r.north) && r.north > r.south &&
+           r.north - r.south < 170.0 && r.south >= -90.0 && r.north <= 90.0 && r.west >= -180.0 && r.east <= 180.0;
+}
+
+bool mbtilesRegion(const std::string& path, Region& out) {
+    Database db;
+    if (!db.open(path, true)) return false;
+    Statement st = db.prepare("SELECT value FROM metadata WHERE name = 'bounds'");
+    if (!st.valid() || !st.step()) return false;
+    return std::sscanf(st.text(0).c_str(), "%lf,%lf,%lf,%lf", &out.west, &out.south, &out.east, &out.north) == 4;
+}
+
+bool geopackageRegion(const std::string& path, Region& out) {
+    Database db;
+    if (!db.open(path, true)) return false;
+    Statement st = db.prepare("SELECT min_x, min_y, max_x, max_y, srs_id FROM gpkg_contents WHERE data_type = 'tiles' AND min_x IS NOT NULL");
+    if (!st.valid() || !st.step()) return false;
+    double x0 = st.real(0), y0 = st.real(1), x1 = st.real(2), y1 = st.real(3);
+    const int srs = static_cast<int>(st.real(4));
+    if (srs == 4326) {
+        out = {x0, y0, x1, y1};
+        return true;
+    }
+    if (srs != 3857 && srs != 900913) return false;
+    constexpr double r = 6378137.0, deg = 180.0 / 3.14159265358979323846;
+    auto lat = [&](double y) { return (2.0 * std::atan(std::exp(y / r)) - 3.14159265358979323846 / 2.0) * deg; };
+    out = {x0 / r * deg, lat(y0), x1 / r * deg, lat(y1)};
+    return true;
+}
+
+bool layerJsonRegion(const std::filesystem::path& file, Region& out) {
+    std::ifstream in(file, std::ios::binary);
+    if (!in) return false;
+    std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    nlohmann::json j = nlohmann::json::parse(text, nullptr, false);
+    if (j.is_discarded() || !j.contains("bounds") || !j["bounds"].is_array() || j["bounds"].size() != 4) return false;
+    for (const auto& v : j["bounds"])
+        if (!v.is_number()) return false;
+    out = {j["bounds"][0].get<double>(), j["bounds"][1].get<double>(), j["bounds"][2].get<double>(), j["bounds"][3].get<double>()};
+    return true;
 }
 
 }
@@ -144,6 +194,25 @@ ImportPlan planImport(const std::string& path) {
         plan.target = ImportTarget::Features;
     } else {
         plan.message = info ? info->name + " is not supported for import" : "unknown format";
+    }
+    Region r;
+    bool found = false;
+    if (id == "pmtiles") {
+        if (auto archive = PmTilesArchive::open(path)) {
+            const auto& h = archive->header();
+            r = {h.west, h.south, h.east, h.north};
+            found = true;
+        }
+    } else if (id == "mbtiles") {
+        found = mbtilesRegion(path, r);
+    } else if (id == "gpkg-tiles") {
+        found = geopackageRegion(path, r);
+    } else if (id == "quantized-mesh") {
+        found = layerJsonRegion(folder ? p / "layer.json" : p, r);
+    }
+    if (found && usefulRegion(r)) {
+        plan.region = r;
+        plan.hasRegion = true;
     }
     return plan;
 }

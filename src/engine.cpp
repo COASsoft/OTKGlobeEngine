@@ -464,6 +464,8 @@ OpenResult Engine::open(const std::string& path) {
         std::vector<ImageryLayer> layers = impl_->globe.layers();
         layers.insert(layers.end(), plan.imagery.begin(), plan.imagery.end());
         setLayers(layers);
+        r.region = plan.region;
+        r.hasRegion = plan.hasRegion;
         r.ok = true;
         break;
     }
@@ -472,6 +474,8 @@ OpenResult Engine::open(const std::string& path) {
         std::vector<ElevationLayer> current = elevationLayers();
         layers.insert(layers.end(), current.begin(), current.end());
         setElevation(layers);
+        r.region = plan.region;
+        r.hasRegion = plan.hasRegion;
         r.ok = true;
         break;
     }

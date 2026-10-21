@@ -18,6 +18,8 @@ struct ImportPlan {
     std::vector<ElevationLayer> elevation;
     std::string resource;
     std::string message;
+    Region region;
+    bool hasRegion = false;
 };
 
 ImportPlan planImport(const std::string& path);
