@@ -2523,21 +2523,25 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         for (int e = 0; e < 4; ++e)
             if (coarser[e] > 0) lodUp = lodUp == 0 ? coarser[e] : std::min(lodUp, coarser[e]);
         float lodEdges[4] = {0, 0, 0, 0};
-        if (lodBlend_ && lodUp > 0 && src.level == dt.key.level && !upgrading) {
-            QuadKey got = src;
-            if (blend >= 1.0f) {
-                sg_view pv = view2;
-                float pu[4] = {uvx2[0], uvx2[1], uvx2[2], uvx2[3]};
-                got = source(dt.key, lodUp, pv, pu);
-                if (got.level >= 0 && got.level < src.level) {
-                    view2 = pv;
-                    std::memcpy(uvx2, pu, sizeof(pu));
-                }
+        sg_view view3 = view;
+        float uvx3[4] = {uvx[0], uvx[1], uvx[2], uvx[3]};
+        bool morphing = false;
+        const bool edgeBlend = lodBlend_ && lodUp > 0;
+        const bool morphBlend = lodMorph_ > 0.0 && dt.key.level > kMinLevel;
+        if (src.level == dt.key.level && (edgeBlend || morphBlend)) {
+            const int up = lodUp > 0 ? lodUp : 1;
+            const QuadKey want{dt.key.level - up, dt.key.x >> up, dt.key.y >> up};
+            sg_view pv = view;
+            float pu[4] = {uvx[0], uvx[1], uvx[2], uvx[3]};
+            QuadKey got = source(dt.key, up, pv, pu);
+            if (got.level >= 0 && got.level < src.level) {
+                view3 = pv;
+                std::memcpy(uvx3, pu, sizeof(pu));
+                if (edgeBlend)
+                    for (int e = 0; e < 4; ++e) lodEdges[e] = coarser[e] > 0 ? 1.0f : 0.0f;
+                morphing = morphBlend && got.level == want.level;
             }
-            if (blend < 1.0f || (got.level >= 0 && got.level < src.level))
-                for (int e = 0; e < 4; ++e) lodEdges[e] = coarser[e] > 0 ? 1.0f : 0.0f;
-            QuadKey parent{dt.key.level - lodUp, dt.key.x >> lodUp, dt.key.y >> lodUp};
-            if (blend >= 1.0f && got.level != parent.level && blendParents_.size() < 256) blendParents_.push_back({parent, dt.distance * 2.0});
+            if (got.level != want.level && blendParents_.size() < 256) blendParents_.push_back({want, dt.distance * 2.0});
         }
         if (sg_query_buffer_state(tt.vbuf) != SG_RESOURCESTATE_VALID) {
             ++invalidResources_;
