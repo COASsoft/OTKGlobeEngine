@@ -421,6 +421,9 @@ private:
     double imageryScale_ = 1.0;
     double lodMorph_ = 1.0;
     std::unordered_map<QuadKey, std::pair<double, std::uint64_t>, QuadKeyHash> morphSince_;
+    bool switchHold_ = false;
+    double switchStart_ = 0.0;
+    int switchVersion_ = 0;
     double dpiScale_ = 1.0;
     double exaggeration_ = 1.0;
     bool terrainEnabled_ = true;
