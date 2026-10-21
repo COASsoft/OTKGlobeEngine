@@ -108,7 +108,7 @@ OpenGL on Windows (to check the GL path used on Linux and Android): add `-DOTE_G
 
 Tests: `ctest --test-dir build/windows` runs the unit tests (geodesy, MGRS, tile matrices, camera, geoid, file parsers, quantized mesh); CI runs them on Windows, Linux, macOS, FreeBSD, OpenBSD and NetBSD.
 
-Packages: `cpack --config build/CPackConfig.cmake` makes the platform packages; [docs/RELEASING.md](docs/RELEASING.md) describes a release.
+Packages: `cpack --config build/CPackConfig.cmake` makes the platform packages.
 
 ## Viewer
 
