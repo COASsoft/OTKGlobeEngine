@@ -288,6 +288,18 @@ bool GlobeRenderer::init() {
     mp.depth.pixel_format = SG_PIXELFORMAT_NONE;
     mp.sample_count = 1;
     mipPipeline_ = sg_make_pipeline(&mp);
+    snapshotShader_ = sg_make_shader(snapshot_shader_desc(backend));
+    sg_pipeline_desc np{};
+    np.shader = snapshotShader_;
+    np.layout.attrs[ATTR_snapshot_position].format = SG_VERTEXFORMAT_FLOAT2;
+    np.colors[0].blend.enabled = true;
+    np.colors[0].blend.src_factor_rgb = SG_BLENDFACTOR_SRC_ALPHA;
+    np.colors[0].blend.dst_factor_rgb = SG_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
+    np.colors[0].blend.src_factor_alpha = SG_BLENDFACTOR_ONE;
+    np.colors[0].blend.dst_factor_alpha = SG_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
+    np.depth.compare = SG_COMPAREFUNC_ALWAYS;
+    np.depth.write_enabled = false;
+    snapshotPipeline_ = sg_make_pipeline(&np);
     sg_image_desc sd{};
     sd.usage.color_attachment = true;
     sd.width = kSurfaceSize;
