@@ -427,6 +427,8 @@ std::vector<std::uint64_t> Engine::loadFeatures(const std::string& path) {
         o.opacity = g.opacity;
         addImageOverlay(o);
     }
+    for (const ModelInstance& m : parsed.models)
+        if (impl_->globe.models().addGlb(m.glb, m.placement)) impl_->dirty = true;
     return ids;
 }
 
