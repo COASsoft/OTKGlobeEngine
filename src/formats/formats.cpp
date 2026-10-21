@@ -211,6 +211,7 @@ std::string detectFormat(const std::vector<std::uint8_t>& b, const std::string& 
         if (ext == ".sqlite" || ext == ".sqlitedb") return "osmdroid";
         return "ogr";
     }
+    if (starts("PMTiles")) return "pmtiles";
     if (starts("LASF")) return "las";
     if (starts("glTF")) return "gltf";
     if (starts("b3dm")) return "3dtiles";
