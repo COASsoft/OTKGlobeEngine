@@ -70,7 +70,25 @@ std::vector<Feature> parseCot(const std::vector<std::uint8_t>& bytes, std::vecto
             if (auto s = detail.child("strokeColor")) f.style.strokeColor = cotColor(s, "value");
             if (auto s = detail.child("strokeWeight")) f.style.strokeWidth = s.attribute("value").as_float(2.0f);
             if (auto s = detail.child("fillColor")) f.style.fillColor = cotColor(s, "value");
-            if (auto s = detail.child("color")) f.style.iconColor = cotColor(s, "argb");
+            if (auto s = detail.child("color")) {
+                if (s.attribute("argb")) f.style.iconColor = cotColor(s, "argb");
+                else if (s.attribute("value")) {
+                    f.style.iconColor = cotColor(s, "value");
+                    if (!detail.child("strokeColor")) f.style.strokeColor = f.style.iconColor;
+                }
+            }
+            if (auto s = detail.child("strokeStyle")) {
+                std::string style = s.attribute("value").as_string();
+                if (style == "dashed") {
+                    f.style.dash = 12;
+                    f.style.dashGap = 8;
+                } else if (style == "dotted") {
+                    f.style.dash = 2;
+                    f.style.dashGap = 6;
+                }
+            }
+            if (auto s = detail.child("usericon"))
+                if (auto image = iconsetImage(s.attribute("iconsetpath").as_string())) f.style.iconImage = image;
             if (auto s = detail.child("labels_on")) f.style.showLabel = s.attribute("value").as_bool(true);
             if (auto attrs = detail.child("__ote_attributes"))
                 for (auto a : attrs.children("a")) setAttribute(f, a.attribute("k").as_string(), a.attribute("v").as_string());
