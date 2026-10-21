@@ -5,6 +5,7 @@ add_library(opentakengine STATIC
     net/reachability.cpp
     formats/formats.cpp
     formats/cot.cpp
+    formats/iconsets.cpp
     formats/text_formats.cpp
     formats/exporters.cpp
     formats/package.cpp
