@@ -15,9 +15,11 @@
 #include <sokol_log.h>
 
 #include "ote/engine.hpp"
+#include "ote/formats.hpp"
 #include "shot.hpp"
 #include "watchdog.hpp"
 
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <algorithm>
