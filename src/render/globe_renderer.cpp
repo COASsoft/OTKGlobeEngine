@@ -2574,6 +2574,15 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         vsp.center[0] = static_cast<float>(tt.center.x);
         vsp.center[1] = static_cast<float>(tt.center.y);
         vsp.center[2] = static_cast<float>(tt.center.z);
+        float morphGain = 0.0f;
+        if (morphing) {
+            auto& since = morphSince_[dt.key];
+            if (since.second + 1 < frame_) since.first = tnow;
+            since.second = frame_;
+            const double t = (tnow - since.first) / 0.3;
+            morphGain = t >= 1.0 ? 1.0f : static_cast<float>(t * t * (3 - 2 * t));
+            if (t < 1.0) fading = true;
+        }
         if (morphing) {
             const Vec3 rel = tt.center - eye_;
             vsp.eyerel[0] = static_cast<float>(rel.x);
