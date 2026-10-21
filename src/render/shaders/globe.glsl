@@ -93,7 +93,12 @@ void main() {
     vec2 t2 = vec2(uv2.x, flags.x > 0.5 ? 1.0 - uv2.y : uv2.y);
     vec2 t3 = vec2(uv3.x, flags.x > 0.5 ? 1.0 - uv3.y : uv3.y);
     vec3 own = mix(texture(sampler2D(tex2, smp), t2).rgb, texture(sampler2D(tex, smp), t).rgb, flags.z);
-    vec3 c = mix(texture(sampler2D(tex3, smp), t3).rgb, own, smoothstep(0.0, 1.0, lodw) * (1.0 - morphw));
+    if (morphw > 0.0) {
+        vec3 lowOwn = textureLod(sampler2D(tex, smp), t, 4.0).rgb;
+        vec3 lowParent = textureLod(sampler2D(tex3, smp), t3, 3.0).rgb;
+        own = clamp(own + morphw * (lowParent - lowOwn), 0.0, 1.0);
+    }
+    vec3 c = mix(texture(sampler2D(tex3, smp), t3).rgb, own, smoothstep(0.0, 1.0, lodw));
     c = mix(c, ramp((elev - heat.x) * heat.y), heat.z);
     if (slope.x > 0.0) {
         float cs = clamp(light, 0.0001, 1.0);
