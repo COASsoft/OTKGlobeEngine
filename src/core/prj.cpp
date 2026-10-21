@@ -181,7 +181,7 @@ bool PrjTransform::inverse(double x, double y, double& lat, double& lon) const {
         lon = x;
         return true;
     case Kind::WebMercator:
-        lon = (x - fe) / a / kRad;
+        lon = lon0 + (x - fe) / a / kRad;
         lat = (2 * std::atan(std::exp((y - fn) / a)) - kPi / 2) / kRad;
         return true;
     case Kind::Mercator: {
