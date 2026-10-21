@@ -596,6 +596,80 @@ bool Engine::tilesetCenter(std::uint64_t id, double& lat, double& lon, double& a
     return true;
 }
 
+bool Engine::tilesetRegion(std::uint64_t id, Region& out) const {
+    auto c = impl_->tilesetCenters.find(id);
+    auto r = impl_->tilesetRadii.find(id);
+    if (c == impl_->tilesetCenters.end() || r == impl_->tilesetRadii.end()) return false;
+    GeoPoint g = ecefToGeodetic(c->second);
+    const double dLat = r->second / 110574.0;
+    const double dLon = r->second / (111320.0 * std::max(std::cos(g.lat * kDegToRad), 0.01));
+    if (dLat >= 90.0 || dLon >= 180.0) {
+        out = {-180, -90, 180, 90};
+        return true;
+    }
+    out = {g.lon - dLon, std::max(g.lat - dLat, -90.0), g.lon + dLon, std::min(g.lat + dLat, 90.0)};
+    if (out.west < -180.0) out.west += 360.0;
+    if (out.east > 180.0) out.east -= 360.0;
+    return true;
+}
+
+bool Engine::pointCloudRegion(std::uint64_t id, Region& out) const {
+    auto it = impl_->pointCloudRegions.find(id);
+    if (it == impl_->pointCloudRegions.end()) return false;
+    out = it->second;
+    return true;
+}
+
+bool Engine::featuresRegion(const std::vector<std::uint64_t>& ids, Region& out) const {
+    double south = 90, north = -90, west = 180, east = -180, westShifted = 360, eastShifted = 0;
+    bool any = false;
+    Feature f;
+    for (std::uint64_t id : ids) {
+        if (!impl_->globe.features().get(id, f)) continue;
+        for (const Geometry& g : f.geometries)
+            for (const Coord& p : g.points) {
+                if (!std::isfinite(p.lat) || !std::isfinite(p.lon)) continue;
+                any = true;
+                south = std::min(south, p.lat);
+                north = std::max(north, p.lat);
+                west = std::min(west, p.lon);
+                east = std::max(east, p.lon);
+                double shifted = p.lon < 0 ? p.lon + 360.0 : p.lon;
+                westShifted = std::min(westShifted, shifted);
+                eastShifted = std::max(eastShifted, shifted);
+            }
+    }
+    if (!any) return false;
+    if (eastShifted - westShifted < east - west) {
+        west = westShifted > 180.0 ? westShifted - 360.0 : westShifted;
+        east = eastShifted > 180.0 ? eastShifted - 360.0 : eastShifted;
+    }
+    out = {west, south, east, north};
+    return true;
+}
+
+View Engine::viewForRegion(const Region& region) const {
+    const Camera& c = impl_->camera;
+    double west = region.west, east = region.east;
+    if (east < west) east += 360.0;
+    const double south = std::clamp(std::min(region.south, region.north), -90.0, 90.0);
+    const double north = std::clamp(std::max(region.south, region.north), -90.0, 90.0);
+    const double midLat = 0.5 * (south + north);
+    double midLon = 0.5 * (west + east);
+    if (midLon > 180.0) midLon -= 360.0;
+    const double widthM = (east - west) * 111320.0 * std::max(std::cos(midLat * kDegToRad), 0.01);
+    const double heightM = (north - south) * 110574.0;
+    const double extent = std::max({widthM / std::max(c.width, 1), heightM / std::max(c.height, 1), 300.0 / std::max(std::min(c.width, c.height), 1)});
+    View v;
+    v.lat = midLat;
+    v.lon = midLon;
+    v.alt = 0.0;
+    v.gsd = std::min(extent * 1.2, 40000.0);
+    v.azimuth = 0.0;
+    v.tilt = 0.0;
+    return v;
+}
+
 void Engine::setGridEnabled(bool enabled) {
     impl_->globe.setGrid(enabled);
     impl_->dirty = true;
