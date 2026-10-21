@@ -412,11 +412,49 @@ bool Engine::feature(std::uint64_t id, Feature& out) const { return impl_->globe
 
 std::vector<std::uint64_t> Engine::featureIds() const { return impl_->globe.features().ids(); }
 
-std::vector<std::uint64_t> Engine::loadFeatures(const std::string& path) {
-    std::vector<std::uint64_t> ids;
+std::vector<std::uint64_t> Engine::loadFeatures(const std::string& path) { return loadData(path).features; }
+
+namespace {
+
+struct RegionBuilder {
+    double south = 90, north = -90, west = 180, east = -180, westShifted = 360, eastShifted = 0;
+    bool any = false;
+
+    void add(double lat, double lon) {
+        if (!std::isfinite(lat) || !std::isfinite(lon)) return;
+        any = true;
+        south = std::min(south, lat);
+        north = std::max(north, lat);
+        west = std::min(west, lon);
+        east = std::max(east, lon);
+        double shifted = lon < 0 ? lon + 360.0 : lon;
+        westShifted = std::min(westShifted, shifted);
+        eastShifted = std::max(eastShifted, shifted);
+    }
+
+    bool get(Region& out) const {
+        if (!any) return false;
+        out = {west, south, east, north};
+        if (eastShifted - westShifted < east - west) {
+            out.west = westShifted > 180.0 ? westShifted - 360.0 : westShifted;
+            out.east = eastShifted > 180.0 ? eastShifted - 360.0 : eastShifted;
+        }
+        return true;
+    }
+};
+
+}
+
+LoadedData Engine::loadData(const std::string& path) {
+    LoadedData out;
+    RegionBuilder bounds;
     ImportResult imported = importData(path);
     ParsedFile& parsed = imported.data;
-    for (const Feature& f : parsed.features) ids.push_back(addFeature(f));
+    for (const Feature& f : parsed.features) {
+        out.features.push_back(addFeature(f));
+        for (const Geometry& g : f.geometries)
+            for (const Coord& p : g.points) bounds.add(p.lat, p.lon);
+    }
     for (const GroundOverlay& g : parsed.overlays) {
         ImageOverlay o;
         o.north = g.north;
@@ -427,11 +465,18 @@ std::vector<std::uint64_t> Engine::loadFeatures(const std::string& path) {
         o.height = g.height;
         o.rgba = g.rgba;
         o.opacity = g.opacity;
-        addImageOverlay(o);
+        if (std::uint64_t id = addImageOverlay(o)) out.overlays.push_back(id);
+        bounds.add(g.south, g.west);
+        bounds.add(g.north, g.east);
     }
     for (const ModelInstance& m : parsed.models)
-        if (impl_->globe.models().addGlb(m.glb, m.placement)) impl_->dirty = true;
-    return ids;
+        if (std::uint64_t id = impl_->globe.models().addGlb(m.glb, m.placement)) {
+            out.models.push_back(id);
+            bounds.add(m.placement.position.lat, m.placement.position.lon);
+            impl_->dirty = true;
+        }
+    out.hasRegion = bounds.get(out.region);
+    return out;
 }
 
 ExportResult Engine::exportFeatures(const std::vector<std::uint64_t>& ids, const std::string& path, const std::string& format) const {
