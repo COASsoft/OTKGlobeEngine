@@ -33,6 +33,8 @@ struct Engine::Impl {
     bool headingLock = true;
     std::unique_ptr<InputController> input;
     std::unordered_map<std::uint64_t, Vec3> tilesetCenters;
+    std::unordered_map<std::uint64_t, double> tilesetRadii;
+    std::unordered_map<std::uint64_t, Region> pointCloudRegions;
     bool flying = false;
     bool cacheDisabled = false;
     View flyFrom, flyTo;
