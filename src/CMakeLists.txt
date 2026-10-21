@@ -116,7 +116,8 @@ ote_add_shaders(opentakengine
     render/shaders/mip.glsl
     render/shaders/model.glsl
     render/shaders/vector.glsl
-    render/shaders/points.glsl)
+    render/shaders/points.glsl
+    render/shaders/snapshot.glsl)
 ote_embed(opentakengine font_bold ${PROJECT_SOURCE_DIR}/assets/fonts/NotoSans-Bold-subset.ttf)
 ote_embed(opentakengine geoid_egm96 ${PROJECT_SOURCE_DIR}/assets/geoid/egm96-1deg.bin)
 if(OTE_EMBED_BACKDROP)
