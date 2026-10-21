@@ -2578,6 +2578,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             vsp.eyerel[0] = static_cast<float>(rel.x);
             vsp.eyerel[1] = static_cast<float>(rel.y);
             vsp.eyerel[2] = static_cast<float>(rel.z);
+            auto sphere = spheres_.find(dt.key);
+            vsp.eyerel[3] = sphere != spheres_.end() ? static_cast<float>(sphere->second.radius) : 0.0f;
             const double texel = spanDeg(dt.key.level) * kDegToRad * kWgs84A / kSurfaceSize;
             const double threshold = std::max(1.0, dpiScale_ * 0.6) / std::max(imageryScale_, 0.1);
             vsp.morph[0] = static_cast<float>(texel / (cam.pixelSizeAt(1.0) * threshold));
