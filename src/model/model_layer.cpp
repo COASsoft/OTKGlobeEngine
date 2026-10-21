@@ -1,6 +1,7 @@
 #include "model/model_layer.hpp"
 
 #include "model/gltf_codecs.hpp"
+#include "model/model_convert.hpp"
 
 #include "model.glsl.h"
 
