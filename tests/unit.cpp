@@ -206,6 +206,7 @@ int main() {
               "region across the antimeridian");
         View pv = engine.viewForRegion({-122.0, 47.0, -122.0, 47.0});
         check(!engine.featuresRegion({}, r) && std::abs(pv.gsd - 300.0 / 500.0 * 1.2) < 1e-9, "empty and single-point regions");
+        std::error_code ec;
         std::filesystem::remove(path, ec);
     }
 
