@@ -686,6 +686,12 @@ std::uint64_t ModelLayer::add(const std::string& path, const ModelPlacement& pla
     return id;
 }
 
+std::uint64_t ModelLayer::addGlb(const std::vector<std::uint8_t>& glb, const ModelPlacement& placement) {
+    CpuModel cpu;
+    if (glb.empty() || !parseGltf(glb.data(), glb.size(), "model.glb", {}, cpu) || cpu.primitives.empty()) return 0;
+    return add(upload(cpu), placement);
+}
+
 std::uint64_t ModelLayer::add(std::shared_ptr<GpuMesh> mesh, const ModelPlacement& placement) {
     if (!mesh) return 0;
     std::uint64_t id = nextId_++;
