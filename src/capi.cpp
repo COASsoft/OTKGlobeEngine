@@ -411,6 +411,10 @@ int ote_detect_format(const char* path, char* out, int capacity) { return copyOu
 
 int ote_formats_markdown(char* out, int capacity) { return copyOut(ote::formatsMarkdown(), out, capacity); }
 
+int ote_register_iconset(const char* path, char* uid_out, int capacity) {
+    return copyOut(ote::registerIconset(std::string(path ? path : "")), uid_out, capacity);
+}
+
 uint64_t ote_add_point(ote_engine* e, double lat, double lon, double alt, const char* name, uint32_t argb) {
     ote::Feature f;
     f.name = name ? name : "";
