@@ -160,6 +160,40 @@ int main() {
     }
 
     {
+        auto makeArchive = [](const std::string& path, bool osmand) {
+            std::filesystem::remove(path);
+            db::Database d;
+            d.open(path, false);
+            d.exec("CREATE TABLE tiles (x int, y int, z int, s int, image blob, PRIMARY KEY (x,y,z,s))");
+            if (osmand) {
+                d.exec("CREATE TABLE info (minzoom, maxzoom, tilenumbering, inverted_y)");
+                d.exec("INSERT INTO info VALUES (5, 5, 'simple', 1)");
+            } else {
+                d.exec("CREATE TABLE info (maxzoom, minzoom)");
+                d.exec("INSERT INTO info VALUES (12, 12)");
+            }
+            auto st = d.prepare("INSERT INTO tiles VALUES (?, ?, ?, 0, ?)");
+            st.bind(1, 3);
+            st.bind(2, osmand ? (1 << 5) - 1 - 7 : 7);
+            st.bind(3, osmand ? 5 : 17 - 5);
+            st.bind(4, std::vector<std::uint8_t>{1, 2, 3, 4});
+            st.exec();
+        };
+        auto tmp = std::filesystem::temp_directory_path();
+        for (bool osmand : {false, true}) {
+            std::string path = (tmp / (osmand ? "ote_osmand.sqlitedb" : "ote_rmaps.sqlite")).string();
+            makeArchive(path, osmand);
+            ImageryLayer l;
+            l.type = SourceType::Osmdroid;
+            l.path = path;
+            auto p = makeProvider(l, nullptr, nullptr);
+            FetchResult r = p->fetch(5, 3, 7);
+            check(r.status == 200 && r.data.size() == 4 && p->matrix().minZoom == 5 && p->matrix().maxZoom == 5,
+                  osmand ? "osmand sqlitedb archive" : "rmaps bigplanet sqlite archive");
+        }
+    }
+
+    {
         std::string wms = "<customWmsMapSource><name>W</name><url>https://h/wms</url><layers>a</layers></customWmsMapSource>";
         check(detectFormat(std::vector<std::uint8_t>(wms.begin(), wms.end()), "w.xml") == "mobac", "mobac wms source detection");
         std::string lj = "{\"tilejson\":\"2.1.0\",\"format\":\"quantized-mesh-1.0\",\"tiles\":[\"{z}/{x}/{y}.terrain\"]}";
