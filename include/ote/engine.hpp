@@ -191,6 +191,14 @@ struct Region {
     double north = 0;
 };
 
+struct LoadedData {
+    std::vector<std::uint64_t> features;
+    std::vector<std::uint64_t> overlays;
+    std::vector<std::uint64_t> models;
+    Region region;
+    bool hasRegion = false;
+};
+
 struct GridLabel {
     GridType grid = GridType::LatLon;
     bool vertical = false;
