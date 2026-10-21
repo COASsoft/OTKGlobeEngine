@@ -193,7 +193,7 @@ std::string detectFormat(const std::vector<std::uint8_t>& b, const std::string& 
     if (starts("SQLite format 3")) {
         if (ext == ".mbtiles") return "mbtiles";
         if (ext == ".gpkg") return "gpkg-tiles";
-        if (ext == ".sqlite") return "osmdroid";
+        if (ext == ".sqlite" || ext == ".sqlitedb") return "osmdroid";
         return "ogr";
     }
     if (starts("LASF")) return "las";
