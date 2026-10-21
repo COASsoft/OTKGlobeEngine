@@ -46,8 +46,10 @@ std::vector<FormatInfo> buildFormats() {
     using K = DataKind;
     return {
         f("kml", "KML 2.2", {".kml"}, K::Vector, true, true, false, true, "importData / loadFeatures",
-          "Placemarks, MultiGeometry, Style/StyleMap, icons, ExtendedData, TimeStamp/TimeSpan, GroundOverlay"),
-        f("kmz", "KMZ", {".kmz"}, K::Vector, true, true, false, true, "importData / loadFeatures", "Zipped KML with icons and overlays"),
+          "Placemarks, MultiGeometry, Style/StyleMap, icons (local, KMZ or http), ExtendedData, TimeStamp/TimeSpan, GroundOverlay, extrude, "
+          "NetworkLink (local, KMZ and http, followed at import), Model (COLLADA, OBJ)"),
+        f("kmz", "KMZ", {".kmz"}, K::Vector, true, true, false, true, "importData / loadFeatures",
+          "Zipped KML with icons, overlays, NetworkLinks and COLLADA models"),
         f("geojson", "GeoJSON (RFC 7946)", {".geojson", ".json"}, K::Vector, true, true, false, true, "importData / loadFeatures",
           "All properties kept; simplestyle-spec colours; id preserved"),
         f("gpx", "GPX 1.1", {".gpx"}, K::Vector, true, true, false, true, "importData / loadFeatures", "Waypoints, routes, tracks, times"),
