@@ -195,6 +195,7 @@ bool GlobeRenderer::init() {
     surfaceBuffer_ = sg_make_buffer(&vb);
     featureBuffer_ = sg_make_buffer(&vb);
     features_.init();
+    labels_.init();
     models_.init();
     points_.init();
 
