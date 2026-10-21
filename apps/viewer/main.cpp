@@ -970,11 +970,17 @@ void event(const sapp_event* e) {
 }
 
 void parseArgs(int argc, char** argv) {
-    for (int i = 1; i + 1 < argc; ++i) {
+    for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
+        if (a.rfind("--", 0) != 0) {
+            state->openPaths.push_back(a);
+            continue;
+        }
+        if (i + 1 >= argc) break;
         if (a == "--view") {
             ote::View& v = state->startView;
             std::sscanf(argv[++i], "%lf,%lf,%lf,%lf,%lf", &v.lat, &v.lon, &v.gsd, &v.tilt, &v.azimuth);
+            state->viewGiven = true;
         } else if (a == "--offscreen") {
             state->offscreen = std::atoi(argv[++i]) != 0;
         } else if (a == "--shot") {
