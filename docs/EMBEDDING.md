@@ -120,6 +120,11 @@ ote_add_layer(e, OTE_SOURCE_MBTILES, "Offline", "/maps/area.mbtiles", 0, 18, 1.0
 ote_load_mobac(e, "/maps/source.xml");
 ote_add_elevation_directory(e, "/dted");
 ote_load_features(e, "/data/overlay.kmz");
+ote_open_result opened;
+if (ote_open(e, "/data/anything.pmtiles", &opened) && opened.has_region) {
+    ote_view_for_region(e, opened.west, opened.south, opened.east, opened.north, &v);
+    ote_fly_to(e, &v, 2.0);
+}
 ote_set_grid(e, 1);
 char mgrs[32];
 ote_to_mgrs(47.04, -122.90, 5, mgrs, sizeof mgrs);
