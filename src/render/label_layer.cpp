@@ -35,25 +35,25 @@ constexpr std::size_t kMaxCandidates = 8000;
 
 enum Tier { Fine = 0, Coarse = 1, Overview = 2 };
 
-struct LineStyle {
+struct BorderStyle {
     float width, on, off;
     float color[4];
 };
 
-constexpr LineStyle kLines[4] = {
+constexpr BorderStyle kLines[4] = {
     {1.3f, 0.0f, 0.0f, {1.0f, 1.0f, 1.0f, 0.85f}},
     {1.2f, 4.0f, 3.0f, {1.0f, 1.0f, 1.0f, 0.7f}},
     {1.1f, 2.5f, 2.5f, {1.0f, 1.0f, 1.0f, 0.75f}},
     {1.0f, 2.0f, 3.0f, {1.0f, 1.0f, 1.0f, 0.45f}},
 };
 
-struct Vertex {
+struct LabelVertex {
     float x, y, u, v;
     std::uint32_t fill, halo;
     float haloPx, weight;
 };
 
-struct Style {
+struct TextStyle {
     float size = 12.0f;
     float tracking = 0.0f;
     std::uint32_t fill = 0xFFFFFFFF;
@@ -69,8 +69,8 @@ std::uint32_t rgba(int r, int g, int b, float a) {
            static_cast<std::uint32_t>(std::lround(std::clamp(a, 0.0f, 1.0f) * 255.0f)) << 24;
 }
 
-Style styleFor(const labels::Place& p, double zoom, double dpi) {
-    Style s;
+TextStyle styleFor(const labels::Place& p, double zoom, double dpi) {
+    TextStyle s;
     const std::uint32_t dark = rgba(16, 16, 16, 0.85f);
     switch (p.kind) {
     case labels::Kind::Country:
@@ -381,8 +381,9 @@ void LabelLayer::drawSurface(const GeoRect& tile, double texelDeg, double dpi, i
         p.frame[1] = static_cast<float>(texelDeg);
         p.frame[2] = static_cast<float>(dpi);
         for (int l = 0; l < 4; ++l) {
-            const LineStyle& s = kLines[l];
-            p.width[l] = l == 3 && meters > kCountyMeters ? 0.0f : s.width;
+            const BorderStyle& s = kLines[l];
+            const bool hidden = (l == 3 && meters > kCountyMeters) || (l == 2 && meters > kStateMeters);
+            p.width[l] = hidden ? 0.0f : s.width;
             p.dash_on[l] = s.on;
             p.dash_off[l] = s.off;
         }
@@ -497,15 +498,15 @@ void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dp
         });
     };
 
-    std::vector<Vertex> verts;
+    std::vector<LabelVertex> verts;
     verts.reserve(8192);
     auto nx = [&](double x) { return static_cast<float>(x / W * 2.0 - 1.0); };
     auto ny = [&](double y) { return static_cast<float>(1.0 - y / H * 2.0); };
-    auto quad = [&](float x0, float y0, float x1, float y1, const GlyphAtlas::Glyph& g, const Style& s) {
-        const Vertex a{nx(x0), ny(y0), g.u0, g.v0, s.fill, s.halo, s.haloPx, s.weight};
-        const Vertex b{nx(x1), ny(y0), g.u1, g.v0, s.fill, s.halo, s.haloPx, s.weight};
-        const Vertex c{nx(x1), ny(y1), g.u1, g.v1, s.fill, s.halo, s.haloPx, s.weight};
-        const Vertex e{nx(x0), ny(y1), g.u0, g.v1, s.fill, s.halo, s.haloPx, s.weight};
+    auto quad = [&](float x0, float y0, float x1, float y1, const GlyphAtlas::Glyph& g, const TextStyle& s) {
+        const LabelVertex a{nx(x0), ny(y0), g.u0, g.v0, s.fill, s.halo, s.haloPx, s.weight};
+        const LabelVertex b{nx(x1), ny(y0), g.u1, g.v0, s.fill, s.halo, s.haloPx, s.weight};
+        const LabelVertex c{nx(x1), ny(y1), g.u1, g.v1, s.fill, s.halo, s.haloPx, s.weight};
+        const LabelVertex e{nx(x0), ny(y1), g.u0, g.v1, s.fill, s.halo, s.haloPx, s.weight};
         verts.insert(verts.end(), {a, b, c, a, c, e});
     };
 
@@ -513,9 +514,9 @@ void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dp
     std::vector<std::string_view> lines;
     std::vector<float> widths;
     for (const Candidate& c : candidates) {
-        if (placed >= kMaxLabels || (verts.size() + 600) * sizeof(Vertex) > kLabelBytes) break;
+        if (placed >= kMaxLabels || (verts.size() + 600) * sizeof(LabelVertex) > kLabelBytes) break;
         const labels::Place& p = d.places()[c.index];
-        const Style s = styleFor(p, c.zoom, dpi);
+        const TextStyle s = styleFor(p, c.zoom, dpi);
         const float scale = s.size / GlyphAtlas::kBase;
         const std::string_view name = d.name(p);
         lines.clear();
@@ -560,7 +561,7 @@ void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dp
             const GlyphAtlas::Glyph& g = atlas_.glyph(kDot);
             if (g.u1 > g.u0) {
                 const float k = s.dot / kDotRadius;
-                Style ds = s;
+                TextStyle ds = s;
                 ds.fill = rgba(242, 242, 242, 1.0f);
                 ds.halo = rgba(24, 24, 24, 0.75f);
                 ds.haloPx = 1.0f * static_cast<float>(dpi);
@@ -586,9 +587,9 @@ void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dp
     if (verts.empty()) return;
     sg_buffer buffer = labelBuffers_[static_cast<size_t>(std::clamp(view, 0, 3))];
     sg_write_buffer_desc wd{};
-    wd.src.data = {verts.data(), verts.size() * sizeof(Vertex)};
+    wd.src.data = {verts.data(), verts.size() * sizeof(LabelVertex)};
     wd.dst.buffer = buffer;
-    wd.size = verts.size() * sizeof(Vertex);
+    wd.size = verts.size() * sizeof(LabelVertex);
     sg_write_buffer_transient(&wd);
     sg_apply_pipeline(labelPipeline_);
     sg_bindings b{};
