@@ -123,7 +123,8 @@ ote_viewer [--view lat,lon,gsd,tilt,azimuth] [--preset 0..3] [--size WxH]
            [--memory MB] [--grid 1] [--grid-type 0|1|2] [--heatmap 1] [--slope 1] [--contours interval]
            [--bullseye lat,lon,radius] [--rings lat,lon,spacing,count] [--rb lat1,lon1,lat2,lon2]
            [--first-person heading,pitch[,height]] [--download w,s,e,n,minz,maxz]
-           [--shot out.png] [--shot-timeout s] [--zoom-test lat,lon,gsd,tilt,az,seconds] [--zoom-start s] [--diag 1]
+           [--shot out.png] [--shot-timeout s] [--script file] [--film dir] [--film-every s]
+           [--zoom-test lat,lon,gsd,tilt,az,seconds] [--zoom-start s] [--diag 1]
 ```
 
 - Input is handled by the engine's shared controller (`engine.input()`, `ote_pointer_*` in the C ABI), so every host behaves the same:
