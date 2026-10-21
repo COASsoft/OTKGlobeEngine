@@ -30,19 +30,39 @@ std::string utf8(const std::filesystem::path& p) {
     return std::string(s.begin(), s.end());
 }
 
+bool hasWord(const std::string& text, std::initializer_list<const char*> words) {
+    std::string l = lowered(text);
+    std::string token;
+    auto match = [&] {
+        for (const char* w : words)
+            if (token == w) return true;
+        return false;
+    };
+    for (char c : l) {
+        if (std::isalnum(static_cast<unsigned char>(c))) {
+            token.push_back(c);
+            continue;
+        }
+        if (match()) return true;
+        token.clear();
+    }
+    return match();
+}
+
 bool pmtilesElevation(const std::string& path, const std::string& name, HeightEncoding& encoding) {
     encoding = HeightEncoding::Terrarium;
     std::string meta;
     if (auto archive = PmTilesArchive::open(path)) {
         if (archive->vector()) return false;
-        meta = lowered(archive->metadata());
+        meta = archive->metadata();
     }
-    if (containsAny(meta, {"terrain-rgb", "terrainrgb", "mapbox"}) && containsAny(meta, {"terrain", "elevation", "dem"})) {
+    if (containsAny(meta, {"terrain-rgb", "terrainrgb"})) {
         encoding = HeightEncoding::MapboxRgb;
         return true;
     }
-    return containsAny(meta, {"terrarium", "elevation", "\"dem\"", "terrain"}) ||
-           containsAny(name, {"dem", "dtm", "dsm", "terrain", "elev", "height", "srtm"});
+    return containsAny(meta, {"terrarium"}) || hasWord(meta, {"elevation", "dem", "dtm", "heightmap"}) ||
+           hasWord(std::filesystem::u8path(name).stem().u8string().empty() ? name : name,
+                   {"dem", "dtm", "dsm", "srtm", "elevation", "elev", "heightmap", "terrarium", "heights"});
 }
 
 }
