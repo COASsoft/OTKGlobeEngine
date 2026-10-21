@@ -815,10 +815,12 @@ void openPath(const std::string& path) {
         if (mid) zoomTo({v.lon, v.lat, v.lon, v.lat}, 60.0);
         showStatus(mid ? "Model " + name + " placed at the view centre" : "Could not open " + name);
     } else if (info && (info->kind == ote::DataKind::Vector || id == "tak-package")) {
-        std::vector<std::uint64_t> ids = eng.loadFeatures(path);
-        ote::Region r;
-        if (eng.featuresRegion(ids, r)) zoomTo(r, 0.0);
-        showStatus(std::to_string(ids.size()) + " features from " + name);
+        ote::LoadedData d = eng.loadData(path);
+        if (d.hasRegion) zoomTo(d.region, d.models.empty() ? 0.0 : 60.0);
+        std::string what = std::to_string(d.features.size()) + " features";
+        if (!d.overlays.empty()) what += ", " + std::to_string(d.overlays.size()) + " overlays";
+        if (!d.models.empty()) what += ", " + std::to_string(d.models.size()) + " models";
+        showStatus(what + " from " + name);
     } else {
         showStatus(name + (info ? ": " + info->name + " cannot be opened in the viewer" : ": unknown format"));
     }
