@@ -133,6 +133,18 @@ struct LoadedData {
     bool hasRegion = false;
 };
 
+struct OpenResult {
+    ImportPlan plan;
+    LoadedData data;
+    std::uint64_t tileset = 0;
+    std::uint64_t pointCloud = 0;
+    std::uint64_t model = 0;
+    std::string iconset;
+    Region region;
+    bool hasRegion = false;
+    bool ok = false;
+};
+
 struct GridLabel {
     GridType grid = GridType::LatLon;
     bool vertical = false;
@@ -172,6 +184,7 @@ public:
     void setOfflineBackdrop(bool enabled);
     void setMemoryBudget(int megabytes);
     void setElevation(const std::vector<ElevationLayer>& layers);
+    std::vector<ElevationLayer> elevationLayers() const;
     void setTerrainEnabled(bool enabled);
     void setTerrainExaggeration(double factor);
     void setDepthPerception(bool enabled);
@@ -221,6 +234,8 @@ public:
     std::vector<std::uint64_t> featureIds() const;
     std::vector<std::uint64_t> loadFeatures(const std::string& path);
     LoadedData loadData(const std::string& path);
+    OpenResult open(const std::string& path);
+    std::vector<std::uint64_t> queryFeatures(const FeatureQuery& query) const;
     ExportResult exportFeatures(const std::vector<std::uint64_t>& ids, const std::string& path, const std::string& format = {}) const;
     std::uint64_t hitTest(double sx, double sy, double radiusPx = 16.0) const;
 

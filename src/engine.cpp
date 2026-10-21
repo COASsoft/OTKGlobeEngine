@@ -14,6 +14,7 @@
 #include <unordered_map>
 
 #include "core/camera.hpp"
+#include "core/region.hpp"
 #include "render/globe_renderer.hpp"
 
 #include "core/geoid.hpp"
@@ -414,37 +415,6 @@ std::vector<std::uint64_t> Engine::featureIds() const { return impl_->globe.feat
 
 std::vector<std::uint64_t> Engine::loadFeatures(const std::string& path) { return loadData(path).features; }
 
-namespace {
-
-struct RegionBuilder {
-    double south = 90, north = -90, west = 180, east = -180, westShifted = 360, eastShifted = 0;
-    bool any = false;
-
-    void add(double lat, double lon) {
-        if (!std::isfinite(lat) || !std::isfinite(lon)) return;
-        any = true;
-        south = std::min(south, lat);
-        north = std::max(north, lat);
-        west = std::min(west, lon);
-        east = std::max(east, lon);
-        double shifted = lon < 0 ? lon + 360.0 : lon;
-        westShifted = std::min(westShifted, shifted);
-        eastShifted = std::max(eastShifted, shifted);
-    }
-
-    bool get(Region& out) const {
-        if (!any) return false;
-        out = {west, south, east, north};
-        if (eastShifted - westShifted < east - west) {
-            out.west = westShifted > 180.0 ? westShifted - 360.0 : westShifted;
-            out.east = eastShifted > 180.0 ? eastShifted - 360.0 : eastShifted;
-        }
-        return true;
-    }
-};
-
-}
-
 LoadedData Engine::loadData(const std::string& path) {
     LoadedData out;
     RegionBuilder bounds;
@@ -476,6 +446,75 @@ LoadedData Engine::loadData(const std::string& path) {
             impl_->dirty = true;
         }
     out.hasRegion = bounds.get(out.region);
+    return out;
+}
+
+OpenResult Engine::open(const std::string& path) {
+    OpenResult r;
+    r.plan = planImport(path);
+    const ImportPlan& plan = r.plan;
+    switch (plan.target) {
+    case ImportTarget::Features:
+        r.data = loadData(path);
+        r.region = r.data.region;
+        r.hasRegion = r.data.hasRegion;
+        r.ok = !r.data.features.empty() || !r.data.overlays.empty() || !r.data.models.empty();
+        break;
+    case ImportTarget::Imagery: {
+        std::vector<ImageryLayer> layers = impl_->globe.layers();
+        layers.insert(layers.end(), plan.imagery.begin(), plan.imagery.end());
+        setLayers(layers);
+        r.ok = true;
+        break;
+    }
+    case ImportTarget::Elevation: {
+        std::vector<ElevationLayer> layers = plan.elevation;
+        std::vector<ElevationLayer> current = elevationLayers();
+        layers.insert(layers.end(), current.begin(), current.end());
+        setElevation(layers);
+        r.ok = true;
+        break;
+    }
+    case ImportTarget::Tileset:
+        r.tileset = addTileset(plan.resource);
+        r.hasRegion = r.tileset && tilesetRegion(r.tileset, r.region);
+        r.ok = r.tileset != 0;
+        break;
+    case ImportTarget::PointCloud:
+        r.pointCloud = addPointCloud(plan.resource);
+        r.hasRegion = r.pointCloud && pointCloudRegion(r.pointCloud, r.region);
+        r.ok = r.pointCloud != 0;
+        break;
+    case ImportTarget::Model: {
+        View v = view();
+        ModelPlacement placement;
+        placement.position = {v.lat, v.lon, 0};
+        r.model = addModel(plan.resource, placement);
+        if (r.model) {
+            r.region = {v.lon, v.lat, v.lon, v.lat};
+            r.hasRegion = true;
+        }
+        r.ok = r.model != 0;
+        break;
+    }
+    case ImportTarget::Iconset:
+        r.iconset = registerIconset(plan.resource);
+        r.ok = !r.iconset.empty();
+        break;
+    case ImportTarget::Unsupported:
+        break;
+    }
+    return r;
+}
+
+std::vector<std::uint64_t> Engine::queryFeatures(const FeatureQuery& query) const {
+    std::vector<std::uint64_t> out;
+    Feature f;
+    for (std::uint64_t id : impl_->globe.features().ids()) {
+        if (!impl_->globe.features().get(id, f) || !matchesQuery(f, query)) continue;
+        out.push_back(id);
+        if (query.limit && out.size() >= query.limit) break;
+    }
     return out;
 }
 
@@ -1041,6 +1080,8 @@ void Engine::setElevation(const std::vector<ElevationLayer>& layers) {
     impl_->globe.setElevation(layers);
     impl_->dirty = true;
 }
+
+std::vector<ElevationLayer> Engine::elevationLayers() const { return impl_->globe.elevationLayers(); }
 
 void Engine::setTerrainEnabled(bool enabled) {
     impl_->globe.setTerrainEnabled(enabled);

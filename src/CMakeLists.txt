@@ -1,25 +1,23 @@
-add_library(opentakengine STATIC
-    engine.cpp
-    input/input_controller.cpp
-    net/http_faults.cpp
-    net/reachability.cpp
-    formats/formats.cpp
-    formats/cot.cpp
-    formats/iconsets.cpp
-    formats/text_formats.cpp
-    formats/exporters.cpp
-    formats/package.cpp
-    formats/klv.cpp
-    capi.cpp
+add_library(ote_kernel STATIC
+    core/defaults.cpp
     core/geo.cpp
     core/image.cpp
-    core/camera.cpp
     core/mgrs.cpp
     core/prj.cpp
     core/navigation.cpp
     core/astro.cpp
     core/wmm.cpp
     core/geoid.cpp
+    net/http_faults.cpp
+    net/reachability.cpp
+    formats/formats.cpp
+    formats/cot.cpp
+    formats/iconsets.cpp
+    formats/importer.cpp
+    formats/text_formats.cpp
+    formats/exporters.cpp
+    formats/package.cpp
+    formats/klv.cpp
     raster/tile_loader.cpp
     raster/tile_matrix.cpp
     raster/tile_cache.cpp
@@ -29,41 +27,110 @@ add_library(opentakengine STATIC
     raster/pmtiles.cpp
     raster/vector_tile.cpp
     elevation/elevation.cpp
+    elevation/elevation_service.cpp
     elevation/quantized_mesh.cpp
     feature/parsers.cpp
+    feature/feature_query.cpp
     feature/text.cpp
-    feature/feature_layer.cpp
     feature/grid.cpp
     feature/milsym.cpp
-    model/model_layer.cpp
     model/model_convert.cpp
-    model/gltf_codecs.cpp
+    model/gltf_codecs.cpp)
+
+target_include_directories(ote_kernel
+    PUBLIC
+        ${PROJECT_SOURCE_DIR}/include
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${stb_SOURCE_DIR}
+        ${json_SOURCE_DIR}
+        ${earcut_SOURCE_DIR}
+        ${cgltf_SOURCE_DIR})
+target_link_libraries(ote_kernel PRIVATE ote_sqlite pugixml::pugixml ote_miniz)
+
+if(WIN32)
+    target_sources(ote_kernel PRIVATE net/http_winhttp.cpp)
+    target_link_libraries(ote_kernel PRIVATE winhttp)
+elseif(APPLE)
+    target_sources(ote_kernel PRIVATE net/http_apple.mm)
+    target_compile_options(ote_kernel PRIVATE $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
+    target_link_libraries(ote_kernel PUBLIC "-framework Foundation")
+elseif(ANDROID)
+    target_sources(ote_kernel PRIVATE net/http_android.cpp)
+    target_link_libraries(ote_kernel PUBLIC log android)
+else()
+    find_package(CURL REQUIRED)
+    find_package(Threads REQUIRED)
+    target_sources(ote_kernel PRIVATE net/http_curl.cpp)
+    target_link_libraries(ote_kernel PRIVATE CURL::libcurl PUBLIC Threads::Threads ${CMAKE_DL_LIBS})
+endif()
+
+foreach(_codec DRACO MESHOPT KTX2 WEBP)
+    if(OTE_WITH_${_codec})
+        target_compile_definitions(ote_kernel PRIVATE OTE_WITH_${_codec})
+    endif()
+endforeach()
+if(OTE_WITH_WEBP)
+    target_link_libraries(ote_kernel PRIVATE ote_webp)
+endif()
+if(OTE_WITH_DRACO)
+    target_link_libraries(ote_kernel PRIVATE ote_draco)
+endif()
+if(OTE_WITH_MESHOPT)
+    target_link_libraries(ote_kernel PRIVATE ote_meshopt)
+endif()
+if(OTE_WITH_KTX2)
+    target_link_libraries(ote_kernel PRIVATE ote_basisu)
+endif()
+if(OTE_WITH_GDAL)
+    find_package(GDAL CONFIG)
+    if(NOT GDAL_FOUND)
+        find_package(GDAL REQUIRED)
+    endif()
+    target_sources(ote_kernel PRIVATE gdal/gdal_sources.cpp)
+    target_link_libraries(ote_kernel PRIVATE GDAL::GDAL)
+    target_compile_definitions(ote_kernel PUBLIC OTE_WITH_GDAL)
+else()
+    target_sources(ote_kernel PRIVATE gdal/gdal_stub.cpp)
+endif()
+if(MSVC)
+    target_compile_options(ote_kernel PRIVATE /W3 /utf-8)
+    target_compile_definitions(ote_kernel PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS _SILENCE_CXX20_U8PATH_DEPRECATION_WARNING)
+endif()
+ote_embed(ote_kernel font_bold ${PROJECT_SOURCE_DIR}/assets/fonts/NotoSans-Bold-subset.ttf)
+ote_embed(ote_kernel geoid_egm96 ${PROJECT_SOURCE_DIR}/assets/geoid/egm96-1deg.bin)
+
+if(NOT OTE_ENGINE)
+    return()
+endif()
+
+add_library(opentakengine STATIC
+    engine.cpp
+    capi.cpp
+    input/input_controller.cpp
+    core/camera.cpp
+    feature/feature_layer.cpp
+    model/model_layer.cpp
     model/tile_content.cpp
     model/pointcloud.cpp
     tiles3d/tileset.cpp
     render/globe_renderer.cpp
     render/gfx_impl.cpp)
+target_link_libraries(opentakengine PUBLIC ote_kernel)
 
 if(WIN32)
-    target_sources(opentakengine PRIVATE net/http_winhttp.cpp)
-    target_link_libraries(opentakengine PRIVATE winhttp)
     if(OTE_GFX_BACKEND STREQUAL "SOKOL_GLCORE")
         target_link_libraries(opentakengine PUBLIC opengl32)
     endif()
 elseif(APPLE)
-    target_sources(opentakengine PRIVATE net/http_apple.mm)
     set_source_files_properties(render/gfx_impl.cpp PROPERTIES LANGUAGE OBJCXX)
     target_compile_options(opentakengine PRIVATE $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
-    target_link_libraries(opentakengine PUBLIC "-framework Foundation" "-framework Metal" "-framework QuartzCore")
+    target_link_libraries(opentakengine PUBLIC "-framework Metal" "-framework QuartzCore")
 elseif(ANDROID)
-    target_sources(opentakengine PRIVATE net/http_android.cpp)
-    target_link_libraries(opentakengine PUBLIC GLESv3 EGL log android)
+    target_link_libraries(opentakengine PUBLIC GLESv3 EGL)
 else()
-    find_package(CURL REQUIRED)
     find_package(OpenGL REQUIRED)
-    find_package(Threads REQUIRED)
-    target_sources(opentakengine PRIVATE net/http_curl.cpp)
-    target_link_libraries(opentakengine PRIVATE CURL::libcurl PUBLIC OpenGL::GL Threads::Threads ${CMAKE_DL_LIBS})
+    target_link_libraries(opentakengine PUBLIC OpenGL::GL)
 endif()
 
 target_include_directories(opentakengine
@@ -96,15 +163,7 @@ if(OTE_WITH_KTX2)
     target_link_libraries(opentakengine PRIVATE ote_basisu)
 endif()
 if(OTE_WITH_GDAL)
-    find_package(GDAL CONFIG)
-    if(NOT GDAL_FOUND)
-        find_package(GDAL REQUIRED)
-    endif()
-    target_sources(opentakengine PRIVATE gdal/gdal_sources.cpp)
     target_link_libraries(opentakengine PRIVATE GDAL::GDAL)
-    target_compile_definitions(opentakengine PUBLIC OTE_WITH_GDAL)
-else()
-    target_sources(opentakengine PRIVATE gdal/gdal_stub.cpp)
 endif()
 if(MSVC)
     target_compile_options(opentakengine PRIVATE /W3 /utf-8)
@@ -121,8 +180,6 @@ ote_add_shaders(opentakengine
     render/shaders/vector.glsl
     render/shaders/points.glsl
     render/shaders/snapshot.glsl)
-ote_embed(opentakengine font_bold ${PROJECT_SOURCE_DIR}/assets/fonts/NotoSans-Bold-subset.ttf)
-ote_embed(opentakengine geoid_egm96 ${PROJECT_SOURCE_DIR}/assets/geoid/egm96-1deg.bin)
 if(OTE_EMBED_BACKDROP)
     ote_embed(opentakengine world_backdrop ${PROJECT_SOURCE_DIR}/assets/world/blue-marble-2048.jpg)
     target_compile_definitions(opentakengine PRIVATE OTE_EMBED_BACKDROP)

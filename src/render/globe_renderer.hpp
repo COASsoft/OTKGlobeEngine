@@ -72,6 +72,7 @@ public:
     size_t imageryLimit() const;
     void poolPressure(const char* what);
     void setElevation(const std::vector<ElevationLayer>& layers);
+    std::vector<ElevationLayer> elevationLayers() const { return elevation_.sources(); }
     void setTerrainEnabled(bool enabled);
     void setTerrainExaggeration(double factor);
     void setDepthPerception(bool enabled) { depthPerception_ = enabled; }
