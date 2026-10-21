@@ -127,6 +127,7 @@ bool GlobeRenderer::init() {
     if (const char* v = std::getenv("OTE_UPGRADE_FADE")) fadeUpgrades_ = std::atoi(v) != 0;
     busyLog_ = std::getenv("OTE_BUSY_LOG") != nullptr;
     gateAll_ = std::getenv("OTE_GATE_ALL") != nullptr;
+    overlaysYield_ = std::getenv("OTE_OVERLAYS_EQUAL") == nullptr;
     if (const char* v = std::getenv("OTE_MARGIN")) marginPrefetch_ = std::max(1.0, std::atof(v));
     if (std::getenv("OTE_DIAG")) diagnostics_ = true;
     if (const char* pp = std::getenv("OTE_PROFILE")) {
@@ -1182,6 +1183,15 @@ void GlobeRenderer::traverse(const Camera& cam, const QuadKey& k, std::vector<Dr
             for (int i = 0; i < 4; ++i) traverse(cam, kids[i], out);
             return;
         }
+        if (lookahead_ && !prefetching_)
+            for (int i = 0; i < 4; ++i) {
+                if (!ci[i].visible || !ci[i].refine || presentable(kids[i])) continue;
+                for (int j = 0; j < 4; ++j) {
+                    QuadKey g{kids[i].level + 1, kids[i].x * 2 + (j & 1), kids[i].y * 2 + (j >> 1)};
+                    NodeInfo gi = info(cam, g);
+                    if (gi.visible) prefetch(g, gi.distance * 2.5);
+                }
+            }
     } else if (!presentable(k) && k.level < maxRefine()) {
         if (!prefetching_ && wasRefined(k)) {
             bool drawable = true;
@@ -1359,7 +1369,11 @@ void GlobeRenderer::evict() {
     }
 }
 
-void GlobeRenderer::want(const TileId& id, double priority) { requests_.emplace_back(id, priority); }
+void GlobeRenderer::want(const TileId& id, double priority) {
+    const bool base = id.layer == baseLayer_ || (id.layer >= 0 && id.layer < static_cast<int>(layers_.size()) && layers_[id.layer].polarFill);
+    if (!base && priority > 0 && overlaysYield_) priority *= 4.0;
+    requests_.emplace_back(id, priority);
+}
 
 void GlobeRenderer::requestBase() {
     double t = now();
