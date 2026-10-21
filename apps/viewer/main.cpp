@@ -595,7 +595,7 @@ void frame() {
         std::snprintf(title, sizeof(title),
                       "OpenTAKEngine  %.5f, %.5f  gsd %.2f m/px  tilt %.0f  az %.0f  |  tiles %d  L%d  imagery %d  pending %d  %s",
                       v.lat, v.lon, v.gsd, v.tilt, v.azimuth, s.terrainTiles, s.maxLevel, s.imageryTextures,
-                      s.pendingRequests, state->selected.c_str());
+                      s.pendingRequests, state->statusTime > 0 ? state->status.c_str() : state->selected.c_str());
         sapp_set_window_title(title);
     }
 }
