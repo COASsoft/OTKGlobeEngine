@@ -23,7 +23,7 @@ public:
     bool available();
     void beginFrame();
     bool prepare(const GeoRect& tile, double texelDeg);
-    void drawSurface(const GeoRect& tile, double texelDeg, double dpi, int size);
+    void drawSurface(const GeoRect& tile, double texelDeg, double dpi);
     void drawLabels(const Camera& cam, const GroundFn& ground, double dpi, const std::vector<GeoRect>& visible, int view);
 
 private:
