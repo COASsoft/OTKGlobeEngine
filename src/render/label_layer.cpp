@@ -345,7 +345,7 @@ bool LabelLayer::prepare(const GeoRect& tile, double texelDeg) {
     return ok;
 }
 
-void LabelLayer::drawSurface(const GeoRect& tile, double texelDeg, double dpi, int size) {
+void LabelLayer::drawSurface(const GeoRect& tile, double texelDeg, double dpi) {
     if (!available()) return;
     keys(tile, texelDeg, scratchKeys_);
     if (scratchKeys_.empty()) return;
