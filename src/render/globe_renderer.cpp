@@ -2423,8 +2423,23 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         }
     }
     for (auto& dt : tiles) drawn_[dt.key] = frame_;
+    if (switchHold_) {
+        bool ready = true;
+        for (const auto& dt : tiles) {
+            auto s = surface_.find(dt.key);
+            if (s == surface_.end() || s->second.version < switchVersion_ || !(s->second.complete || s->second.presentable)) {
+                ready = false;
+                break;
+            }
+        }
+        if (ready || tnow - switchStart_ > 2.5) {
+            switchHold_ = false;
+            for (auto& [k, r] : retiring_)
+                if (std::isinf(r.second)) r.second = tnow;
+        }
+    }
     for (auto it = retiring_.begin(); it != retiring_.end();) {
-        if (tnow - it->second.second > 0.35) {
+        if (tnow - it->second.second > 0.4) {
             recycleSurface(it->second.first);
             it = retiring_.erase(it);
         } else {
