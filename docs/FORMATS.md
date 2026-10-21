@@ -12,7 +12,26 @@ for (const auto& note : out.lossy) puts(note.c_str());           // explicit lis
 
 ## Detection
 
-Formats are detected from content first and extension second: zip archives are told apart by their entries (TAK `MANIFEST/manifest.xml`, KMZ `doc.kml`), XML by its root element (`kml`, `event`/`events`, `gpx`, GML feature collections, MOBAC sources), JSON by its members (GeoJSON, 3D Tiles `tileset.json`, TileJSON), and binaries by magic numbers (SQLite, LAS, glTF, b3dm, TIFF, Shapefile, DTED). CSV and WKT are recognised from their first lines.
+Formats are detected from content first and extension second: zip archives are told apart by their entries (TAK `MANIFEST/manifest.xml`, KMZ `doc.kml`, ATAK iconsets `iconset.xml`), XML by its root element (`kml`, `event`/`events`, `gpx`, GML feature collections, MOBAC map and WMS sources), JSON by its members (GeoJSON, 3D Tiles `tileset.json`, TileJSON, Cesium terrain `layer.json`), and binaries by magic numbers (SQLite, PMTiles, LAS, glTF, b3dm, TIFF, Shapefile, DTED). SQLite tile stores are told apart by extension and schema (MBTiles, GeoPackage, osmdroid, RMaps/BigPlanet, OsmAnd). CSV and WKT are recognised from their first lines.
+
+## Tile sources
+
+* URL templates accept `{z}`, `{x}`, `{y}`, `{-y}`, `{s}`, `{r}`, `{quadkey}`, `{reverseX}`, `{reverseY}`, `{reverseZ}`, `{westDegrees}`, `{southDegrees}`, `{eastDegrees}`, `{northDegrees}` (and the `Projected` variants), `{width}`, `{height}`, `{bbox-epsg-3857}` and `{bbox-epsg-4326}`, so Cesium, MapLibre and Leaflet templates work unchanged.
+* `ImageryLayer::headers` and `ElevationLayer::headers` add request headers (API keys, `Authorization`, `Referer`) to every tile and metadata request.
+* Cesium terrain loads from a `layer.json` URL, a `{z}/{x}/{y}.terrain` template or `ion://<asset id>` (with the ion token in `apiKey`). quantized-mesh-1.0 and heightmap-1.0 tiles are both read, the `available` ranges limit requests to tiles that exist, and ion tokens are refreshed when they expire.
+
+## KML
+
+* `NetworkLink` documents are fetched from local paths, KMZ entries or HTTP(S). `viewRefreshMode` `onStop` and `onRegion` links get the current view as a `BBOX` (or their own `viewFormat`), and `httpQuery` is appended. A file loads at most 64 links, nested at most four deep.
+* `Model` placemarks load COLLADA (`.dae`), OBJ or glTF models from the KMZ or beside the file, with `Location`, `Orientation`, `Scale` and `altitudeMode`.
+* `extrude` draws walls under lines and polygons and stalks under points when they are not clamped to the ground.
+* Remote `Icon` hrefs are downloaded once and cached.
+
+## CoT and ATAK
+
+* ATAK iconset zips are registered with `registerIconset` (C ABI `ote_register_iconset`), and `usericon iconsetpath` markers draw the matching icon.
+* Range and bearing lines (`u-rb-a`) are drawn from their `range` and `bearing`.
+* `strokeStyle` `dashed` and `dotted`, `color` (`argb` or `value`), `strokeColor`, `strokeWeight` and `fillColor` are honoured.
 
 ## Metadata preservation
 
