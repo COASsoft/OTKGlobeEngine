@@ -67,6 +67,7 @@ struct ElevationLayer {
     HeightEncoding encoding = HeightEncoding::Terrarium;
     bool cache = true;
     bool bathymetry = false;
+    std::vector<std::pair<std::string, std::string>> headers;
 };
 
 enum class TilesetLighting { Auto, Lit, Unlit };
