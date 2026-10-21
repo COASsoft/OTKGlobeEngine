@@ -962,6 +962,13 @@ void Engine::setImageryScale(double scale) {
     impl_->dirty = true;
 }
 
+void Engine::setLodMorph(double fraction) {
+    impl_->globe.setLodMorph(fraction);
+    impl_->dirty = true;
+}
+
+double Engine::lodMorph() const { return impl_->globe.lodMorph(); }
+
 View Engine::view() const {
     const Camera& c = impl_->camera;
     return {c.focus.lat, c.focus.lon, c.focus.alt, c.gsd, c.azimuth, c.tilt, c.holdAltitude};
