@@ -97,7 +97,12 @@ std::vector<Feature> parseCot(const std::vector<std::uint8_t>& bytes, std::vecto
         if (f.name.empty()) f.name = f.uid;
         std::vector<Coord> pts = detail ? linkPoints(detail) : std::vector<Coord>{};
         pugi::xml_node ellipse = detail ? detail.child("shape").child("ellipse") : pugi::xml_node();
-        if (ellipse) {
+        const double range = detail ? detail.child("range").attribute("value").as_double(-1.0) : -1.0;
+        if (f.type.rfind("u-rb", 0) == 0 && range > 0 && detail.child("bearing")) {
+            Coord end = geodesicDirect(c, detail.child("bearing").attribute("value").as_double(), range);
+            end.alt = c.alt;
+            f.geometries.push_back({GeometryType::LineString, {c, end}, {}});
+        } else if (ellipse) {
             double major = ellipse.attribute("major").as_double(), minor = ellipse.attribute("minor").as_double();
             double angle = ellipse.attribute("angle").as_double() * 3.14159265358979323846 / 180.0;
             Geometry g{GeometryType::Polygon, {}, {}};
