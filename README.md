@@ -18,8 +18,6 @@ Website and downloads: https://grangedevgroup-code.github.io/OpenTAKEngine/
 | **2525 units, contours, bullseye, R&B** | **Terrain slope** | **Airgapped, empty cache** |
 | ![](screenshots/opentakengine/19_mil_symbols_contours_bullseye.png) | ![](screenshots/opentakengine/20_terrain_slope.png) | ![](screenshots/opentakengine/21_airgapped_empty_cache.png) |
 
-ATAK reference captures are in `screenshots/atak`.
-
 ## Features
 
 **Globe and camera**
