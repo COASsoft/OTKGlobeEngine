@@ -581,6 +581,7 @@ bool Engine::setTilesetOpacity(std::uint64_t id, float opacity) {
 
 bool Engine::removeTileset(std::uint64_t id) {
     impl_->tilesetCenters.erase(id);
+    impl_->tilesetRadii.erase(id);
     impl_->dirty = true;
     return impl_->globe.removeTileset(id);
 }
