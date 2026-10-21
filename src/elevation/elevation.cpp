@@ -11,7 +11,7 @@
 
 #include "ote/image.hpp"
 
-#include <nlohmann/json.hpp>
+#include <json.hpp>
 
 #include <algorithm>
 #include <array>
