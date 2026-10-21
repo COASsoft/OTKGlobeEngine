@@ -2926,6 +2926,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 sg_draw(0, xray ? kGrid * kGrid * 6 : kIndexCount, 1);
             }
             if (!xray) objects();
+            if (labelsOn_) labels_.drawLabels(vc, ground, dpiScale_, visibleRects, static_cast<int>(vi));
             features_.drawOverlay(vc, ground, dpiScale_, flipSurface_, &vectorLabels);
             sg_end_pass();
         }
