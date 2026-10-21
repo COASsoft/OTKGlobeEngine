@@ -23,6 +23,7 @@
 #include "formats/adapters.hpp"
 #include "core/astro.hpp"
 #include "model/gltf_codecs.hpp"
+#include "model/model_convert.hpp"
 #include "model/model_layer.hpp"
 
 #if defined(OTE_WITH_MESHOPT)
