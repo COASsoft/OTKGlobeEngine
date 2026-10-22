@@ -1,3 +1,6 @@
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
 #include "render/label_layer.hpp"
 
 #include "core/geo.hpp"
@@ -34,6 +37,11 @@ constexpr double kCountyMeters = 500.0;
 constexpr double kStateMeters = 6500.0;
 constexpr int kOverviewClass = 18;
 constexpr int kMaxLabels = 700;
+#if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE) || defined(__EMSCRIPTEN__)
+constexpr int kOcclusionChecks = 50;
+#else
+constexpr int kOcclusionChecks = 200;
+#endif
 constexpr std::size_t kMaxCandidates = 20000;
 constexpr int kIconSize = 64;
 constexpr int kIcons = 4;
@@ -1107,8 +1115,8 @@ void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dp
     auto hiddenByTerrain = [&](std::uint64_t key, double lat, double lon, double h) {
         if (!checkTerrain) return false;
         auto cached = T.hidden.find(key);
-        if (cached != T.hidden.end() && cached->second.first + 8 > frame_) return cached->second.second;
-        if (++terrainChecks > 200) return cached != T.hidden.end() && cached->second.second;
+        if (cached != T.hidden.end() && cached->second.first + 12 > frame_) return cached->second.second;
+        if (++terrainChecks > kOcclusionChecks) return cached != T.hidden.end() && cached->second.second;
         const Vec3 a = geodeticToEcef(lat, lon, h + 2.0);
         const Vec3 d = a - eye;
         const double dist = length(d);
@@ -1119,11 +1127,11 @@ void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dp
             const GeoPoint g = ecefToGeodetic(eye + d * t);
             const double top = ground(g.lat, g.lon) + (above && dist * (1.0 - t) > 25.0 ? above(g.lat, g.lon) : 0.0);
             if (g.alt < top - 3.0) {
-                T.hidden[key] = {frame_ + (key % 8), true};
+                T.hidden[key] = {frame_ + (key % 12), true};
                 return true;
             }
         }
-        T.hidden[key] = {frame_ + (key % 8), false};
+        T.hidden[key] = {frame_ + (key % 12), false};
         return false;
     };
     for (const Candidate& c : candidates) {
