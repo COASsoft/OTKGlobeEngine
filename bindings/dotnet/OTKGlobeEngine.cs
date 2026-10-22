@@ -213,6 +213,8 @@ namespace OTKGlobeEngine
         [DllImport(Lib)] public static extern int otk_labels(IntPtr e);
         [DllImport(Lib)] public static extern void otk_set_labels_source(IntPtr e, [MarshalAs(UnmanagedType.LPUTF8Str)] string urlOrPath);
         [DllImport(Lib)] public static extern int otk_labels_layer(IntPtr e);
+        [DllImport(Lib)] public static extern void otk_set_buildings(IntPtr e, int enabled);
+        [DllImport(Lib)] public static extern int otk_buildings(IntPtr e);
         [DllImport(Lib)] public static extern void otk_set_controls(IntPtr e, uint controls);
         [DllImport(Lib)] public static extern uint otk_controls(IntPtr e);
         [DllImport(Lib)] public static extern void otk_set_controls_padding(IntPtr e, double left, double top, double right, double bottom);
@@ -334,6 +336,11 @@ namespace OTKGlobeEngine
         }
         public string LabelsSource { set => Native.otk_set_labels_source(Handle, value ?? ""); }
         public int LabelsLayer => Native.otk_labels_layer(Handle);
+        public bool Buildings
+        {
+            get => Native.otk_buildings(Handle) != 0;
+            set => Native.otk_set_buildings(Handle, value ? 1 : 0);
+        }
         public uint Controls
         {
             get => Native.otk_controls(Handle);
