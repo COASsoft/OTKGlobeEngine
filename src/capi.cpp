@@ -461,6 +461,10 @@ void otk_set_labels_source(otk_engine* e, const char* url_or_path) { e->engine.s
 
 int otk_labels_layer(const otk_engine* e) { return e->engine.labelsLayer(); }
 
+void otk_set_buildings(otk_engine* e, int enabled) { e->engine.setBuildingsEnabled(enabled != 0); }
+
+int otk_buildings(const otk_engine* e) { return e->engine.buildingsEnabled() ? 1 : 0; }
+
 void otk_set_controls(otk_engine* e, uint32_t controls) { e->engine.setControls(controls); }
 
 uint32_t otk_controls(const otk_engine* e) { return e->engine.controls(); }
