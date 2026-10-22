@@ -42,6 +42,7 @@ struct ImageryLayer {
     bool stream = true;
     int maxRequests = 0;
     std::string attribution;
+    bool photo = true;
     std::shared_ptr<HostTileSource> source;
 };
 
