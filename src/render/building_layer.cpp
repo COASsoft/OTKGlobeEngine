@@ -3,6 +3,8 @@
 #endif
 #include "render/building_layer.hpp"
 
+#include "raster/canopy.hpp"
+
 #include "core/geo.hpp"
 
 #include "buildings.glsl.h"
@@ -32,12 +34,16 @@ constexpr double kFadeAbove = 3500.0;
 constexpr int kMaxJobs = 2;
 constexpr size_t kBakesPerFrame = 2;
 constexpr std::size_t kBakeBytes = 2 * 1024 * 1024;
-#if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
+#if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE) || defined(__EMSCRIPTEN__)
 constexpr int kMaxAtlas = 1024;
 constexpr std::size_t kMaxTiles = 20;
+constexpr int kCanopyStep = 2;
+constexpr int kCanopyAtlas = 1024;
 #else
 constexpr int kMaxAtlas = 2048;
 constexpr std::size_t kMaxTiles = 40;
+constexpr int kCanopyStep = 1;
+constexpr int kCanopyAtlas = 2048;
 #endif
 
 double seconds() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
@@ -170,20 +176,17 @@ bool BuildingLayer::ready() {
 }
 
 void BuildingLayer::release(Tile& t) {
-    if (sg_isvalid()) {
-        if (t.vbuf.id) sg_destroy_buffer(t.vbuf);
-        if (t.ibuf.id) sg_destroy_buffer(t.ibuf);
-        if (t.atlasColor.id) sg_destroy_view(t.atlasColor);
-        if (t.atlasTexture.id) sg_destroy_view(t.atlasTexture);
-        if (t.atlas.id) sg_destroy_image(t.atlas);
+    for (Part& p : t.parts) {
+        if (sg_isvalid()) {
+            if (p.vbuf.id) sg_destroy_buffer(p.vbuf);
+            if (p.ibuf.id) sg_destroy_buffer(p.ibuf);
+            if (p.atlasColor.id) sg_destroy_view(p.atlasColor);
+            if (p.atlasTexture.id) sg_destroy_view(p.atlasTexture);
+            if (p.atlas.id) sg_destroy_image(p.atlas);
+        }
+        p = Part{};
     }
-    t.vbuf = {};
-    t.ibuf = {};
-    t.atlasColor = {};
-    t.atlasTexture = {};
-    t.atlas = {};
     t.ready = false;
-    t.baked = false;
 }
 
 void BuildingLayer::clear() {
@@ -197,8 +200,15 @@ void BuildingLayer::clear() {
 
 void BuildingLayer::retry() {
     for (auto it = tiles_.begin(); it != tiles_.end();) {
-        if (it->second.empty && !it->second.building) it = tiles_.erase(it);
-        else ++it;
+        if (it->second.building) {
+            it->second.recheck = true;
+            ++it;
+        } else if (it->second.empty || it->second.canopyFailed || it->second.shapesMissing) {
+            release(it->second);
+            it = tiles_.erase(it);
+        } else {
+            ++it;
+        }
     }
 }
 
@@ -227,7 +237,7 @@ void BuildingLayer::shutdown() {
     failed_ = false;
 }
 
-void BuildingLayer::upload(Tile& t, const BuildingMesh& mesh) {
+void BuildingLayer::upload(Part& t, const BuildingMesh& mesh) {
     sg_buffer_desc vd{};
     vd.usage.vertex_buffer = true;
     vd.data = {mesh.vertices.data(), mesh.vertices.size() * sizeof(BuildingVertex)};
@@ -258,21 +268,26 @@ void BuildingLayer::upload(Tile& t, const BuildingMesh& mesh) {
     }
 }
 
-void BuildingLayer::update(const Camera& cam, const TileFn& tile, const HeightsFn& heights, const ImageryFn& imagery, double exaggeration,
-                           bool terrain) {
+void BuildingLayer::update(const Camera& cam, const TileFn& tile, const HeightsFn& heights, const ImageryFn& imagery, const CanopyFn& canopy,
+                           double exaggeration, bool terrain) {
     ++frame_;
     busy_ = false;
     const double now = seconds();
     for (auto& [key, t] : tiles_) {
         if (!t.building || !t.job.valid() || t.job.wait_for(std::chrono::seconds(0)) != std::future_status::ready) continue;
-        std::shared_ptr<BuildingMesh> mesh = t.job.get();
+        Meshes meshes = t.job.get();
         t.building = false;
         --jobs_;
-        if (!mesh || mesh->indices.empty() || !ready()) {
+        t.canopyFailed = meshes.canopyFailed;
+        if (t.canopyFailed) t.retryAt = now + 4.0;
+        const bool hasBuildings = meshes.buildings && !meshes.buildings->indices.empty();
+        const bool hasCanopy = meshes.canopy && !meshes.canopy->indices.empty();
+        if ((!hasBuildings && !hasCanopy) || !ready()) {
             t.empty = true;
             continue;
         }
-        upload(t, *mesh);
+        if (hasBuildings) upload(t.parts[0], *meshes.buildings);
+        if (hasCanopy) upload(t.parts[1], *meshes.canopy);
         t.ready = true;
         t.appear = now;
     }
@@ -309,7 +324,18 @@ void BuildingLayer::update(const Camera& cam, const TileFn& tile, const HeightsF
             Tile& t = it->second;
             t.used = frame_;
             t.distance = d;
-            if (t.ready || t.building || t.empty) continue;
+            bool redo = t.canopyFailed && !t.building && now >= t.retryAt && jobs_ < kMaxJobs;
+            if (!redo && t.shapesMissing && t.recheck && !t.building && jobs_ < kMaxJobs) {
+                t.recheck = false;
+                std::shared_ptr<const VectorTile> probe;
+                redo = tile(key.first, key.second, d, probe) > 0;
+            }
+            if (redo) {
+                release(t);
+                tiles_.erase(it);
+            } else if (t.ready || t.building || t.empty) {
+                continue;
+            }
         }
         if (jobs_ >= kMaxJobs) {
             busy_ = true;
@@ -326,30 +352,46 @@ void BuildingLayer::update(const Camera& cam, const TileFn& tile, const HeightsF
         t.y = key.second;
         t.used = frame_;
         t.distance = d;
-        if (state < 0 || !vt || (vt->buildings.empty() && vt->bridges.empty())) {
+        const bool hasShapes = state > 0 && vt && !(vt->buildings.empty() && vt->bridges.empty());
+        t.shapesMissing = state < 0;
+        if (!hasShapes && !canopy) {
             t.empty = true;
             continue;
         }
         t.building = true;
         ++jobs_;
         busy_ = true;
-        std::vector<BuildingShape> shapes = vt->buildings;
-        std::vector<BridgeShape> bridges = vt->bridges;
+        std::vector<BuildingShape> shapes = hasShapes ? vt->buildings : std::vector<BuildingShape>{};
+        std::vector<BridgeShape> bridges = hasShapes ? vt->bridges : std::vector<BridgeShape>{};
         const int x = key.first, y = key.second;
-        t.job = std::async(std::launch::async, [shapes = std::move(shapes), bridges = std::move(bridges), x, y, heights, exaggeration, terrain]() {
-            const std::vector<std::array<double, 2>> points = buildingSamplePoints(shapes, bridges, kZoom, x, y);
-            std::vector<double> h;
-            if (terrain && !points.empty() && heights) {
-                std::vector<std::pair<double, double>> ll;
-                ll.reserve(points.size());
-                for (const auto& p : points) ll.emplace_back(p[0], p[1]);
-                h = heights(ll);
-                for (double& v : h)
-                    if (std::isfinite(v)) v *= exaggeration;
-            } else {
-                h.assign(points.size(), 0.0);
+        t.job = std::async(std::launch::async, [shapes = std::move(shapes), bridges = std::move(bridges), x, y, heights, canopy, exaggeration, terrain]() {
+            auto sample = [&](const std::vector<std::array<double, 2>>& points) {
+                std::vector<double> h;
+                if (terrain && !points.empty() && heights) {
+                    std::vector<std::pair<double, double>> ll;
+                    ll.reserve(points.size());
+                    for (const auto& p : points) ll.emplace_back(p[0], p[1]);
+                    h = heights(ll);
+                    for (double& v : h)
+                        if (std::isfinite(v)) v *= exaggeration;
+                } else {
+                    h.assign(points.size(), 0.0);
+                }
+                return h;
+            };
+            Meshes out;
+            if (!shapes.empty() || !bridges.empty())
+                out.buildings = std::make_shared<BuildingMesh>(
+                    buildBuildingMesh(shapes, bridges, kZoom, x, y, sample(buildingSamplePoints(shapes, bridges, kZoom, x, y)), kMaxAtlas));
+            if (canopy) {
+                std::vector<std::uint8_t> grid;
+                const int result = canopy(x, y, grid);
+                out.canopyFailed = result < 0;
+                if (result > 0)
+                    out.canopy = std::make_shared<BuildingMesh>(
+                        buildCanopyMesh(grid, kCanopySize, kCanopyStep, kZoom, x, y, sample(canopySamplePoints(kZoom, x, y)), kCanopyAtlas));
             }
-            return std::make_shared<BuildingMesh>(buildBuildingMesh(shapes, bridges, kZoom, x, y, h, kMaxAtlas));
+            return out;
         });
     }
     if (tiles_.size() > kMaxTiles) {
@@ -368,39 +410,46 @@ void BuildingLayer::update(const Camera& cam, const TileFn& tile, const HeightsF
         if (t.building) busy_ = true;
         if (!t.ready) continue;
         if (now - t.appear < 0.7) busy_ = true;
-        if (t.atlasSize <= 0 || !imagery) continue;
-        t.target = t.distance < 700.0 ? 18 : t.distance < 1500.0 ? 17 : 16;
-        if (now - t.imageryCheck >= 0.5) {
-            t.imageryCheck = now;
-            int sum = 0, low = 99;
-            std::vector<Piece> pieces;
-            for (const RoofCell& c : t.cells) {
-                imagery(c.west, c.south, c.east, c.north, t.target, true, pieces);
-                int z = pieces.empty() ? 0 : 99;
-                for (const Piece& p : pieces) z = std::min(z, p.z);
-                sum += z;
-                low = std::min(low, z);
+        if (!imagery) continue;
+        const bool check = now - t.imageryCheck >= 0.5;
+        if (check) t.imageryCheck = now;
+        for (int k = 0; k < 2; ++k) {
+            Part& p = t.parts[k];
+            if (p.atlasSize <= 0) continue;
+            p.target = k == 1 ? (t.distance < 500.0 ? 17 : t.distance < 1200.0 ? 16 : 15) : (t.distance < 700.0 ? 18 : t.distance < 1500.0 ? 17 : 16);
+            if (p.baked && p.availableMin >= p.target && p.bakedLevel >= p.availableLevel) continue;
+            if (check) {
+                int sum = 0, low = 99;
+                std::vector<Piece> pieces;
+                for (const RoofCell& c : p.cells) {
+                    imagery(c.west, c.south, c.east, c.north, p.target, true, pieces);
+                    int z = pieces.empty() ? 0 : 99;
+                    for (const Piece& piece : pieces) z = std::min(z, piece.z);
+                    sum += z;
+                    low = std::min(low, z);
+                }
+                p.availableLevel = sum;
+                p.availableMin = low == 99 ? 0 : low;
             }
-            t.availableLevel = sum;
-            t.availableMin = low == 99 ? 0 : low;
+            if ((!p.baked || p.availableMin < p.target - 1) && now - t.appear < 12.0) busy_ = true;
         }
-        if ((!t.baked || t.availableMin < t.target - 1) && now - t.appear < 12.0) busy_ = true;
     }
 }
 
 void BuildingLayer::bake(const ImageryFn& imagery, bool flip) {
     if (!initialized_ || failed_ || !imagery) return;
-    std::vector<Tile*> todo;
-    for (auto& [key, t] : tiles_) {
-        if (!t.ready || t.atlasSize <= 0 || t.used + 1 < frame_ || t.availableLevel < 0) continue;
-        if (!t.baked) {
-            todo.push_back(&t);
-            continue;
+    std::vector<std::pair<double, Part*>> order;
+    for (auto& [key, tile] : tiles_) {
+        if (!tile.ready || tile.used + 1 < frame_) continue;
+        for (Part& p : tile.parts) {
+            if (p.atlasSize <= 0 || p.availableLevel < 0) continue;
+            if (!p.baked || p.availableLevel > p.bakedLevel) order.push_back({tile.distance, &p});
         }
-        if (t.availableLevel > t.bakedLevel) todo.push_back(&t);
     }
-    if (todo.empty()) return;
-    std::sort(todo.begin(), todo.end(), [](const Tile* a, const Tile* b) { return a->distance < b->distance; });
+    if (order.empty()) return;
+    std::sort(order.begin(), order.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    std::vector<Part*> todo;
+    for (const auto& entry : order) todo.push_back(entry.second);
     if (todo.size() > kBakesPerFrame) todo.resize(kBakesPerFrame);
     struct Range {
         sg_view view;
@@ -416,7 +465,7 @@ void BuildingLayer::bake(const ImageryFn& imagery, bool flip) {
     const size_t cap = kBakeBytes / sizeof(BakeVertex);
     std::vector<Piece> pieces;
     for (size_t k = 0; k < todo.size(); ++k) {
-        const Tile& t = *todo[k];
+        const Part& t = *todo[k];
         const float s = static_cast<float>(t.atlasSize);
         auto ndcY = [&](float py) { return flip ? 1.0f - 2.0f * py / s : -1.0f + 2.0f * py / s; };
         std::vector<Quad> quads;
@@ -450,7 +499,7 @@ void BuildingLayer::bake(const ImageryFn& imagery, bool flip) {
         sg_write_buffer_transient(&wd);
     }
     for (size_t k = 0; k < todo.size(); ++k) {
-        Tile& t = *todo[k];
+        Part& t = *todo[k];
         sg_pass pass{};
         pass.action.colors[0].load_action = SG_LOADACTION_CLEAR;
         pass.action.colors[0].clear_value = {0.42f, 0.42f, 0.41f, 1.0f};
@@ -486,11 +535,13 @@ void BuildingLayer::draw(const Camera& cam, Vec3 light, bool sun) {
         fs.sizes[i][2] = m.windows;
     }
     bool applied = false;
-    for (auto& [key, t] : tiles_) {
-        if (!t.ready || t.used + 1 < frame_) continue;
-        const double appear = std::clamp((now - t.appear) / 0.6, 0.0, 1.0);
-        const double grow = std::min(std::clamp((kRadius - t.distance) / kFade, 0.0, 1.0), appear * appear * (3.0 - 2.0 * appear)) * fade_;
+    for (auto& [key, tile] : tiles_) {
+        if (!tile.ready || tile.used + 1 < frame_) continue;
+        const double appear = std::clamp((now - tile.appear) / 0.6, 0.0, 1.0);
+        const double grow = std::min(std::clamp((kRadius - tile.distance) / kFade, 0.0, 1.0), appear * appear * (3.0 - 2.0 * appear)) * fade_;
         if (grow <= 0.01) continue;
+        for (Part& t : tile.parts) {
+        if (!t.indexCount) continue;
         Mat4 rot = Mat4::identity();
         rot.at(0, 0) = t.east.x;
         rot.at(1, 0) = t.east.y;
@@ -532,6 +583,7 @@ void BuildingLayer::draw(const Camera& cam, Vec3 light, bool sun) {
         sg_apply_uniforms(UB_building_fs_params, SG_RANGE(fs));
         sg_draw(0, t.indexCount, 1);
         ++drawn_;
+        }
     }
 }
 
