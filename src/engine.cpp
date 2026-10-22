@@ -15,6 +15,7 @@
 #include <future>
 #include <limits>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "core/camera.hpp"
 #include "core/contours.hpp"
@@ -410,6 +411,11 @@ struct Engine::Impl {
     std::unique_ptr<Controls> controls;
 #endif
     std::vector<int> labelDownloads;
+    bool autoDownload = true;
+    std::array<double, 6> autoCam{};
+    std::chrono::steady_clock::time_point autoMoved;
+    bool autoChecked = false;
+    std::unordered_set<std::uint64_t> autoTiles;
     std::int64_t labelDone = -1;
     std::chrono::steady_clock::time_point labelRetry;
     bool downloadDue = false;
@@ -1857,12 +1863,55 @@ std::vector<ProfileSample> Engine::elevationProfile(const std::vector<Coord>& pa
     return out;
 }
 
+void Engine::setAutoDownloadLabels(bool enabled) {
+    impl_->autoDownload = enabled;
+    impl_->autoChecked = false;
+}
+
+bool Engine::autoDownloadLabels() const { return impl_->autoDownload; }
+
+void Engine::updateAutoDownload() {
+    Impl& I = *impl_;
+    if (!I.autoDownload || !(I.globe.labels() || I.globe.buildings())) return;
+    const std::string& source = I.globe.labelsSource();
+    if (source.find("://") == std::string::npos) return;
+    const auto now = std::chrono::steady_clock::now();
+    const std::array<double, 6> cam = I.contourCamera();
+    if (cam != I.autoCam) {
+        I.autoCam = cam;
+        I.autoMoved = now;
+        I.autoChecked = false;
+        return;
+    }
+    if (I.autoChecked || I.flying || now - I.autoMoved < std::chrono::milliseconds(700) || !I.labelDownloads.empty()) return;
+    I.autoChecked = true;
+    if (I.camera.gsd > 12.0 || I.camera.firstPerson) return;
+    const int layer = I.globe.labelsLayer();
+    const auto& m = I.globe.matrices();
+    if (layer < 0 || layer >= static_cast<int>(m.size())) return;
+    Region r = viewRegion();
+    const double f = I.camera.focus.lat, g = I.camera.focus.lon;
+    const double dLat = 0.03, dLon = 0.03 / std::max(0.2, std::cos(f * kDegToRad));
+    r.south = std::max(r.south, f - dLat);
+    r.north = std::min(r.north, f + dLat);
+    r.west = std::max(r.west, g - dLon);
+    r.east = std::min(r.east, g + dLon);
+    if (r.south >= r.north || r.west >= r.east) return;
+    bool fresh = false;
+    for (const TileRange& t : regionRanges(m[layer], r, 14, 14))
+        for (int y = t.y0; y <= t.y1; ++y)
+            for (int x = t.x0; x <= t.x1; ++x)
+                fresh = I.autoTiles.insert((static_cast<std::uint64_t>(x) << 32) | static_cast<std::uint32_t>(y)).second || fresh;
+    if (fresh) downloadLabels(r, 14);
+}
+
 void Engine::frame(const sg_swapchain& swapchain) {
     auto cpuStart = std::chrono::steady_clock::now();
     impl_->input->update();
     impl_->animate();
     impl_->followTerrain();
     impl_->updateContours();
+    updateAutoDownload();
     impl_->updateDownloads();
     impl_->globe.render(impl_->camera, &swapchain, nullptr, swapchain.width, swapchain.height);
     impl_->sanity();
@@ -1919,6 +1968,7 @@ void Engine::frameXr(const XrView* views, const sg_swapchain* targets, int count
         rv[i] = {&cams[i], &targets[i], nullptr, v.x, v.y, v.width, v.height, !sameTarget};
     }
     impl_->updateContours();
+    updateAutoDownload();
     impl_->updateDownloads();
     Camera select = impl_->camera;
     const double grow = 1.1;
@@ -1957,6 +2007,7 @@ void Engine::frameStereo(const sg_swapchain& swapchain, double eyeSeparation) {
     impl_->animate();
     impl_->followTerrain();
     impl_->updateContours();
+    updateAutoDownload();
     impl_->updateDownloads();
     impl_->renderStereo(&swapchain, nullptr, swapchain.width, swapchain.height, eyeSeparation);
     impl_->sanity();
@@ -1968,6 +2019,7 @@ void Engine::frameStereoOffscreen(const sg_attachments& attachments, int width, 
     impl_->animate();
     impl_->followTerrain();
     impl_->updateContours();
+    updateAutoDownload();
     impl_->updateDownloads();
     impl_->renderStereo(nullptr, &attachments, width, height, eyeSeparation);
     impl_->sanity();
@@ -1979,6 +2031,7 @@ void Engine::frameOffscreen(const sg_attachments& attachments, int width, int he
     impl_->animate();
     impl_->followTerrain();
     impl_->updateContours();
+    updateAutoDownload();
     impl_->updateDownloads();
     impl_->globe.render(impl_->camera, nullptr, &attachments, width, height);
     impl_->sanity();
