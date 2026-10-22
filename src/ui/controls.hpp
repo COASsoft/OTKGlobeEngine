@@ -23,6 +23,7 @@ public:
     Controls& operator=(const Controls&) = delete;
 
     void setFlags(std::uint32_t flags);
+    void setPadding(float left, float top, float right, float bottom);
     std::uint32_t flags() const { return flags_; }
     bool pointer(Phase phase, int id, double x, double y);
     void draw(int width, int height, double dpi);
@@ -78,6 +79,8 @@ private:
     std::vector<Vertex> verts_;
     std::vector<Target> targets_;
     float dpi_ = 1.0f;
+    std::array<float, 4> padding_{};
+    float top_ = 0, right_ = 0, bottom_ = 0;
     int width_ = 0, height_ = 0;
     bool panel_ = false;
     bool creditsOpen_ = false;
