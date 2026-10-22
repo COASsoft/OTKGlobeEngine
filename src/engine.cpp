@@ -20,6 +20,9 @@
 #include "core/contours.hpp"
 #include "core/region.hpp"
 #include "render/globe_renderer.hpp"
+#if defined(OTK_CONTROLS)
+#include "ui/controls.hpp"
+#endif
 
 #include "core/geoid.hpp"
 #include "otk/mgrs.hpp"
@@ -402,10 +405,22 @@ struct Engine::Impl {
         contourDue = true;
     }
 
+    std::vector<Basemap> basemaps = defaultBasemaps();
+#if defined(OTK_CONTROLS)
+    std::unique_ptr<Controls> controls;
+#endif
     std::vector<int> labelDownloads;
     std::int64_t labelDone = -1;
     std::chrono::steady_clock::time_point labelRetry;
     bool downloadDue = false;
+
+    bool controlsDirty() const {
+#if defined(OTK_CONTROLS)
+        return controls && controls->dirty();
+#else
+        return false;
+#endif
+    }
 
     void updateDownloads() {
         if (labelDownloads.empty()) {
@@ -627,12 +642,23 @@ struct Engine::Impl {
     }
 };
 
-Engine::Engine() : impl_(std::make_unique<Impl>()) { impl_->input = std::make_unique<InputController>(*this); }
+Engine::Engine() : impl_(std::make_unique<Impl>()) {
+    impl_->input = std::make_unique<InputController>(*this);
+#if defined(OTK_CONTROLS)
+    impl_->controls = std::make_unique<Controls>(*this);
+    impl_->input->claim_ = [this](int phase, int id, double x, double y) {
+        return impl_->controls->pointer(static_cast<Controls::Phase>(phase), id, x, y);
+    };
+#endif
+}
 
 Engine::~Engine() { shutdown(); }
 
 bool Engine::init() {
     impl_->camera.groundHeight = [this](double lat, double lon) { return impl_->globe.elevationAt(lat, lon); };
+#if defined(OTK_CONTROLS)
+    impl_->globe.setOverlay([this](int width, int height) { impl_->controls->draw(width, height, impl_->dpiScale); });
+#endif
     impl_->camera.update();
     if (impl_->globe.cacheDirectory().empty() && !impl_->cacheDisabled) {
         std::string dir = defaultCacheDirectory();
@@ -648,6 +674,9 @@ bool Engine::init() {
 void Engine::shutdown() {
     if (!impl_) return;
     if (impl_->contourJob.valid()) impl_->contourJob.wait();
+#if defined(OTK_CONTROLS)
+    if (impl_->controls) impl_->controls->shutdown();
+#endif
     impl_->globe.shutdown();
 }
 
@@ -667,6 +696,33 @@ void Engine::setLayers(const std::vector<ImageryLayer>& layers) {
 }
 
 std::vector<ImageryLayer> Engine::layers() const { return impl_->globe.layers(); }
+
+void Engine::setBasemaps(const std::vector<Basemap>& basemaps) {
+    impl_->basemaps = basemaps;
+    impl_->dirty = true;
+}
+
+std::vector<Basemap> Engine::basemaps() const { return impl_->basemaps; }
+
+void Engine::setBasemap(int index) {
+    if (index < 0 || index >= static_cast<int>(impl_->basemaps.size())) return;
+    setLayers(impl_->basemaps[static_cast<size_t>(index)].layers);
+}
+
+int Engine::basemap() const {
+    const std::vector<ImageryLayer>& current = impl_->globe.layers();
+    auto same = [](const ImageryLayer& a, const ImageryLayer& b) {
+        return a.type == b.type && a.url == b.url && a.path == b.path && a.table == b.table && a.name == b.name;
+    };
+    for (size_t i = 0; i < impl_->basemaps.size(); ++i) {
+        const std::vector<ImageryLayer>& l = impl_->basemaps[i].layers;
+        if (l.size() != current.size() || l.empty()) continue;
+        bool match = true;
+        for (size_t k = 0; k < l.size() && match; ++k) match = same(l[k], current[k]);
+        if (match) return static_cast<int>(i);
+    }
+    return -1;
+}
 
 void Engine::setLayerOpacity(int index, float opacity) {
     std::vector<ImageryLayer> l = impl_->globe.layers();
@@ -1334,6 +1390,10 @@ void Engine::setContours(bool enabled, double interval, DistanceUnit unit) {
 
 bool Engine::contoursEnabled() const { return impl_->contoursOn; }
 
+double Engine::contourInterval() const { return impl_->contourInterval; }
+
+DistanceUnit Engine::contourUnit() const { return impl_->contourUnit; }
+
 std::uint64_t Engine::addImageOverlay(const ImageOverlay& o) {
     impl_->dirty = true;
     return impl_->globe.addOverlay({o.west, o.south, o.east, o.north}, o.width, o.height, o.rgba, o.opacity);
@@ -1468,6 +1528,8 @@ void Engine::setTerrainEnabled(bool enabled) {
     impl_->globe.setTerrainEnabled(enabled);
     impl_->dirty = true;
 }
+
+bool Engine::terrainEnabled() const { return impl_->globe.terrainEnabled(); }
 
 void Engine::setTerrainExaggeration(double factor) {
     impl_->globe.setTerrainExaggeration(factor);
@@ -1917,10 +1979,28 @@ void Engine::frameOffscreen(const sg_attachments& attachments, int width, int he
 }
 
 bool Engine::needsRedraw() const {
-    return impl_->dirty || impl_->flying || impl_->globe.busy() || impl_->input->active() || impl_->globe.reachabilityChanged() || impl_->contourDue || impl_->downloadDue;
+    return impl_->dirty || impl_->flying || impl_->globe.busy() || impl_->input->active() || impl_->globe.reachabilityChanged() || impl_->contourDue || impl_->downloadDue ||
+           impl_->controlsDirty();
 }
 
 Stats Engine::stats() const { return impl_->globe.stats(); }
+
+void Engine::setControls(std::uint32_t controls) {
+#if defined(OTK_CONTROLS)
+    impl_->controls->setFlags(controls);
+    impl_->dirty = true;
+#else
+    (void)controls;
+#endif
+}
+
+std::uint32_t Engine::controls() const {
+#if defined(OTK_CONTROLS)
+    return impl_->controls->flags();
+#else
+    return 0;
+#endif
+}
 
 void configureGfx(sg_desc& desc) {
 #if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
