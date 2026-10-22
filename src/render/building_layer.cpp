@@ -462,6 +462,7 @@ void BuildingLayer::bake(const ImageryFn& imagery, bool flip) {
     std::vector<BakeVertex> verts;
     std::vector<std::vector<Range>> ranges(todo.size());
     std::vector<int> levels(todo.size(), 0);
+    std::vector<int> lows(todo.size(), 99);
     const size_t cap = kBakeBytes / sizeof(BakeVertex);
     std::vector<Piece> pieces;
     for (size_t k = 0; k < todo.size(); ++k) {
@@ -481,6 +482,7 @@ void BuildingLayer::bake(const ImageryFn& imagery, bool flip) {
                 quads.push_back({p.view, px0 / s * 2.0f - 1.0f, ndcY(py0), px1 / s * 2.0f - 1.0f, ndcY(py1), p.u0, p.v0, p.u1, p.v1});
             }
             levels[k] += low == 99 ? 0 : low;
+            lows[k] = std::min(lows[k], low == 99 ? 0 : low);
         }
         std::sort(quads.begin(), quads.end(), [](const Quad& a, const Quad& b) { return a.view.id < b.view.id; });
         for (const Quad& q : quads) {
@@ -519,6 +521,7 @@ void BuildingLayer::bake(const ImageryFn& imagery, bool flip) {
         sg_end_pass();
         t.baked = true;
         t.bakedLevel = levels[k];
+        t.bakedMin = lows[k] == 99 ? 0 : lows[k];
         t.availableLevel = std::min(t.availableLevel, levels[k]);
     }
 }
@@ -540,8 +543,10 @@ void BuildingLayer::draw(const Camera& cam, Vec3 light, bool sun) {
         const double appear = std::clamp((now - tile.appear) / 0.6, 0.0, 1.0);
         const double grow = std::min(std::clamp((kRadius - tile.distance) / kFade, 0.0, 1.0), appear * appear * (3.0 - 2.0 * appear)) * fade_;
         if (grow <= 0.01) continue;
-        for (Part& t : tile.parts) {
+        for (int part = 0; part < 2; ++part) {
+        Part& t = tile.parts[part];
         if (!t.indexCount) continue;
+        if (part == 1 && (!t.baked || t.bakedMin < t.target - 2)) continue;
         Mat4 rot = Mat4::identity();
         rot.at(0, 0) = t.east.x;
         rot.at(1, 0) = t.east.y;
