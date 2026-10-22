@@ -286,6 +286,8 @@ public:
     std::string labelsSource() const;
     int labelsLayer() const;
     int downloadLabels(const Region& region, int maxZoom = 14);
+    void setAutoDownloadLabels(bool enabled);
+    bool autoDownloadLabels() const;
     void setTerrainSlope(bool enabled, float opacity = 0.6f, double maxSlopeDegrees = 45.0);
     Region viewRegion() const;
     double terrainHeightMsl(double lat, double lon) const;
@@ -322,6 +324,7 @@ public:
     void setControlsPadding(double left, double top, double right, double bottom);
 
 private:
+    void updateAutoDownload();
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };
