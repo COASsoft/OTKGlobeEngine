@@ -317,7 +317,7 @@ public:
     bool init(const unsigned char* font) {
         if (!font || !stbtt_InitFont(&font_, font, stbtt_GetFontOffsetForIndex(font, 0))) return false;
         pixels_.assign(static_cast<size_t>(kAtlas) * kAtlas * 2, 0);
-        for (int i = 0; i < 256; ++i) gamma_[i] = static_cast<std::uint8_t>(std::lround(std::pow(i / 255.0, 0.85) * 255.0));
+        for (int i = 0; i < 256; ++i) gamma_[i] = static_cast<std::uint8_t>(std::lround(std::pow(i / 255.0, 0.7) * 255.0));
         ok_ = true;
         return true;
     }
@@ -343,7 +343,7 @@ public:
         if (it != glyphs_.end()) return it->second;
         Glyph g;
         if (!ok_) return glyphs_[key] = g;
-        const int pad = static_cast<int>(std::ceil(halo)) + 1;
+        const int pad = static_cast<int>(std::ceil(halo)) + 2;
         std::vector<std::uint8_t> cover;
         int w = 0, h = 0, ox = 0, oy = 0;
         if (cp == kDot) {
@@ -391,7 +391,7 @@ public:
         std::vector<float> fill(static_cast<size_t>(W) * H, 0.0f);
         for (int y = 0; y < h; ++y)
             for (int x = 0; x < w; ++x) fill[static_cast<size_t>(y + pad) * W + x + pad] = cover[static_cast<size_t>(y) * w + x] / 255.0f;
-        const int r = static_cast<int>(std::ceil(halo + 0.5f));
+        const int r = static_cast<int>(std::ceil(halo + 1.0f));
         for (int y = 0; y < H; ++y)
             for (int x = 0; x < W; ++x) {
                 float best = 0.0f;
@@ -400,8 +400,8 @@ public:
                         for (int dx = -r; dx <= r; ++dx) {
                             const int sx = x + dx, sy = y + dy;
                             if (sx < 0 || sy < 0 || sx >= W || sy >= H) continue;
-                            const float weight = std::clamp(halo + 0.5f - std::sqrt(static_cast<float>(dx * dx + dy * dy)), 0.0f, 1.0f);
-                            best = std::max(best, fill[static_cast<size_t>(sy) * W + sx] * weight);
+                            const float weight = std::clamp(halo + 1.0f - std::sqrt(static_cast<float>(dx * dx + dy * dy)), 0.0f, 1.0f);
+                            best = std::max(best, std::min(1.0f, fill[static_cast<size_t>(sy) * W + sx] * 2.0f) * weight);
                         }
                 std::uint8_t* dst = &pixels_[(static_cast<size_t>(penY_ + y) * kAtlas + penX_ + x) * 2];
                 dst[0] = static_cast<std::uint8_t>(std::lround(fill[static_cast<size_t>(y) * W + x] * 255.0f));
