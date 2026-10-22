@@ -23,6 +23,7 @@
 - Releases publish the npm package and the NuGet package when `NPM_TOKEN` and `NUGET_API_KEY` repository secrets are set.
 
 ### Loading
+- Faster first view of a new area: the automatic road and building download starts 0.3 s after the camera stops and fetches the zoom-14 tiles (buildings and street names) before the lower zooms, and building roofs are painted from whatever imagery is already loaded instead of waiting up to 4 s for sharp tiles, then repainted as sharper tiles arrive. On a 4 GB tablet a new city shows its 3D buildings in about 5 s (was over 20 s).
 - Roads, street names and 3D buildings now appear by themselves anywhere in the world: when the camera stops while zoomed in close (12 m per pixel or closer), the engine downloads that area (up to about 3 km around the centre) into the cache, pinned like a manual download, so it keeps working offline afterwards. Areas already fetched are not asked for again. `Engine::setAutoDownloadLabels(false)` (`otk_set_auto_download_labels`) turns it off for strictly offline use.
 - Phones and tablets get a larger tile memory budget (16% of RAM, was 10%), and prefetching stops when the budget is full instead of evicting tiles the view still needs. A tilted city view on a 4 GB tablet kept reloading tiles and never finished loading roads and buildings.
 - Road names and styling no longer blink while moving a tilted view: labels come from the most detailed road tiles loaded for each area, stay in place for a moment while newer tiles arrive, and keep their fade when a label moves to a different tile.
