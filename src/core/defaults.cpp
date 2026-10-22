@@ -103,7 +103,6 @@ ImageryLayer polarFillLayer() {
     polar.level0Resolution = 0.5625;
     polar.maxZoom = 7;
     polar.polarFill = true;
-    polar.attribution = "Polar fill: NASA Blue Marble";
     const float north[3] = {1.79f, 2.27f, 1.26f}, south[3] = {1.02f, 1.03f, 1.075f};
     for (int i = 0; i < 3; ++i) {
         polar.polarTintNorth[i] = north[i];
