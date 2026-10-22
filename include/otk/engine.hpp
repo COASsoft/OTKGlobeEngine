@@ -156,6 +156,16 @@ struct GridLabel {
     double y = 0;
 };
 
+enum ControlFlags : std::uint32_t {
+    ControlZoom = 1u << 0,
+    ControlCompass = 1u << 1,
+    ControlTilt = 1u << 2,
+    ControlLayers = 1u << 3,
+    ControlScale = 1u << 4,
+    ControlAttribution = 1u << 5,
+    ControlAll = 0x3Fu
+};
+
 class Engine {
 public:
     Engine();
@@ -169,6 +179,10 @@ public:
     void setViewport(int width, int height, float dpiScale);
     void setLayers(const std::vector<ImageryLayer>& layers);
     std::vector<ImageryLayer> layers() const;
+    void setBasemaps(const std::vector<Basemap>& basemaps);
+    std::vector<Basemap> basemaps() const;
+    void setBasemap(int index);
+    int basemap() const;
     void setLayerOpacity(int index, float opacity);
     void setLayerVisible(int index, bool visible);
     void setImageryScale(double scale);
@@ -186,6 +200,7 @@ public:
     void setElevation(const std::vector<ElevationLayer>& layers);
     std::vector<ElevationLayer> elevationLayers() const;
     void setTerrainEnabled(bool enabled);
+    bool terrainEnabled() const;
     void setTerrainExaggeration(double factor);
     void setDepthPerception(bool enabled);
     void setDiagnostics(bool enabled);
@@ -276,6 +291,8 @@ public:
                                            std::uint32_t color = 0xFFB0703A, DistanceUnit unit = DistanceUnit::Metric);
     void setContours(bool enabled, double interval = 0.0, DistanceUnit unit = DistanceUnit::Metric);
     bool contoursEnabled() const;
+    double contourInterval() const;
+    DistanceUnit contourUnit() const;
     std::uint64_t addImageOverlay(const ImageOverlay& overlay);
     bool removeImageOverlay(std::uint64_t id);
     LineOfSight lineOfSight(const Coord& from, double fromHeight, const Coord& to, double toHeight) const;
@@ -298,6 +315,8 @@ public:
     void frameStereoOffscreen(const sg_attachments& attachments, int width, int height, double eyeSeparation = 0.0);
     bool needsRedraw() const;
     Stats stats() const;
+    void setControls(std::uint32_t controls);
+    std::uint32_t controls() const;
 
 private:
     struct Impl;
