@@ -25,7 +25,7 @@ struct VectorLabel {
     float size = 12.0f;
 };
 
-enum class MarkType : std::uint8_t { Road, Shield, Place, Park, Water, Waterway };
+enum class MarkType : std::uint8_t { Road, Shield, Place, Park, Water, Waterway, Contour };
 
 enum class RoadClass : std::uint8_t { Motorway, MotorwayLink, Trunk, TrunkLink, Primary, Secondary, Tertiary, Minor, Service, Path, Tunnel, MinorTunnel };
 
