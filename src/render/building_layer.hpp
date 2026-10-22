@@ -56,6 +56,7 @@ private:
         std::vector<RoofCell> cells;
         bool baked = false;
         int bakedLevel = -1;
+        int bakedMin = -1;
         int availableLevel = -1;
         int availableMin = -1;
         int target = 16;
