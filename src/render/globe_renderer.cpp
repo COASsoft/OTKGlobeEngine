@@ -3019,12 +3019,12 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     }
     if (!xray) drawObjects();
     std::vector<FeatureLayer::ExternalLabel> vectorLabels;
-    if (!vectorLayers_.empty()) {
+    if (!vectorLayers_.empty() && !labelsOn_) {
         std::unordered_set<TileId, TileIdHash> seen;
         for (const auto& dt : tiles) {
             Bounds b = bounds(dt.key);
             for (int l = 0; l < static_cast<int>(matrices_.size()) && l < static_cast<int>(vectorLayers_.size()); ++l) {
-                if (!vectorLayers_[l]) continue;
+                if (!vectorLayers_[l] || l == overlayLayer_) continue;
                 const TileMatrix& m = matrices_[l];
                 double target = (b.north - b.south) / kSurfaceSize * m.unitsPerDegree();
                 int z = m.bestLevel(target);
@@ -3085,7 +3085,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             ++it;
         }
         if (contours_ && contours_->marks) overlayTiles.push_back(contours_->marks.get());
-        labels_.drawLabels(dc, ground, dpiScale_, visibleRects, overlayTiles, 0, labelsOn_);
+        auto above = [this](double lat, double lon) { return buildingsOn_ ? buildings_.heightAt(lat, lon) : 0.0; };
+        labels_.drawLabels(dc, ground, dpiScale_, visibleRects, overlayTiles, 0, labelsOn_, above);
     }
     features_.drawOverlay(dc, ground, dpiScale_, flipSurface_, &vectorLabels);
     if (!capture && snapshotShown_) {
@@ -3155,7 +3156,9 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 sg_draw(0, xray ? kGrid * kGrid * 6 : kIndexCount, 1);
             }
             if (!xray) objects();
-            if (labelsOn_ || contours_) labels_.drawLabels(vc, ground, dpiScale_, visibleRects, overlayTiles, static_cast<int>(vi), labelsOn_);
+            if (labelsOn_ || contours_)
+                labels_.drawLabels(vc, ground, dpiScale_, visibleRects, overlayTiles, static_cast<int>(vi), labelsOn_,
+                                   [this](double lat, double lon) { return buildingsOn_ ? buildings_.heightAt(lat, lon) : 0.0; });
             features_.drawOverlay(vc, ground, dpiScale_, flipSurface_, &vectorLabels);
             sg_end_pass();
         }
