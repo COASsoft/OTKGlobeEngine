@@ -42,6 +42,7 @@ public:
     void bake(const ImageryFn& imagery, bool flip);
     void draw(const Camera& cam, Vec3 light, bool sun);
     bool busy() const { return busy_; }
+    double heightAt(double lat, double lon) const;
     int drawn() const { return drawn_; }
 
 private:
@@ -78,6 +79,7 @@ private:
         bool withTrees = false;
         double retryAt = 0.0;
         Part parts[2];
+        std::vector<std::uint8_t> heights;
         double imageryCheck = 0.0;
         double appear = -1.0;
         double distance = 0.0;
