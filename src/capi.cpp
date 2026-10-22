@@ -461,6 +461,22 @@ void otk_set_labels_source(otk_engine* e, const char* url_or_path) { e->engine.s
 
 int otk_labels_layer(const otk_engine* e) { return e->engine.labelsLayer(); }
 
+void otk_set_controls(otk_engine* e, uint32_t controls) { e->engine.setControls(controls); }
+
+uint32_t otk_controls(const otk_engine* e) { return e->engine.controls(); }
+
+int otk_basemap_count(const otk_engine* e) { return static_cast<int>(e->engine.basemaps().size()); }
+
+int otk_basemap_name(const otk_engine* e, int index, char* out, int capacity) {
+    const std::vector<otk::Basemap> maps = e->engine.basemaps();
+    if (index < 0 || index >= static_cast<int>(maps.size())) return copyOut(std::string(), out, capacity);
+    return copyOut(maps[static_cast<size_t>(index)].name, out, capacity);
+}
+
+void otk_set_basemap(otk_engine* e, int index) { e->engine.setBasemap(index); }
+
+int otk_basemap(const otk_engine* e) { return e->engine.basemap(); }
+
 int otk_download_labels(otk_engine* e, double west, double south, double east, double north, int max_zoom) {
     return e->engine.downloadLabels({west, south, east, north}, max_zoom > 0 ? max_zoom : 14);
 }
