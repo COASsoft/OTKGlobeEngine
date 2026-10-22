@@ -12,7 +12,6 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
-#include <cstdio>
 #include <cstring>
 #include <set>
 
@@ -371,9 +370,11 @@ void BuildingLayer::update(const Camera& cam, const TileFn& tile, const HeightsF
         if (now - t.imageryCheck >= 0.5) {
             t.imageryCheck = now;
             int sum = 0, low = 99;
+            std::vector<Piece> pieces;
             for (const RoofCell& c : t.cells) {
-                Imagery im;
-                const int z = imagery(c.west, c.south, c.east, c.north, t.target, im) ? im.z : 0;
+                imagery(c.west, c.south, c.east, c.north, t.target, true, pieces);
+                int z = pieces.empty() ? 0 : 99;
+                for (const Piece& p : pieces) z = std::min(z, p.z);
                 sum += z;
                 low = std::min(low, z);
             }
@@ -411,19 +412,24 @@ void BuildingLayer::bake(const ImageryFn& imagery, bool flip) {
     std::vector<std::vector<Range>> ranges(todo.size());
     std::vector<int> levels(todo.size(), 0);
     const size_t cap = kBakeBytes / sizeof(BakeVertex);
+    std::vector<Piece> pieces;
     for (size_t k = 0; k < todo.size(); ++k) {
         const Tile& t = *todo[k];
         const float s = static_cast<float>(t.atlasSize);
+        auto ndcY = [&](float py) { return flip ? 1.0f - 2.0f * py / s : -1.0f + 2.0f * py / s; };
         std::vector<Quad> quads;
         quads.reserve(t.cells.size());
         for (const RoofCell& c : t.cells) {
-            Imagery im;
-            if (!imagery(c.west, c.south, c.east, c.north, -1, im) || !im.view.id) continue;
-            levels[k] += im.z;
-            const float x0 = static_cast<float>(c.x) / s * 2.0f - 1.0f, x1 = static_cast<float>(c.x + c.w) / s * 2.0f - 1.0f;
-            const float ya = flip ? 1.0f - 2.0f * static_cast<float>(c.y) / s : -1.0f + 2.0f * static_cast<float>(c.y) / s;
-            const float yb = flip ? 1.0f - 2.0f * static_cast<float>(c.y + c.h) / s : -1.0f + 2.0f * static_cast<float>(c.y + c.h) / s;
-            quads.push_back({im.view, x0, ya, x1, yb, im.u0, im.v0, im.u1, im.v1});
+            imagery(c.west, c.south, c.east, c.north, t.target, false, pieces);
+            int low = pieces.empty() ? 0 : 99;
+            for (const Piece& p : pieces) {
+                if (!p.view.id) continue;
+                low = std::min(low, p.z);
+                const float px0 = static_cast<float>(c.x) + p.fx0 * static_cast<float>(c.w), px1 = static_cast<float>(c.x) + p.fx1 * static_cast<float>(c.w);
+                const float py0 = static_cast<float>(c.y) + p.fy0 * static_cast<float>(c.h), py1 = static_cast<float>(c.y) + p.fy1 * static_cast<float>(c.h);
+                quads.push_back({p.view, px0 / s * 2.0f - 1.0f, ndcY(py0), px1 / s * 2.0f - 1.0f, ndcY(py1), p.u0, p.v0, p.u1, p.v1});
+            }
+            levels[k] += low == 99 ? 0 : low;
         }
         std::sort(quads.begin(), quads.end(), [](const Quad& a, const Quad& b) { return a.view.id < b.view.id; });
         for (const Quad& q : quads) {
@@ -460,18 +466,6 @@ void BuildingLayer::bake(const ImageryFn& imagery, bool flip) {
             }
         }
         sg_end_pass();
-        {
-            int hist[24] = {};
-            for (const RoofCell& c : t.cells) {
-                Imagery im;
-                const int zz = imagery(c.west, c.south, c.east, c.north, -1, im) ? im.z : 0;
-                ++hist[std::clamp(zz, 0, 23)];
-            }
-            std::fprintf(stderr, "[bake] tile %d/%d cells %zu atlas %d hist", t.x, t.y, t.cells.size(), t.atlasSize);
-            for (int zz = 0; zz < 24; ++zz) if (hist[zz]) std::fprintf(stderr, " z%d:%d", zz, hist[zz]);
-            if (!t.cells.empty()) std::fprintf(stderr, " cell0 %.6f %.6f %.6f %.6f %dx%d", t.cells[0].west, t.cells[0].south, t.cells[0].east, t.cells[0].north, t.cells[0].w, t.cells[0].h);
-            std::fputc(10, stderr);
-        }
         t.baked = true;
         t.bakedLevel = levels[k];
         t.availableLevel = std::min(t.availableLevel, levels[k]);
