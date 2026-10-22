@@ -294,6 +294,23 @@ public class OTKGlobeView extends GLSurfaceView implements GLSurfaceView.Rendere
         });
     }
 
+    public void downloadLabels(final double west, final double south, final double east, final double north, final int maxZoom,
+                               final Result result) {
+        run(new Runnable() {
+            @Override
+            public void run() {
+                final long id = OTKGlobeEngine.nativeDownloadLabels(engine, west, south, east, north, maxZoom);
+                requestRender();
+                if (result != null) post(new Runnable() {
+                    @Override
+                    public void run() {
+                        result.onResult(id);
+                    }
+                });
+            }
+        });
+    }
+
     public void setLabelsSource(final String urlOrPath) {
         run(new Runnable() {
             @Override
