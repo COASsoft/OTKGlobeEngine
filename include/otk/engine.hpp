@@ -325,6 +325,7 @@ public:
 
 private:
     void updateAutoDownload();
+    void updateLookahead();
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };
