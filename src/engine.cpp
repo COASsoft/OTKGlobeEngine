@@ -7,13 +7,17 @@
 #include "otk/milsym.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
+#include <future>
+#include <limits>
 #include <unordered_map>
 
 #include "core/camera.hpp"
+#include "core/contours.hpp"
 #include "core/region.hpp"
 #include "render/globe_renderer.hpp"
 
@@ -24,6 +28,148 @@
 #include <sokol_gfx.h>
 
 namespace otk {
+
+namespace {
+
+struct ContourRequest {
+    GeoRect region;
+    GeoRect need;
+    int cols = 0;
+    int rows = 0;
+    double cell = 0.0;
+    double interval = 0.0;
+    double step = 0.0;
+    double meters = 0.0;
+    double zoom = 0.0;
+    bool feet = false;
+};
+
+std::string contourText(double value, bool feet) {
+    std::string out;
+    const double rounded = std::round(value);
+    if (std::abs(value - rounded) > 1e-6) {
+        char buf[32];
+        std::snprintf(buf, sizeof(buf), "%.1f", value);
+        out = buf;
+    } else {
+        const long long v = static_cast<long long>(rounded);
+        const std::string digits = std::to_string(v < 0 ? -v : v);
+        if (v < 0) out += '-';
+        for (size_t i = 0; i < digits.size(); ++i) {
+            if (i > 0 && (digits.size() - i) % 3 == 0) out += ',';
+            out += digits[i];
+        }
+    }
+    return out + (feet ? " ft" : " m");
+}
+
+std::shared_ptr<ContourSet> buildContours(const GlobeRenderer& globe, const ContourRequest& q) {
+    const int cols = q.cols, rows = q.rows;
+    const GeoRect& r = q.region;
+    std::vector<std::pair<double, double>> points;
+    points.reserve(static_cast<size_t>(cols) * rows);
+    for (int j = 0; j < rows; ++j)
+        for (int i = 0; i < cols; ++i)
+            points.emplace_back(r.south + (r.north - r.south) * j / (rows - 1), r.west + (r.east - r.west) * i / (cols - 1));
+    const std::vector<double> raw = globe.queryElevation(points, q.cell);
+    std::vector<float> h(points.size(), std::numeric_limits<float>::quiet_NaN());
+    for (size_t k = 0; k < raw.size() && k < h.size(); ++k) {
+        if (!std::isfinite(raw[k])) continue;
+        const double v = raw[k] - geoidOffset(points[k].first, points[k].second);
+        h[k] = v <= 0.5 ? -1.0f : static_cast<float>(v);
+    }
+    std::vector<float> tmp(h.size());
+    for (int pass = 0; pass < 2; ++pass) {
+        const int di = pass == 0 ? 1 : 0, dj = pass == 0 ? 0 : 1;
+        for (int j = 0; j < rows; ++j)
+            for (int i = 0; i < cols; ++i) {
+                const size_t k = static_cast<size_t>(j) * cols + i;
+                const float c = h[k];
+                if (!std::isfinite(c)) {
+                    tmp[k] = c;
+                    continue;
+                }
+                float sum = 2.0f * c, weight = 2.0f;
+                for (int side = -1; side <= 1; side += 2) {
+                    const int ii = i + side * di, jj = j + side * dj;
+                    if (ii < 0 || jj < 0 || ii >= cols || jj >= rows) continue;
+                    const float v = h[static_cast<size_t>(jj) * cols + ii];
+                    if (!std::isfinite(v)) continue;
+                    sum += v;
+                    weight += 1.0f;
+                }
+                tmp[k] = sum / weight;
+            }
+        h.swap(tmp);
+    }
+    auto set = std::make_shared<ContourSet>();
+    set->bounds = r;
+    set->meters = q.meters;
+    auto marks = std::make_shared<VectorTile>();
+    marks->overlay = true;
+    constexpr int kBuckets = 8;
+    std::vector<std::vector<float>> buckets(kBuckets * kBuckets);
+    std::vector<GeoRect> boxes(kBuckets * kBuckets, GeoRect{1e9, 1e9, -1e9, -1e9});
+    const double bw = (r.east - r.west) / kBuckets, bh = (r.north - r.south) / kBuckets;
+    const double piece = q.cell * 140.0;
+    const auto zoomByte = static_cast<std::uint8_t>(std::clamp(std::floor(q.zoom), 0.0, 30.0));
+    for (const ContourPath& path : traceContours(h, cols, rows, r.west, r.south, r.east, r.north, q.step, 5, 1, 0.33)) {
+        const float style = path.major ? 1.0f : 0.0f;
+        for (size_t i = 1; i < path.points.size(); ++i) {
+            const auto& a = path.points[i - 1];
+            const auto& b = path.points[i];
+            const int bx = std::clamp(static_cast<int>(((a[0] + b[0]) * 0.5 - r.west) / bw), 0, kBuckets - 1);
+            const int by = std::clamp(static_cast<int>(((a[1] + b[1]) * 0.5 - r.south) / bh), 0, kBuckets - 1);
+            const int k = by * kBuckets + bx;
+            buckets[k].insert(buckets[k].end(), {static_cast<float>(a[0] - r.west), static_cast<float>(a[1] - r.south), static_cast<float>(b[0] - r.west),
+                                                 static_cast<float>(b[1] - r.south), 0.0f, style});
+            GeoRect& box = boxes[k];
+            box.west = std::min({box.west, a[0], b[0]});
+            box.east = std::max({box.east, a[0], b[0]});
+            box.south = std::min({box.south, a[1], b[1]});
+            box.north = std::max({box.north, a[1], b[1]});
+        }
+        if (!path.major || path.points.size() < 2) continue;
+        TileMark m;
+        m.type = MarkType::Contour;
+        m.zoom = zoomByte;
+        m.text = contourText(path.index * q.interval, q.feet);
+        m.points.push_back(path.points[0]);
+        double run = 0.0;
+        int pieces = 0;
+        for (size_t i = 1; i < path.points.size(); ++i) {
+            const auto& a = path.points[i - 1];
+            const auto& b = path.points[i];
+            run += std::hypot((b[0] - a[0]) * std::cos(a[1] * kDegToRad), b[1] - a[1]) * 111320.0;
+            m.points.push_back(b);
+            if (run >= piece && i + 1 < path.points.size()) {
+                marks->marks.push_back(m);
+                ++pieces;
+                m.points.assign(1, b);
+                run = 0.0;
+            }
+        }
+        if (pieces > 0 && run < piece * 0.4) {
+            auto& last = marks->marks.back().points;
+            last.insert(last.end(), m.points.begin() + 1, m.points.end());
+        } else if (m.points.size() >= 2) {
+            marks->marks.push_back(std::move(m));
+        }
+    }
+    for (int k = 0; k < kBuckets * kBuckets; ++k) {
+        if (buckets[k].empty()) continue;
+        ContourBucket b;
+        b.first = static_cast<int>(set->segments.size() / 6);
+        b.count = static_cast<int>(buckets[k].size() / 6);
+        b.bounds = boxes[k];
+        set->segments.insert(set->segments.end(), buckets[k].begin(), buckets[k].end());
+        set->buckets.push_back(b);
+    }
+    set->marks = std::move(marks);
+    return set;
+}
+
+}
 
 struct Engine::Impl {
     Camera camera;
@@ -107,6 +253,150 @@ struct Engine::Impl {
                 dirty = true;
             }
         }
+    }
+
+    bool contoursOn = false;
+    double contourInterval = 0.0;
+    DistanceUnit contourUnit = DistanceUnit::Metric;
+    std::uint64_t contourGeneration = 0;
+    std::uint64_t contourJobGeneration = 0;
+    std::future<std::shared_ptr<ContourSet>> contourJob;
+    std::array<double, 6> contourCam{};
+    std::chrono::steady_clock::time_point contourMoved;
+    bool contourChecked = false;
+    bool contourDue = false;
+    bool contourHave = false;
+    GeoRect contourBounds;
+    double contourStep = 0.0;
+    double contourZoom = 0.0;
+
+    std::array<double, 6> contourCamera() const {
+        return {camera.focus.lat, camera.focus.lon, camera.gsd, camera.azimuth, camera.tilt,
+                static_cast<double>(camera.width) * 65536.0 + camera.height};
+    }
+
+    void resetContours() {
+        ++contourGeneration;
+        contourHave = false;
+        contourChecked = false;
+        contourCam = contourCamera();
+        contourMoved = std::chrono::steady_clock::time_point{};
+        dirty = true;
+    }
+
+    bool contourRequest(ContourRequest& q) const {
+        const double W = camera.width, H = camera.height;
+        const double lat = camera.focus.lat, lon = camera.focus.lon;
+        if (W < 2 || H < 2 || std::abs(lat) > 84.0) return false;
+        const double device = camera.pixelSizeAt(std::max(length(camera.focusEcef() - camera.eye()), 1.0));
+        const double logical = device * std::max(static_cast<double>(dpiScale), 0.25);
+        const double zoom = std::log2(156543.034 * std::max(std::cos(lat * kDegToRad), 1e-3) / std::max(logical, 1e-6));
+        const bool feet = contourUnit != DistanceUnit::Metric;
+        double minor = 0.0;
+        if (contourInterval > 0) {
+            const double n = contourInterval;
+            const double start = feet ? (n >= 400 ? 10 : n >= 200 ? 11 : n >= 100 ? 12 : 13) : (n >= 100 ? 10 : n >= 50 ? 11 : n >= 20 ? 12 : 13);
+            if (zoom < start) return false;
+            minor = n;
+        } else {
+            static constexpr double kMetric[4][2] = {{10, 100}, {12, 50}, {13, 20}, {15, 10}};
+            static constexpr double kFeet[4][2] = {{10, 400}, {12, 200}, {13, 100}, {15, 40}};
+            for (const auto& rung : feet ? kFeet : kMetric)
+                if (zoom >= rung[0]) minor = rung[1];
+            if (minor <= 0) return false;
+        }
+        const double reach = 0.5 * std::hypot(W, H) * device * 1.3;
+        const double coslat = std::max(std::cos(lat * kDegToRad), 0.05);
+        GeoRect need{lon - reach / (111320.0 * coslat), lat - reach / 111320.0, lon + reach / (111320.0 * coslat), lat + reach / 111320.0};
+        double south = 90, north = -90, west = 1e9, east = -1e9;
+        bool any = false;
+        for (int j = 0; j <= 8; ++j)
+            for (int i = 0; i <= 8; ++i) {
+                Vec3 p;
+                if (!pickGround(W * i / 8.0, H * j / 8.0, p)) continue;
+                const GeoPoint g = ecefToGeodetic(p);
+                const double glon = lon + std::remainder(g.lon - lon, 360.0);
+                any = true;
+                south = std::min(south, g.lat);
+                north = std::max(north, g.lat);
+                west = std::min(west, glon);
+                east = std::max(east, glon);
+            }
+        if (any) need = {std::max(need.west, west), std::max(need.south, south), std::min(need.east, east), std::min(need.north, north)};
+        need = {std::max(need.west, -180.0), std::max(need.south, -85.0), std::min(need.east, 180.0), std::min(need.north, 85.0)};
+        if (!(need.east > need.west) || !(need.north > need.south)) return false;
+        const double gx = (need.east - need.west) * 0.2, gy = (need.north - need.south) * 0.2;
+        const GeoRect region{std::max(need.west - gx, -180.0), std::max(need.south - gy, -85.0), std::min(need.east + gx, 180.0),
+                             std::min(need.north + gy, 85.0)};
+        const double mid = std::max(std::cos(0.5 * (region.south + region.north) * kDegToRad), 0.05);
+        const double widthM = (region.east - region.west) * 111320.0 * mid, heightM = (region.north - region.south) * 111320.0;
+        double cell = std::max(2.5 * logical, 8.0);
+        constexpr double kMaxSamples = 640000.0;
+        const double samples = (widthM / cell + 1.0) * (heightM / cell + 1.0);
+        if (samples > kMaxSamples) cell *= std::sqrt(samples / kMaxSamples);
+        q.region = region;
+        q.need = need;
+        q.cols = std::clamp(static_cast<int>(std::ceil(widthM / cell)) + 1, 2, 2048);
+        q.rows = std::clamp(static_cast<int>(std::ceil(heightM / cell)) + 1, 2, 2048);
+        q.cell = cell;
+        q.interval = minor;
+        q.step = minor * (feet ? 0.3048 : 1.0);
+        q.meters = logical;
+        q.zoom = zoom;
+        q.feet = feet;
+        return true;
+    }
+
+    void updateContours() {
+        const auto now = std::chrono::steady_clock::now();
+        if (contourJob.valid() && contourJob.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+            std::shared_ptr<ContourSet> set = contourJob.get();
+            if (contoursOn && contourJobGeneration == contourGeneration) {
+                globe.setContours(std::move(set));
+                dirty = true;
+            }
+        }
+        if (!contoursOn) {
+            if (globe.hasContours()) {
+                globe.setContours(nullptr);
+                dirty = true;
+            }
+            contourDue = false;
+            return;
+        }
+        const std::array<double, 6> cam = contourCamera();
+        if (cam != contourCam) {
+            contourCam = cam;
+            contourMoved = now;
+            contourChecked = false;
+        }
+        if (contourChecked || contourJob.valid() || flying || now - contourMoved < std::chrono::milliseconds(300)) {
+            contourDue = !contourChecked || contourJob.valid();
+            return;
+        }
+        contourChecked = true;
+        contourDue = false;
+        ContourRequest q;
+        if (!contourRequest(q)) {
+            contourHave = false;
+            if (globe.hasContours()) {
+                globe.setContours(nullptr);
+                dirty = true;
+            }
+            return;
+        }
+        const GeoRect& b = contourBounds;
+        if (contourHave && q.step == contourStep && std::abs(q.zoom - contourZoom) < 0.75 && q.need.west >= b.west && q.need.east <= b.east &&
+            q.need.south >= b.south && q.need.north <= b.north)
+            return;
+        contourHave = true;
+        contourBounds = q.region;
+        contourStep = q.step;
+        contourZoom = q.zoom;
+        contourJobGeneration = contourGeneration;
+        const GlobeRenderer* g = &globe;
+        contourJob = std::async(std::launch::async, [g, q] { return buildContours(*g, q); });
+        contourDue = true;
     }
 
     std::uint64_t sanityFrame = 0;
@@ -321,7 +611,9 @@ bool Engine::init() {
 }
 
 void Engine::shutdown() {
-    if (impl_) impl_->globe.shutdown();
+    if (!impl_) return;
+    if (impl_->contourJob.valid()) impl_->contourJob.wait();
+    impl_->globe.shutdown();
 }
 
 void Engine::setViewport(int width, int height, float dpiScale) {
@@ -972,6 +1264,18 @@ std::vector<std::uint64_t> Engine::addContours(const Region& region, double inte
     return ids;
 }
 
+void Engine::setContours(bool enabled, double interval, DistanceUnit unit) {
+    const double iv = std::isfinite(interval) && interval > 0 ? interval : 0.0;
+    Impl& m = *impl_;
+    if (m.contoursOn == enabled && m.contourInterval == iv && m.contourUnit == unit) return;
+    m.contoursOn = enabled;
+    m.contourInterval = iv;
+    m.contourUnit = unit;
+    m.resetContours();
+}
+
+bool Engine::contoursEnabled() const { return impl_->contoursOn; }
+
 std::uint64_t Engine::addImageOverlay(const ImageOverlay& o) {
     impl_->dirty = true;
     return impl_->globe.addOverlay({o.west, o.south, o.east, o.north}, o.width, o.height, o.rgba, o.opacity);
@@ -1096,6 +1400,7 @@ std::int64_t Engine::importTiles(int layer, const std::string& path, std::string
 
 void Engine::setElevation(const std::vector<ElevationLayer>& layers) {
     impl_->globe.setElevation(layers);
+    if (impl_->contoursOn) impl_->resetContours();
     impl_->dirty = true;
 }
 
@@ -1430,6 +1735,7 @@ void Engine::frame(const sg_swapchain& swapchain) {
     impl_->input->update();
     impl_->animate();
     impl_->followTerrain();
+    impl_->updateContours();
     impl_->globe.render(impl_->camera, &swapchain, nullptr, swapchain.width, swapchain.height);
     impl_->sanity();
     impl_->dirty = false;
@@ -1484,6 +1790,7 @@ void Engine::frameXr(const XrView* views, const sg_swapchain* targets, int count
                           targets[i].metal.current_drawable == targets[i - 1].metal.current_drawable;
         rv[i] = {&cams[i], &targets[i], nullptr, v.x, v.y, v.width, v.height, !sameTarget};
     }
+    impl_->updateContours();
     Camera select = impl_->camera;
     const double grow = 1.1;
     select.setPose(center * (1.0 / count), toWorld(rotate(views[0].orientation, {1, 0, 0})), toWorld(rotate(views[0].orientation, {0, 1, 0})),
@@ -1520,6 +1827,7 @@ void Engine::frameStereo(const sg_swapchain& swapchain, double eyeSeparation) {
     impl_->input->update();
     impl_->animate();
     impl_->followTerrain();
+    impl_->updateContours();
     impl_->renderStereo(&swapchain, nullptr, swapchain.width, swapchain.height, eyeSeparation);
     impl_->sanity();
     impl_->dirty = false;
@@ -1529,6 +1837,7 @@ void Engine::frameStereoOffscreen(const sg_attachments& attachments, int width, 
     impl_->input->update();
     impl_->animate();
     impl_->followTerrain();
+    impl_->updateContours();
     impl_->renderStereo(nullptr, &attachments, width, height, eyeSeparation);
     impl_->sanity();
     impl_->dirty = false;
@@ -1538,13 +1847,14 @@ void Engine::frameOffscreen(const sg_attachments& attachments, int width, int he
     impl_->input->update();
     impl_->animate();
     impl_->followTerrain();
+    impl_->updateContours();
     impl_->globe.render(impl_->camera, nullptr, &attachments, width, height);
     impl_->sanity();
     impl_->dirty = false;
 }
 
 bool Engine::needsRedraw() const {
-    return impl_->dirty || impl_->flying || impl_->globe.busy() || impl_->input->active() || impl_->globe.reachabilityChanged();
+    return impl_->dirty || impl_->flying || impl_->globe.busy() || impl_->input->active() || impl_->globe.reachabilityChanged() || impl_->contourDue;
 }
 
 Stats Engine::stats() const { return impl_->globe.stats(); }
