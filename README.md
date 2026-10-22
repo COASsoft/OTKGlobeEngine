@@ -90,6 +90,7 @@ The engine draws a small, plain set of controls in the bottom-right corner: zoom
 - Turn them off: `engine.setControls(0)` (`otk_set_controls(e, 0)`, .NET `Controls = 0`, Swift `controls = 0`, Android `setControls(0)`, viewer `--controls 0`).
 - Keep only some: pass a mask of `ControlZoom`, `ControlCompass`, `ControlTilt`, `ControlLayers`, `ControlScale` and `ControlAttribution` (`OTK_CONTROL_*` in C); `ControlAll` is the default.
 - Leave them out of the build: `-DOTK_CONTROLS=OFF`. The calls stay and do nothing.
+- Keep them clear of system bars or your own UI: `setControlsPadding(left, top, right, bottom)` in density-independent pixels (`otk_set_controls_padding`). Android's `OTKGlobeView` applies the window insets (navigation bar, taskbar) by itself until you set a padding.
 - Change the map list: `setBasemaps({{"Name", layers}, ...})`; `setBasemap(i)` and `basemap()` pick and read the current one (`otk_set_basemap`, `otk_basemap`, `otk_basemap_count`, `otk_basemap_name`). `otk::defaultBasemaps()` is the built-in list.
 - The code is `src/ui/controls.cpp` and its shader `src/ui/controls.glsl`. It uses only the public `Engine` API (`view`, `flyTo`, `input().zoomAnimated`, `setBasemap`, `setLabelsEnabled`, `setContours`, `setTerrainEnabled`, `downloadLabels`, `credits`), so an app can turn it off and build its own controls from the same calls.
 - With the credits turned off, show `Engine::credits()` somewhere else: the default imagery, OpenStreetMap and the CC BY label data ask for attribution. Imagery layers carry it in `ImageryLayer::attribution`.
