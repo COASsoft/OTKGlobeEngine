@@ -83,6 +83,17 @@ The project builds two libraries, matching the split between the TAK kernel and 
 - C ABI `include/otk/otk.h` and `otkglobeengine_c` shared library
 - Android AAR with `OTKGlobeView` (`scripts/android_aar.py`), Swift `OTKGlobeView` and xcframework (`scripts/apple_xcframework.sh`), C# wrapper (`bindings/dotnet`)
 
+## Built-in controls
+
+The engine draws a small, plain set of controls in the bottom-right corner: zoom in and out, a compass that points north and turns the map back to north when pressed, a 2D/3D button, and a layers button. The layers button opens the map list (Satellite, Topographic, Streets, Vector), switches for labels, contours and 3D terrain, and a button that downloads roads for the view. Along the bottom edge are a scale bar (press it for feet and miles) and the map credits (press them for the full list). Mouse, touch and pen all work, and the controls take a press before the map does.
+
+- Turn them off: `engine.setControls(0)` (`otk_set_controls(e, 0)`, .NET `Controls = 0`, Swift `controls = 0`, Android `setControls(0)`, viewer `--controls 0`).
+- Keep only some: pass a mask of `ControlZoom`, `ControlCompass`, `ControlTilt`, `ControlLayers`, `ControlScale` and `ControlAttribution` (`OTK_CONTROL_*` in C); `ControlAll` is the default.
+- Leave them out of the build: `-DOTK_CONTROLS=OFF`. The calls stay and do nothing.
+- Change the map list: `setBasemaps({{"Name", layers}, ...})`; `setBasemap(i)` and `basemap()` pick and read the current one (`otk_set_basemap`, `otk_basemap`, `otk_basemap_count`, `otk_basemap_name`). `otk::defaultBasemaps()` is the built-in list.
+- The code is `src/ui/controls.cpp` and its shader `src/ui/controls.glsl`. It uses only the public `Engine` API (`view`, `flyTo`, `input().zoomAnimated`, `setBasemap`, `setLabelsEnabled`, `setContours`, `setTerrainEnabled`, `downloadLabels`, `credits`), so an app can turn it off and build its own controls from the same calls.
+- With the credits turned off, show `Engine::credits()` somewhere else: the default imagery, OpenStreetMap and the CC BY label data ask for attribution. Imagery layers carry it in `ImageryLayer::attribution`.
+
 ## Install
 
 Releases on GitHub carry ready-made packages:
@@ -136,7 +147,7 @@ otk_viewer [file or folder ...] [--view lat,lon,gsd,tilt,azimuth] [--preset 0..3
            [--stereo eye_separation_m (0 = auto)] [--sun unix_seconds|now]
            [--elevation-dir dir] [--gdal-dem f] [--quantized-mesh url] [--terrain 0|1] [--exaggeration x]
            [--cache dir] [--offline 1] [--cache-limit MB] [--import file] [--export w,s,e,n,minz,maxz,file]
-           [--memory MB] [--labels 0|1] [--grid 1] [--grid-type 0|1|2] [--heatmap 1] [--slope 1] [--contours metres|0] [--download-labels w,s,e,n]
+           [--memory MB] [--labels 0|1] [--grid 1] [--grid-type 0|1|2] [--heatmap 1] [--slope 1] [--contours metres|0] [--download-labels w,s,e,n] [--controls mask]
            [--bullseye lat,lon,radius] [--rings lat,lon,spacing,count] [--rb lat1,lon1,lat2,lon2]
            [--first-person heading,pitch[,height]] [--download w,s,e,n,minz,maxz]
            [--shot out.png] [--shot-timeout s] [--script file] [--film dir] [--film-every s]
