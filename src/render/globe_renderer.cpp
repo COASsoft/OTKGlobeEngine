@@ -1748,7 +1748,7 @@ bool GlobeRenderer::buildSurfaceJob(const QuadKey& k, double priority, SurfaceJo
                         ++job->hollow;
                     continue;
                 }
-                if (missing && l != baseLayer_ && !layers_[l].polarFill && src.z < id.z - 1 && sparseLayer(l)) continue;
+                if (missing && l != baseLayer_ && l != overlayLayer_ && !layers_[l].polarFill && src.z < id.z - 1 && sparseLayer(l)) continue;
                 if (job && !missing && src.z < id.z) job->degraded = true;
                 tex->used = frame_;
                 if (!job) continue;
@@ -2942,7 +2942,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             for (const TileRange& r : regionRanges(m, {b.west, s, b.east, n}, z, z))
                 for (int ty = r.y0; ty <= r.y1; ++ty)
                     for (int tx = r.x0; tx <= r.x1; ++tx)
-                        for (int up = 0; up <= 3 && z - up >= 0; ++up) {
+                        for (int up = 0; up <= 6 && z - up >= 0; ++up) {
                             auto it = imagery_.find(TileId{overlayLayer_, z - up, tx >> up, ty >> up});
                             if (it == imagery_.end() || !it->second.vector) continue;
                             if (seenOverlay.insert(it->second.vector.get()).second) overlayTiles.push_back(it->second.vector.get());
@@ -3083,7 +3083,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         }
     }
     viewComplete_ = incomplete == 0;
-    busy_ = pending || fading || snapshotShown_ || tilesBusy || stats_.pendingRequests > 0 || renders > 0 || builds > 0 || elevationChanged;
+    busy_ = pending || fading || snapshotShown_ || tilesBusy || stats_.pendingRequests > 0 || renders > 0 || builds > 0 || elevationChanged ||
+            (labelsOn_ && labels_.animating());
     if (busyLog_ && busy_ && frame_ % 30 == 0)
         std::fprintf(stderr, "[otk] busy frame %llu pending %d fading %d tiles %d requests %d renders %d builds %d elevation %d needs %zu\n",
                      static_cast<unsigned long long>(frame_), pending ? 1 : 0, fading ? 1 : 0, tilesBusy ? 1 : 0, stats_.pendingRequests, renders, builds,
