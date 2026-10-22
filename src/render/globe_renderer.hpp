@@ -110,6 +110,7 @@ public:
     BuildingLayer::ImageryFn roofImagery();
     void setOverlay(std::function<void(int width, int height)> draw) { overlay_ = std::move(draw); }
     bool terrainEnabled() const { return terrainEnabled_; }
+    double buildingHeightAt(double lat, double lon) const { return buildingsOn_ ? buildings_.heightAt(lat, lon) : 0.0; }
     bool hasContours() const { return contours_ != nullptr; }
     void setSkyVisible(bool visible) { skyVisible_ = visible; }
     void setGroundColor(float r, float g, float b) {
