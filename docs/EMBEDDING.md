@@ -15,6 +15,17 @@ Two APIs are available:
 
 The graphics backend is chosen at build time: Direct3D 11 on Windows, Metal on macOS and iOS, OpenGL 4.1 on Linux, OpenGL ES 3 on Android.
 
+## Web pages
+
+The `otkglobeengine` npm package is the same engine compiled to WebAssembly. It draws into a `<canvas>` with WebGL 2 and handles input itself:
+
+```js
+import { OTKGlobe } from 'otkglobeengine';
+const globe = await OTKGlobe.create('#map', { view: { lat: 47.61, lon: -122.35, metersPerPixel: 2, tilt: 45 } });
+```
+
+The page must be served with `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`. [bindings/web/README.md](../bindings/web/README.md) has the full guide; `python scripts/web_build.py` builds the package into `bindings/web/dist`.
+
 ## Kernel only (no GPU)
 
 Servers, converters and other headless programs link the `otk_kernel` target (add the repository with `add_subdirectory` or `FetchContent`, optionally with `-DOTK_ENGINE=OFF`). Everything in it works without a window or graphics driver:
