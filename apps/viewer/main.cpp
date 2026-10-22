@@ -418,10 +418,6 @@ void frame() {
             otk::View v = state->engine.view();
             state->viewshed = state->engine.computeViewshed({v.lat, v.lon, 0}, 2.0, 5000.0);
         }
-        if (state->contourInterval > 0 && !state->contoursDone && state->shotElapsed > 1.0 && !state->engine.needsRedraw()) {
-            state->engine.addContours(state->engine.viewRegion(), state->contourInterval);
-            state->contoursDone = true;
-        }
         state->settledFrames = state->engine.needsRedraw() ? 0 : state->settledFrames + 1;
         if (state->zoomTest) {
             bool startNow = state->zoomStartAfter > 0 ? state->shotElapsed > state->zoomStartAfter
