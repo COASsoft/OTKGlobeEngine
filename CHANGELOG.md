@@ -7,7 +7,13 @@
 - Works offline: the boundaries (geoBoundaries), place names (GeoNames) and country labels (Natural Earth) are embedded in the kernel, about 9.5 MB; `-DOTK_LABELS=OFF` builds without them. `scripts/make_labels.py` rebuilds the data from the sources.
 - Kernel: `otk::placesNear` returns nearby towns, states or countries from the same data.
 - Roads on the same switch, styled like a satellite map: gold motorways and trunk roads, gray primary to residential streets with dark edges, dashed tunnels and paths, widths that grow with the zoom; interstate, US route, state route and other road shields; street names drawn along the road and shortened the usual way ("22nd Ave SE", "Capitol Way S"); neighbourhood, suburb and borough names; park, forest and reserve names in green; lake, bay, sea, river and creek names in blue.
+- Text is rendered at its exact pixel size with a crisp outline, outlines drawn under every letter of a name instead of over the previous letter, and labels fade in and out instead of blinking.
 - Roads and street-level names come from OpenStreetMap vector tiles (OpenMapTiles schema, OpenFreeMap by default) that load and cache like imagery, so viewed areas keep working offline. `Engine::setLabelsSource` (`otk_set_labels_source`) points them at another TileJSON URL or an offline `.mbtiles`/`.pmtiles` file; an empty source keeps only the built-in borders and places. Missing road tiles never hold back imagery.
+
+### Contours
+- Contour mode like a topo map: `Engine::setContours(enabled, interval, unit)` (`otk_set_contours`, Android `OTKGlobeView.setContours`, .NET `SetContours`, Swift `setContours`, viewer key `L` and `--contours`). Minor and index lines in sienna, drawn on the terrain under roads and labels at a constant width, with the index elevations written along the lines in black with a white outline.
+- The interval follows the zoom (100/500 m from about 150 m per pixel, then 50/250, 20/100 and 10/50 m; 400/2000 ft to 40/200 ft in feet) or stays at a fixed value. Lines are regenerated in the background for the visible area once the camera stops and replace the previous set, from elevation at the detail the view needs, so turning them on again or panning never stacks copies. Sea level is skipped.
+- `contourLines` and `addContours` trace in one pass and simplify the lines.
 
 ## 0.1.1
 
