@@ -459,6 +459,12 @@ int otk_labels(const otk_engine* e) { return e->engine.labelsEnabled() ? 1 : 0; 
 
 void otk_set_labels_source(otk_engine* e, const char* url_or_path) { e->engine.setLabelsSource(url_or_path ? url_or_path : ""); }
 
+int otk_labels_layer(const otk_engine* e) { return e->engine.labelsLayer(); }
+
+int otk_download_labels(otk_engine* e, double west, double south, double east, double north, int max_zoom) {
+    return e->engine.downloadLabels({west, south, east, north}, max_zoom > 0 ? max_zoom : 14);
+}
+
 uint64_t otk_add_tileset(otk_engine* e, const char* path, double max_sse) {
     return e->engine.addTileset(path ? path : "", max_sse > 0 ? max_sse : 16.0);
 }
