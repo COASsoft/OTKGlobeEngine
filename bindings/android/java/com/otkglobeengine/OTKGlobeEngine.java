@@ -127,5 +127,6 @@ public final class OTKGlobeEngine {
     static native int nativeDownloadLabels(long h, double west, double south, double east, double north, int maxZoom);
     static native void nativeSetControls(long h, int controls);
     static native void nativeSetBasemap(long h, int index);
+    static native void nativeSetControlsPadding(long h, float left, float top, float right, float bottom);
     public static native String nativeToMgrs(double lat, double lon, int digits);
 }
