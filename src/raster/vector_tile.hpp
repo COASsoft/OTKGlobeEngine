@@ -51,8 +51,10 @@ struct VectorTile {
     std::vector<float> lineVertices;
     bool overlay = false;
     std::vector<float> roads;
+    size_t solidRoads = 0;
     std::vector<TileMark> marks;
     std::vector<BuildingShape> buildings;
+    std::vector<BridgeShape> bridges;
     int z = 0, x = 0, y = 0;
 };
 
