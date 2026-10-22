@@ -429,6 +429,21 @@ public:
         return glyphs_[key] = g;
     }
 
+    bool covers(std::string_view text) {
+        if (!ok_) return false;
+        auto it = coverage_.find(std::string(text));
+        if (it != coverage_.end()) return it->second;
+        bool all = true;
+        for (std::uint32_t cp : codepoints(text))
+            if (cp > 0x20 && cp != kDot && stbtt_FindGlyphIndex(&font_, static_cast<int>(cp)) == 0) {
+                all = false;
+                break;
+            }
+        if (coverage_.size() > 20000) coverage_.clear();
+        coverage_.emplace(std::string(text), all);
+        return all;
+    }
+
     float width(std::string_view text, const TextStyle& s) {
         float w = 0.0f;
         std::uint32_t prev = 0;
@@ -451,6 +466,7 @@ private:
     stbtt_fontinfo font_{};
     bool ok_ = false;
     std::unordered_map<std::uint64_t, Glyph> glyphs_;
+    std::unordered_map<std::string, bool> coverage_;
     std::vector<std::uint8_t> pixels_;
     std::uint8_t gamma_[256] = {};
     int penX_ = 1, penY_ = 1, rowH_ = 0;
@@ -1087,6 +1103,7 @@ void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dp
     for (const Candidate& c : candidates) {
         if (static_cast<int>(placed.size()) >= kMaxLabels) break;
         const TileMark* m = c.mark;
+        if (m && !glyphs.covers(m->text)) continue;
         const TextStyle s = m ? markStyle(*m, dpi) : styleFor(*c.place, c.zoom, dpi);
         const float em = s.size;
         Item item;
