@@ -12,6 +12,8 @@
 - Layers: `ImageryLayer::stream = false` makes any layer read only from the cache, local files and downloaded areas; `ImageryLayer::maxRequests` limits parallel requests to its server, downloads included.
 
 ### 3D buildings
+- 3D trees everywhere, on the same switch as buildings: tree heights from the Meta and World Resources Institute global canopy height map (about 1.2 m per pixel, CC BY 4.0) are fetched for the area being viewed in 610 m blocks (about 2 MB for a 3 km area), kept in the tile cache so they work offline afterwards, smoothed into crowns standing on the terrain and covered with the satellite imagery, so forests, parks and street trees look like they do in Google Earth.
+- Fixed buildings missing in an area whose roads finished downloading while its trees were still loading.
 - Buildings in 3D, built into the engine and on by default: `Engine::setBuildingsEnabled` (`otk_set_buildings`, Android `OTKGlobeView.setBuildings`, .NET `Buildings`, Swift `buildings`, the "3D buildings" switch in the layers panel, viewer `--buildings 0|1`).
 - Footprints and heights come from the OpenStreetMap `building` layer of the road and label tiles, so they work offline wherever roads were downloaded or a local `.mbtiles`/`.pmtiles` is set, worldwide, with no map service or API key.
 - Roofs show the real aerial imagery: each area's roofs are baked from the base imagery at up to zoom 18 and re-baked as sharper tiles arrive. Houses get gable or hip roofs; taller buildings flat ones.
@@ -23,6 +25,7 @@
 - Releases publish the npm package and the NuGet package when `NPM_TOKEN` and `NUGET_API_KEY` repository secrets are set.
 
 ### Loading
+- A road name could swap between two copies of itself every frame in some views (it looked like flashing and kept the map redrawing forever); road names now try the next spot along the road when the first spot is taken.
 - Faster first view of a new area: the automatic road and building download starts 0.3 s after the camera stops and fetches the zoom-14 tiles (buildings and street names) before the lower zooms, and building roofs are painted from whatever imagery is already loaded instead of waiting up to 4 s for sharp tiles, then repainted as sharper tiles arrive. On a 4 GB tablet a new city shows its 3D buildings in about 5 s (was over 20 s).
 - Roads, street names and 3D buildings now appear by themselves anywhere in the world: when the camera stops while zoomed in close (12 m per pixel or closer), the engine downloads that area (up to about 3 km around the centre) into the cache, pinned like a manual download, so it keeps working offline afterwards. Areas already fetched are not asked for again. `Engine::setAutoDownloadLabels(false)` (`otk_set_auto_download_labels`) turns it off for strictly offline use.
 - Phones and tablets get a larger tile memory budget (16% of RAM, was 10%), and prefetching stops when the budget is full instead of evicting tiles the view still needs. A tilted city view on a 4 GB tablet kept reloading tiles and never finished loading roads and buildings.
