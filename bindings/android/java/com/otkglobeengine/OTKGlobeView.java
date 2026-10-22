@@ -311,6 +311,34 @@ public class OTKGlobeView extends GLSurfaceView implements GLSurfaceView.Rendere
         });
     }
 
+    public static final int CONTROL_ZOOM = 1;
+    public static final int CONTROL_COMPASS = 2;
+    public static final int CONTROL_TILT = 4;
+    public static final int CONTROL_LAYERS = 8;
+    public static final int CONTROL_SCALE = 16;
+    public static final int CONTROL_ATTRIBUTION = 32;
+    public static final int CONTROL_ALL = 63;
+
+    public void setControls(final int controls) {
+        run(new Runnable() {
+            @Override
+            public void run() {
+                OTKGlobeEngine.nativeSetControls(engine, controls);
+                requestRender();
+            }
+        });
+    }
+
+    public void setBasemap(final int index) {
+        run(new Runnable() {
+            @Override
+            public void run() {
+                OTKGlobeEngine.nativeSetBasemap(engine, index);
+                requestRender();
+            }
+        });
+    }
+
     public void setLabelsSource(final String urlOrPath) {
         run(new Runnable() {
             @Override
