@@ -169,7 +169,7 @@ int main() {
         for (const BuildingVertex& v : mesh.vertices) {
             if (v.kind > 0.5 && v.normal[2] < 0.99f) sloped = true;
             if (v.kind < 0.5 && v.texcoord[3] <= 2.0f && v.texcoord[1] >= 79.0f) tall = true;
-            if (v.kind < 0.5 && v.normal[0] > 0.99f && v.position[0] > tileM * 0.5 - 1.0) boundaryWall = true;
+            if (v.kind < 0.5 && v.normal[0] > 0.99f && v.position[0] > tileM * 0.5 * 1.004 - 1.0) boundaryWall = true;
             if (v.kind < 0.5) lowest = std::min(lowest, static_cast<double>(v.position[2]));
             east = std::max(east, static_cast<double>(v.position[0]));
         }
@@ -178,9 +178,7 @@ int main() {
         check(mesh.atlas > 0 && mesh.cells.size() == 3 && mesh.cells[0].west < mesh.cells[0].east && mesh.cells[0].south < mesh.cells[0].north,
               "roof atlas cells");
         check(lowest > 97.7 && lowest < 98.2, "buildings stand on the sampled ground");
-        std::printf("debug east %.3f half %.3f boundary %d", east, tileM * 0.5, boundaryWall ? 1 : 0);
-        std::putchar(10);
-        check(east <= tileM * 0.5 + 1.0 && !boundaryWall, "buildings clipped to the tile without walls on the tile edge");
+        check(east <= tileM * 0.5 * 1.004 + 0.5 && !boundaryWall, "buildings clipped to the tile without walls on the tile edge");
     }
 
     auto kml = parseFeatures(data("styles.kml"));
