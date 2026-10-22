@@ -185,11 +185,12 @@ int TileLoader::pending() const {
     return static_cast<int>(queue_.size() + inflight_.size());
 }
 
-int TileLoader::startDownload(int layer, const Region& region, int minZoom, int maxZoom) {
+int TileLoader::startDownload(int layer, const Region& region, int minZoom, int maxZoom, std::int64_t maxBytes) {
     std::lock_guard lock(mutex_);
     if (layer < 0 || layer >= static_cast<int>(providers_.size())) return 0;
     Download d;
     d.layer = layer;
+    d.maxBytes = maxBytes;
     d.generation = generation_;
     d.ranges = regionRanges(providers_[layer]->matrix(), region, minZoom, maxZoom);
     for (const auto& r : d.ranges) d.status.total += r.count();
@@ -325,6 +326,11 @@ bool TileLoader::nextDownload(int& id, TileId& tile, int& attempt, bool& blocked
         if (d.status.finished || d.generation != generation_) continue;
         if (d.layer < 0 || d.layer >= static_cast<int>(providers_.size())) continue;
         const auto& provider = providers_[d.layer];
+        const int own = provider->maxConcurrent();
+        if (own > 0 && d.inflight >= own) {
+            blocked = true;
+            continue;
+        }
         while (d.range < d.ranges.size()) {
             const TileRange& r = d.ranges[d.range];
             if (d.index < r.count()) {
@@ -596,12 +602,14 @@ void TileLoader::runNetwork() {
             continue;
         }
         if (download) {
-            int status = provider->download(id.z, id.x, id.y);
+            std::int64_t bytes = 0;
+            int status = provider->download(id.z, id.x, id.y, bytes);
             std::lock_guard lock(mutex_);
             auto it = downloads_.find(download);
             if (it != downloads_.end()) {
                 Download& d = it->second;
                 --d.inflight;
+                d.bytes += bytes;
                 if (status == 200) {
                     ++d.status.done;
                 } else if (transient(status) && attempt + 1 < kDownloadAttempts && !d.status.cancelled) {
@@ -610,6 +618,11 @@ void TileLoader::runNetwork() {
                     d.status.retrying = static_cast<std::int64_t>(d.retry.size());
                 } else {
                     ++d.status.failed;
+                }
+                if (d.maxBytes > 0 && d.bytes >= d.maxBytes) {
+                    d.range = d.ranges.size();
+                    d.retry.clear();
+                    d.status.retrying = 0;
                 }
                 if (d.range >= d.ranges.size() && d.inflight == 0 && d.retry.empty()) d.status.finished = true;
             }
