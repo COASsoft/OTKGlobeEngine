@@ -60,6 +60,8 @@ struct ViewerState {
     std::vector<otk::ImageryLayer> customLayers;
     bool hasDownload = false;
     otk::Region download;
+    otk::Region labelsRegion;
+    bool hasLabelsDownload = false;
     int downloadMin = 0, downloadMax = 0;
     int downloadId = 0;
     int labelsDownload = 0;
@@ -288,6 +290,7 @@ void init() {
     }
     if (state->hasDownload)
         state->downloadId = state->engine.downloadRegion(0, state->download, state->downloadMin, state->downloadMax);
+    if (state->hasLabelsDownload) state->labelsDownload = state->engine.downloadLabels(state->labelsRegion);
     state->engine.setView(state->startView);
     if (state->shotFirstPerson) {
         state->engine.setFirstPerson(true, state->fpHeight);
@@ -458,7 +461,8 @@ void frame() {
             state->benchMax = std::max(state->benchMax, benchMs);
         }
         zooming = zooming || (state->bench > 0 && state->benchDone < state->bench);
-        bool downloading = (state->downloadId && !state->engine.downloadStatus(state->downloadId).finished) || zooming;
+        bool downloading = (state->downloadId && !state->engine.downloadStatus(state->downloadId).finished) ||
+                           (state->labelsDownload && !state->engine.downloadStatus(state->labelsDownload).finished) || zooming;
         bool settled = state->shotElapsed > 1.0 && state->settledFrames > 10 && !downloading &&
                        (!state->shotViewshed || state->viewshed);
         if (settled || state->shotElapsed >= state->shotTimeout) {
@@ -976,6 +980,9 @@ void parseArgs(int argc, char** argv) {
             otk::Region& r = state->download;
             state->hasDownload = std::sscanf(argv[++i], "%lf,%lf,%lf,%lf,%d,%d", &r.west, &r.south, &r.east, &r.north,
                                              &state->downloadMin, &state->downloadMax) == 6;
+        } else if (a == "--download-labels") {
+            otk::Region& r = state->labelsRegion;
+            state->hasLabelsDownload = std::sscanf(argv[++i], "%lf,%lf,%lf,%lf", &r.west, &r.south, &r.east, &r.north) == 4;
         } else if (a == "--hit") {
             state->hasHit = std::sscanf(argv[++i], "%lf,%lf", &state->hitX, &state->hitY) == 2;
         } else if (a == "--las") {
