@@ -7,11 +7,13 @@
 #include "otk/navigation.hpp"
 #include "otk/places.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -125,7 +127,7 @@ int main() {
         size_t points = 0;
         bool index = false;
         for (const Feature& f : rings) {
-            const std::vector<Coord>& c = f.geometries.front().coords;
+            const std::vector<Coord>& c = f.geometries.front().points;
             closed = closed && c.size() >= 4 && std::abs(c.front().lat - c.back().lat) < 1e-9 && std::abs(c.front().lon - c.back().lon) < 1e-9;
             points += c.size();
             index = index || (f.name == "500 m" && f.style.showLabel);
