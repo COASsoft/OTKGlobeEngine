@@ -13,6 +13,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DOCS = {
     'README.md': ('overview.html', 'Overview'),
     'docs/EMBEDDING.md': ('embedding.html', 'Embedding'),
+    'docs/FEATURES.md': ('features.html', 'Features'),
+    'docs/VIEWER.md': ('viewer.html', 'Viewer and building'),
     'docs/FORMATS.md': ('formats.html', 'Formats'),
     'docs/OFFLINE.md': ('offline.html', 'Offline'),
     'docs/PHOTOREALISM.md': ('photorealism.html', '3D Tiles'),
@@ -34,7 +36,7 @@ def nav(current, repo, gitlab):
     groups = [
         ('About', [('index.html', 'Home'), ('screenshots.html', 'Screenshots'), ('overview.html', 'Overview')]),
         ('Get it', [('download.html', 'Download'), ('changelog.html', 'Changelog')]),
-        ('Docs', [('embedding.html', 'Embedding'), ('formats.html', 'Formats'), ('offline.html', 'Offline'),
+        ('Docs', [('embedding.html', 'Embedding'), ('features.html', 'Features'), ('viewer.html', 'Viewer and building'), ('formats.html', 'Formats'), ('offline.html', 'Offline'),
                   ('photorealism.html', '3D Tiles'), ('xr.html', 'VR and AR'), ('military.html', 'Military')]),
         ('Project', [('security.html', 'Security'), ('license.html', 'License'), ('third-party.html', 'Third-party licenses'),
                      (f'https://github.com/{repo}/issues', 'Issues'), (f'https://github.com/{repo}', 'GitHub'),
