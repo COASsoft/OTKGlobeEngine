@@ -14,6 +14,7 @@
 ### 3D buildings
 - 3D trees everywhere, on the same switch as buildings: tree heights from the Meta and World Resources Institute global canopy height map (about 1.2 m per pixel, CC BY 4.0) are fetched for the area being viewed in 610 m blocks (about 2 MB for a 3 km area), kept in the tile cache so they work offline afterwards, smoothed into crowns standing on the terrain and covered with the satellite imagery, so forests, parks and street trees look like they do in Google Earth.
 - Fixed buildings missing in an area whose roads finished downloading while its trees were still loading.
+- Trees appear once their imagery is sharp enough, instead of showing as flat olive shapes for a few seconds.
 - Buildings in 3D, built into the engine and on by default: `Engine::setBuildingsEnabled` (`otk_set_buildings`, Android `OTKGlobeView.setBuildings`, .NET `Buildings`, Swift `buildings`, the "3D buildings" switch in the layers panel, viewer `--buildings 0|1`).
 - Footprints and heights come from the OpenStreetMap `building` layer of the road and label tiles, so they work offline wherever roads were downloaded or a local `.mbtiles`/`.pmtiles` is set, worldwide, with no map service or API key.
 - Roofs show the real aerial imagery: each area's roofs are baked from the base imagery at up to zoom 18 and re-baked as sharper tiles arrive. Houses get gable or hip roofs; taller buildings flat ones.
