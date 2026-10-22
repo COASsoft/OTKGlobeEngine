@@ -26,6 +26,10 @@
 - Releases publish the npm package and the NuGet package when `NPM_TOKEN` and `NUGET_API_KEY` repository secrets are set.
 
 ### Loading
+- Place and street names are hidden when a hill, mountain or 3D building stands between them and the camera, instead of showing through.
+- Names with characters the label font does not have (Japanese, Chinese, Arabic and others) are left out instead of being drawn as empty boxes; such labels also kept a view from ever finishing loading.
+- The Vector map no longer draws every place name twice when the built-in labels are on.
+- Fixed Direct3D shader compiler warnings in the 3D model shader (`pow` of a possibly negative value).
 - The Topographic map is now Esri's World Topographic Map, which covers the whole world. It used to be USGS topo maps laid over the satellite imagery, so satellite showed while the slow USGS tiles loaded and everywhere outside the US.
 - `ImageryLayer::photo` marks map layers that are not aerial photos (the built-in Topographic, Streets and Vector maps). On those, buildings get plain roofs and trees are hidden instead of being coloured from map tiles.
 - A road name could swap between two copies of itself every frame in some views (it looked like flashing and kept the map redrawing forever); road names now try the next spot along the road when the first spot is taken.
