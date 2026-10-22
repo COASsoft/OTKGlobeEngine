@@ -75,7 +75,7 @@ public:
     int pending() const;
     std::string debug() const;
 
-    int startDownload(int layer, const Region& region, int minZoom, int maxZoom);
+    int startDownload(int layer, const Region& region, int minZoom, int maxZoom, std::int64_t maxBytes = 0);
     DownloadStatus downloadStatus(int id) const;
     void cancelDownload(int id);
     std::int64_t exportTiles(int layer, const Region& region, int minZoom, int maxZoom, const std::string& path, std::string& error);
@@ -90,6 +90,8 @@ private:
         size_t range = 0;
         std::int64_t index = 0;
         std::int64_t inflight = 0;
+        std::int64_t bytes = 0;
+        std::int64_t maxBytes = 0;
         std::deque<std::pair<TileId, int>> retry;
         double retryAt = 0;
         DownloadStatus status;
