@@ -80,7 +80,13 @@ export class OTKGlobe {
     this.running = true;
     this.listeners = [];
     this.viewPtr = M._malloc(40);
-    M.ccall('otk_set_cache_directory', null, ['number', 'string'], [engine, options.cacheDirectory ?? '/otk-cache']);
+    const cacheDir = options.cacheDirectory ?? '/otk-cache';
+    let dir = '';
+    for (const part of cacheDir.split('/').filter(Boolean)) {
+      dir += `/${part}`;
+      try { M.FS.mkdir(dir); } catch {}
+    }
+    M.ccall('otk_set_cache_directory', null, ['number', 'string'], [engine, cacheDir]);
     if (options.view) this.setView(options.view);
     if (options.controls !== undefined) this.setControls(options.controls);
     if (options.input !== false) this.attachInput();
@@ -217,9 +223,9 @@ export class OTKGlobe {
     return out;
   }
 
-  addLayer({ type = SourceType.XYZ, name = 'Layer', url, minZoom = 0, maxZoom = 19 }) {
-    return this.M.ccall('otk_add_layer', 'number', ['number', 'number', 'string', 'string', 'number', 'number'],
-      [this.engine, type, name, url, minZoom, maxZoom]);
+  addLayer({ type = SourceType.XYZ, name = 'Layer', url, minZoom = 0, maxZoom = 19, opacity = 1 }) {
+    return this.M.ccall('otk_add_layer', 'number', ['number', 'number', 'string', 'string', 'number', 'number', 'number'],
+      [this.engine, type, name, url, minZoom, maxZoom, opacity]);
   }
 
   clearLayers() {
