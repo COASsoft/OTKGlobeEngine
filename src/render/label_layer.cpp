@@ -1113,7 +1113,7 @@ void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dp
         const Vec3 d = a - eye;
         const double dist = length(d);
         if (dist < 200.0) return false;
-        const int steps = above ? std::clamp(static_cast<int>(dist / 40.0), 6, 96) : std::clamp(static_cast<int>(dist / 500.0), 6, 16);
+        const int steps = above ? std::clamp(static_cast<int>(dist / 18.0), 6, 160) : std::clamp(static_cast<int>(dist / 500.0), 6, 16);
         for (int i = 1; i < steps; ++i) {
             const double t = static_cast<double>(i) / steps;
             const GeoPoint g = ecefToGeodetic(eye + d * t);
