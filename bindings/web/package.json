@@ -1,0 +1,41 @@
+{
+  "name": "otkglobeengine",
+  "version": "0.1.1",
+  "description": "A 3D globe map engine for the web: satellite imagery, terrain, roads, labels and 3D buildings, with offline caching.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./dist/*": "./dist/*"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "keywords": [
+    "map",
+    "globe",
+    "3d",
+    "terrain",
+    "gis",
+    "webgl",
+    "webassembly",
+    "offline",
+    "tak"
+  ],
+  "license": "Apache-2.0",
+  "homepage": "https://grangedevgroup-code.github.io/OTKGlobeEngine/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/grangedevgroup-code/OTKGlobeEngine.git",
+    "directory": "bindings/web"
+  },
+  "bugs": "https://github.com/grangedevgroup-code/OTKGlobeEngine/issues"
+}
