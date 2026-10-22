@@ -272,6 +272,8 @@ public:
     double terrainHeightMsl(double lat, double lon) const;
     std::vector<std::uint64_t> addContours(const Region& region, double interval, int majorEvery = 5, int resolution = 256,
                                            std::uint32_t color = 0xFFB0703A, DistanceUnit unit = DistanceUnit::Metric);
+    void setContours(bool enabled, double interval = 0.0, DistanceUnit unit = DistanceUnit::Metric);
+    bool contoursEnabled() const;
     std::uint64_t addImageOverlay(const ImageOverlay& overlay);
     bool removeImageOverlay(std::uint64_t id);
     LineOfSight lineOfSight(const Coord& from, double fromHeight, const Coord& to, double toHeight) const;
