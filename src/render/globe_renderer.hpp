@@ -339,6 +339,7 @@ private:
     int overlayLayer_ = -1;
     std::shared_ptr<const ContourSet> contours_;
     BuildingLayer buildings_;
+    bool basePhoto_ = true;
     bool buildingsOn_ = true;
     bool sunOn_ = false;
     Vec3 sunDir_;
