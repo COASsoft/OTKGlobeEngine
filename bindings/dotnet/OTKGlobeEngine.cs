@@ -213,6 +213,12 @@ namespace OTKGlobeEngine
         [DllImport(Lib)] public static extern int otk_labels(IntPtr e);
         [DllImport(Lib)] public static extern void otk_set_labels_source(IntPtr e, [MarshalAs(UnmanagedType.LPUTF8Str)] string urlOrPath);
         [DllImport(Lib)] public static extern int otk_labels_layer(IntPtr e);
+        [DllImport(Lib)] public static extern void otk_set_controls(IntPtr e, uint controls);
+        [DllImport(Lib)] public static extern uint otk_controls(IntPtr e);
+        [DllImport(Lib)] public static extern int otk_basemap_count(IntPtr e);
+        [DllImport(Lib)] public static extern int otk_basemap_name(IntPtr e, int index, byte[] output, int capacity);
+        [DllImport(Lib)] public static extern void otk_set_basemap(IntPtr e, int index);
+        [DllImport(Lib)] public static extern int otk_basemap(IntPtr e);
         [DllImport(Lib)] public static extern int otk_download_labels(IntPtr e, double west, double south, double east, double north, int maxZoom);
         [DllImport(Lib)] public static extern ulong otk_viewshed(IntPtr e, double lat, double lon, double height, double radius);
         [DllImport(Lib)] public static extern int otk_to_mgrs(double lat, double lon, int digits, byte[] output, int capacity);
@@ -327,6 +333,23 @@ namespace OTKGlobeEngine
         }
         public string LabelsSource { set => Native.otk_set_labels_source(Handle, value ?? ""); }
         public int LabelsLayer => Native.otk_labels_layer(Handle);
+        public uint Controls
+        {
+            get => Native.otk_controls(Handle);
+            set => Native.otk_set_controls(Handle, value);
+        }
+        public int Basemap
+        {
+            get => Native.otk_basemap(Handle);
+            set => Native.otk_set_basemap(Handle, value);
+        }
+        public int BasemapCount => Native.otk_basemap_count(Handle);
+        public string BasemapName(int index)
+        {
+            var buffer = new byte[256];
+            int n = Native.otk_basemap_name(Handle, index, buffer, buffer.Length);
+            return System.Text.Encoding.UTF8.GetString(buffer, 0, Math.Max(0, Math.Min(n, buffer.Length - 1)));
+        }
         public int DownloadLabels(double west, double south, double east, double north, int maxZoom = 14) =>
             Native.otk_download_labels(Handle, west, south, east, north, maxZoom);
 
