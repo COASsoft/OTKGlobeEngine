@@ -20,6 +20,7 @@
 #include "raster/pmtiles.hpp"
 #include "otk/image.hpp"
 #include "raster/vector_tile.hpp"
+#include "feature/buildings.hpp"
 #include "formats/adapters.hpp"
 #include "core/astro.hpp"
 #include "model/gltf_codecs.hpp"
@@ -177,6 +178,8 @@ int main() {
         check(mesh.atlas > 0 && mesh.cells.size() == 3 && mesh.cells[0].west < mesh.cells[0].east && mesh.cells[0].south < mesh.cells[0].north,
               "roof atlas cells");
         check(lowest > 97.7 && lowest < 98.2, "buildings stand on the sampled ground");
+        std::printf("debug east %.3f half %.3f boundary %d", east, tileM * 0.5, boundaryWall ? 1 : 0);
+        std::putchar(10);
         check(east <= tileM * 0.5 + 1.0 && !boundaryWall, "buildings clipped to the tile without walls on the tile edge");
     }
 
