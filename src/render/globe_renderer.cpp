@@ -500,6 +500,7 @@ std::vector<std::string> GlobeRenderer::credits() const {
     if (overlayLayer_ >= 0)
         out.push_back(std::string(buildingsOn_ ? "Roads, buildings and places" : "Roads and places") +
                       ": OpenFreeMap \xC2\xA9 OpenMapTiles \xC2\xA9 OpenStreetMap contributors");
+    if (buildingsOn_) out.push_back("Trees: Meta and World Resources Institute canopy height (CC BY 4.0)");
     return out;
 }
 
@@ -524,6 +525,7 @@ void GlobeRenderer::setOffline(bool offline) {
     bool reconnect = offline_ && !offline;
     offline_ = offline;
     loader_.setOffline(offline);
+    canopy_.setOffline(offline);
     if (reconnect) retryUnavailable();
 }
 
@@ -2441,7 +2443,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             return 0;
         };
         auto heightsFn = [this](const std::vector<std::pair<double, double>>& ll) { return elevation_.query(ll, 4.0); };
-        buildings_.update(cam, tileFn, heightsFn, roofImagery(), exaggeration_, terrainEnabled_);
+        auto canopyFn = [this](int x, int y, std::vector<std::uint8_t>& out) { return static_cast<int>(canopy_.heights(x, y, out)); };
+        buildings_.update(cam, tileFn, heightsFn, roofImagery(), canopyFn, exaggeration_, terrainEnabled_);
     }
     {
         std::sort(requests_.begin(), requests_.end(), [](const auto& a, const auto& b) {
