@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OTKGlobeEngine</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #000; }
+    canvas { display: block; width: 100%; height: 100%; outline: none; }
+  </style>
+</head>
+<body>
+  <canvas id="map"></canvas>
+  <script type="module">
+    import { OTKGlobe } from '../dist/index.js';
+    const globe = await OTKGlobe.create('#map', {
+      view: { lat: 47.6062, lon: -122.3321, metersPerPixel: 5000, tilt: 0 },
+      log: (text) => console.log(text),
+    });
+    globe.flyTo({ lat: 47.6124, lon: -122.3467, metersPerPixel: 1.5, tilt: 50, heading: 354 }, 4);
+    addEventListener('dragover', (e) => e.preventDefault());
+    addEventListener('drop', async (e) => {
+      e.preventDefault();
+      for (const file of e.dataTransfer.files) await globe.open(file);
+    });
+    window.globe = globe;
+  </script>
+</body>
+</html>
