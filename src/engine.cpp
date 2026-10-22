@@ -661,7 +661,7 @@ Engine::Engine() : impl_(std::make_unique<Impl>()) {
 Engine::~Engine() { shutdown(); }
 
 bool Engine::init() {
-    impl_->camera.groundHeight = [this](double lat, double lon) { return impl_->globe.elevationAt(lat, lon); };
+    impl_->camera.groundHeight = [this](double lat, double lon) { return impl_->globe.elevationAt(lat, lon) + impl_->globe.buildingHeightAt(lat, lon); };
 #if defined(OTK_CONTROLS)
     impl_->globe.setOverlay([this](int width, int height) { impl_->controls->draw(width, height, impl_->dpiScale); });
 #endif
