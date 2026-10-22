@@ -23,7 +23,7 @@ extern const std::size_t label_font_size;
 
 namespace {
 
-constexpr std::size_t kLabelBytes = 2 * 1024 * 1024;
+constexpr std::size_t kLabelBytes = 4 * 1024 * 1024;
 constexpr std::size_t kIconBytes = 256 * 1024;
 constexpr std::size_t kMaxBatches = 72;
 constexpr int kDecodesPerFrame = 4;
@@ -1286,30 +1286,36 @@ void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dp
     };
     auto run = [&](std::string_view text, float pen, float baseline, const TextStyle& s, float alpha, bool snap, float cx, float cy, float ca, float sa) {
         const std::uint32_t fill = faded(s.fill, alpha), halo = faded(s.halo, alpha);
-        std::uint32_t prev = 0;
         if (snap) baseline = std::round(baseline);
-        for (std::uint32_t cp : codepoints(text)) {
-            const Glyph& g = glyphs.glyph(cp, s.size, s.haloPx);
-            if (prev) pen += glyphs.kerning(prev, cp, s.size);
-            prev = cp;
-            if (g.w > 0 && g.u1 > g.u0) {
-                const float gx = (snap ? std::round(pen) : pen) + static_cast<float>(g.x0);
-                const float gy = baseline + static_cast<float>(g.y0);
-                const float lx[4] = {gx, gx + g.w, gx + g.w, gx};
-                const float ly[4] = {gy, gy, gy + g.h, gy + g.h};
-                float px[4], py[4];
-                for (int k = 0; k < 4; ++k) {
-                    px[k] = cx + lx[k] * ca - ly[k] * sa;
-                    py[k] = cy + lx[k] * sa + ly[k] * ca;
+        for (int pass = 0; pass < 2; ++pass) {
+            if (pass == 0 && (halo >> 24) == 0) continue;
+            const std::uint32_t f = pass == 0 ? fill & 0x00FFFFFFu : fill;
+            const std::uint32_t h = pass == 0 ? halo : halo & 0x00FFFFFFu;
+            float at = pen;
+            std::uint32_t prev = 0;
+            for (std::uint32_t cp : codepoints(text)) {
+                const Glyph& g = glyphs.glyph(cp, s.size, s.haloPx);
+                if (prev) at += glyphs.kerning(prev, cp, s.size);
+                prev = cp;
+                if (g.w > 0 && g.u1 > g.u0) {
+                    const float gx = (snap ? std::round(at) : at) + static_cast<float>(g.x0);
+                    const float gy = baseline + static_cast<float>(g.y0);
+                    const float lx[4] = {gx, gx + g.w, gx + g.w, gx};
+                    const float ly[4] = {gy, gy, gy + g.h, gy + g.h};
+                    float px[4], py[4];
+                    for (int k = 0; k < 4; ++k) {
+                        px[k] = cx + lx[k] * ca - ly[k] * sa;
+                        py[k] = cy + lx[k] * sa + ly[k] * ca;
+                    }
+                    quadTo(verts, px, py, g.u0, g.v0, g.u1, g.v1, f, h);
                 }
-                quadTo(verts, px, py, g.u0, g.v0, g.u1, g.v1, fill, halo);
+                at += g.advance + s.tracking;
             }
-            pen += g.advance + s.tracking;
         }
     };
 
     for (const auto& [item, alpha] : draw) {
-        if (alpha <= 0.01f || (verts.size() + 600) * sizeof(LabelVertex) > kLabelBytes) continue;
+        if (alpha <= 0.01f || (verts.size() + 1200) * sizeof(LabelVertex) > kLabelBytes) continue;
         double sx, sy;
         if (dot(normalize(item->anchor), eye - item->anchor) <= 0.0 || !project(item->anchor, sx, sy)) continue;
         const TextStyle& s = item->style;
