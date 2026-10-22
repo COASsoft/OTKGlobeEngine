@@ -397,7 +397,7 @@ BuildingMesh buildBuildingMesh(const std::vector<BuildingShape>& shapes, int z, 
                 for (int sgn : {-1, 1}) {
                     const Vec3 n = Vec3{box.ax * sgn, box.ay * sgn, 0.0};
                     const Vec3 g0 = P(sgn * Lw, -Ww * sgn, cz + ground + top), g1 = P(sgn * Lw, Ww * sgn, cz + ground + top);
-                    const Vec3 g2 = P(sgn * Lw, 0.0, apex - ridge * kOverhang / W * 0.0);
+                    const Vec3 g2 = P(sgn * Lw, 0.0, apex);
                     const float w = static_cast<float>(2.0 * Ww);
                     const std::uint32_t i0 = vertex(g0, n, 0.0f, static_cast<float>(top), w, layer, tint, base, 0.0f);
                     const std::uint32_t i1 = vertex(g1, n, w, static_cast<float>(top), w, layer, tint, base, 0.0f);
