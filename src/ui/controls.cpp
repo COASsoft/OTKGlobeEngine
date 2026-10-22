@@ -474,6 +474,9 @@ void Controls::activate(const Target& t) {
     case Item::Labels:
         engine_.setLabelsEnabled(!engine_.labelsEnabled());
         break;
+    case Item::Buildings:
+        engine_.setBuildingsEnabled(!engine_.buildingsEnabled());
+        break;
     case Item::Contours:
         engine_.setContours(!engine_.contoursEnabled(), engine_.contourInterval(), engine_.contourUnit());
         break;
@@ -568,7 +571,7 @@ void Controls::drawPanel() {
     const std::string source = engine_.labelsSource();
     const bool download = engine_.labelsEnabled() && (source.rfind("http://", 0) == 0 || source.rfind("https://", 0) == 0);
     const float header = std::round(22.0f * u);
-    float height = pad + (maps.empty() ? 0.0f : header + row * static_cast<float>(maps.size()) + pad) + header + row * 3.0f +
+    float height = pad + (maps.empty() ? 0.0f : header + row * static_cast<float>(maps.size()) + pad) + header + row * 4.0f +
                    (download ? pad + row : 0.0f) + pad;
     const float right = anchor.x0 - std::round(8.0f * u);
     const float left = right - width;
@@ -613,7 +616,8 @@ void Controls::drawPanel() {
         Item item;
         const char* name;
         bool on;
-    } toggles[3] = {{Item::Labels, "Labels", engine_.labelsEnabled()},
+    } toggles[4] = {{Item::Labels, "Labels", engine_.labelsEnabled()},
+                    {Item::Buildings, "3D buildings", engine_.buildingsEnabled()},
                     {Item::Contours, "Contours", engine_.contoursEnabled()},
                     {Item::Terrain, "3D terrain", engine_.terrainEnabled()}};
     for (const auto& tg : toggles) {
