@@ -105,14 +105,12 @@ in vec2 params;
 out vec4 frag_color;
 
 void main() {
-    float d = texture(sampler2D(tex, smp), uv).r;
-    float w = max(length(vec2(dFdx(d), dFdy(d))), 1e-4);
-    float px = (d - 0.5 + params.y) / w;
-    float a = clamp(px + 0.5, 0.0, 1.0);
-    float h = clamp(px + params.x + 0.5, 0.0, 1.0);
-    float alpha = mix(halo.a * h, fill.a, a);
-    vec3 rgb = mix(halo.rgb, fill.rgb, a);
-    frag_color = vec4(rgb, alpha);
+    vec2 cover = texture(sampler2D(tex, smp), uv).rg;
+    float inner = fill.a * cover.r;
+    float outer = halo.a * cover.g;
+    float a = inner + outer * (1.0 - inner);
+    vec3 rgb = a > 0.0 ? (fill.rgb * inner + halo.rgb * outer * (1.0 - inner)) / a : fill.rgb;
+    frag_color = vec4(rgb, a);
 }
 @end
 
