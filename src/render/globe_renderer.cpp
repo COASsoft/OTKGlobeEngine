@@ -115,7 +115,7 @@ bool GlobeRenderer::init() {
         double ram = physicalMemoryMb();
         double vram = videoMemoryMb();
 #if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
-        if (ram > 0) setMemoryBudget(static_cast<int>(std::clamp(ram * 0.10, 192.0, 768.0)));
+        if (ram > 0) setMemoryBudget(static_cast<int>(std::clamp(ram * 0.16, 256.0, 1024.0)));
 #else
         if (vram > 0) setMemoryBudget(static_cast<int>(std::clamp(vram * 0.35, 256.0, 1536.0)));
         else if (ram > 0) setMemoryBudget(static_cast<int>(std::clamp(ram * 0.03, 256.0, 768.0)));
@@ -2256,7 +2256,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         double imageryRoom = static_cast<double>(imageryLimit()) * 0.85 - static_cast<double>(activeImagery);
         double surfaceRoom = std::min(static_cast<double>(surfaceCapacity_) * 0.92 - static_cast<double>(seen.size()),
                                       2.5 * static_cast<double>(seen.size()) + 64.0);
-        int freshBudget = std::clamp(static_cast<int>(imageryRoom / 2.0), 4, urgentPrefetch_ ? 96 : 32);
+        int freshBudget = imageryRoom < 8.0 ? 0 : std::clamp(static_cast<int>(imageryRoom / 2.0), 4, urgentPrefetch_ ? 96 : 32);
         int fresh = 0;
         size_t admitted = 0;
         std::sort(prefetch_.begin(), prefetch_.end(), [](const Need& a, const Need& b) { return a.priority < b.priority; });
