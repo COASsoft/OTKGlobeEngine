@@ -229,6 +229,8 @@ OTK_API int otk_add_range_bearing(otk_engine* e, double lat1, double lon1, doubl
 OTK_API int otk_add_contours(otk_engine* e, double west, double south, double east, double north, double interval, int major_every,
                              uint32_t argb);
 OTK_API int otk_add_contours_in_view(otk_engine* e, double interval, int major_every, uint32_t argb);
+OTK_API void otk_set_contours(otk_engine* e, int enabled, double interval, otk_distance_unit unit);
+OTK_API int otk_contours(const otk_engine* e);
 OTK_API void otk_set_terrain_slope(otk_engine* e, int enabled, float opacity, double max_slope_degrees);
 OTK_API void otk_set_grid_type(otk_engine* e, otk_grid_type type);
 OTK_API void otk_view_region(const otk_engine* e, double* west, double* south, double* east, double* north);
