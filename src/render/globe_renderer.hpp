@@ -101,6 +101,8 @@ public:
     bool labels() const { return labelsOn_; }
     void setLabelsSource(const std::string& source);
     const std::string& labelsSource() const { return labelsSource_; }
+    void setContours(std::shared_ptr<const ContourSet> set);
+    bool hasContours() const { return contours_ != nullptr; }
     void setSkyVisible(bool visible) { skyVisible_ = visible; }
     void setGroundColor(float r, float g, float b) {
         ground_[0] = r;
@@ -325,6 +327,7 @@ private:
     std::vector<ImageryLayer> userLayers_;
     std::string labelsSource_ = "https://tiles.openfreemap.org/planet";
     int overlayLayer_ = -1;
+    std::shared_ptr<const ContourSet> contours_;
     std::vector<TileMatrix> matrices_;
     std::vector<bool> vectorLayers_;
     std::unordered_map<QuadKey, TerrainTile, QuadKeyHash> terrain_;
