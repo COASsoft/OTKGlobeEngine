@@ -693,6 +693,25 @@ int main() {
         }
         {
             TileCache cache;
+            cache.open((dir / "local.sqlite").string());
+            std::atomic<bool> offline{false};
+            ImageryLayer layer;
+            layer.type = SourceType::Mvt;
+            layer.url = "http://unit-local.invalid/{z}/{x}/{y}.pbf";
+            layer.stream = false;
+            layer.maxRequests = 4;
+            auto provider = makeProvider(layer, &cache, &offline);
+            cache.put(layerCacheKey(layer), 6, 1, 2, {4, 5, 6}, TileCache::now() - 10, true);
+            FetchResult hit, miss;
+            const bool cachedLocal = provider->fetchLocal(6, 1, 2, hit);
+            const bool missLocal = provider->fetchLocal(6, 3, 3, miss);
+            const FetchResult direct = provider->fetch(6, 3, 3);
+            check(cachedLocal && hit.status == 200 && !hit.stale && missLocal && miss.status == -2 && direct.status == -2 &&
+                      provider->maxConcurrent() == 4 && !provider->refresh(6, 1, 2),
+                  "local-only layer reads downloads and never streams");
+        }
+        {
+            TileCache cache;
             cache.open((dir / "export.sqlite").string());
             TileLoader loader(1, 1);
             loader.setCache(&cache);
