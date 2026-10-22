@@ -2,7 +2,6 @@
 
 #include "core/camera.hpp"
 #include "feature/feature_layer.hpp"
-#include "feature/text.hpp"
 #include "raster/vector_tile.hpp"
 
 #include <sokol_gfx.h>
@@ -10,6 +9,7 @@
 #include <array>
 #include <cstdint>
 #include <future>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -25,9 +25,15 @@ struct RoadBatch {
 
 class LabelLayer {
 public:
+    LabelLayer();
+    ~LabelLayer();
+    LabelLayer(const LabelLayer&) = delete;
+    LabelLayer& operator=(const LabelLayer&) = delete;
+
     bool init();
     void shutdown();
     bool available();
+    bool animating() const;
     void beginFrame();
     bool prepare(const GeoRect& tile, double unitDeg);
     void drawRoads(const std::vector<RoadBatch>& batches, const GeoRect& tile, double unitDeg, double dpi);
@@ -42,20 +48,20 @@ private:
         double west = 0, south = 0, east = 0, north = 0;
         std::uint64_t used = 0;
     };
+    struct Text;
 
     void keys(const GeoRect& tile, double unitDeg, std::vector<std::pair<int, int>>& out) const;
     Batch* batch(int tier, int cell, bool load);
-    void addDot();
     void uploadAtlas();
     void trim();
 
     std::unordered_map<int, Batch> batches_;
+    std::unique_ptr<Text> text_;
     std::future<bool> loading_;
     bool loaded_ = false;
     bool usable_ = false;
     int decodes_ = 0;
     std::uint64_t frame_ = 0;
-    GlyphAtlas atlas_;
     sg_shader lineShader_{};
     sg_shader labelShader_{};
     sg_shader iconShader_{};
