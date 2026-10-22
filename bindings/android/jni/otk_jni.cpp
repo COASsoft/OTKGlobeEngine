@@ -316,6 +316,8 @@ JNIEXPORT jint JNICALL OTK_FN(nativeDownloadLabels)(JNIEnv*, jclass, jlong h, jd
     return otk_download_labels(E(h), w, s, e, n, maxZ);
 }
 
+JNIEXPORT void JNICALL OTK_FN(nativeSetBuildings)(JNIEnv*, jclass, jlong h, jboolean v) { otk_set_buildings(E(h), v ? 1 : 0); }
+
 JNIEXPORT void JNICALL OTK_FN(nativeSetControls)(JNIEnv*, jclass, jlong h, jint controls) {
     otk_set_controls(E(h), static_cast<uint32_t>(controls));
 }
