@@ -189,6 +189,91 @@ std::uint32_t blend(std::uint32_t a, std::uint32_t b, float t) {
     return out;
 }
 
+struct BridgePart {
+    std::vector<std::array<double, 2>> pts;
+    bool openA = false, openB = false;
+    double width = 8.0;
+};
+
+double tileMeters(int z, int y) {
+    const double n = std::ldexp(1.0, z);
+    const double lat = std::atan(std::sinh(kPi * (1.0 - 2.0 * (y + 0.5) / n)));
+    return 2.0 * kPi * 6378137.0 * std::cos(lat) / n;
+}
+
+bool clipUnit(double& x0, double& y0, double& x1, double& y1, double& t0, double& t1) {
+    t0 = 0.0;
+    t1 = 1.0;
+    const double dx = x1 - x0, dy = y1 - y0;
+    const double p[4] = {-dx, dx, -dy, dy};
+    const double q[4] = {x0, 1.0 - x0, y0, 1.0 - y0};
+    for (int i = 0; i < 4; ++i) {
+        if (std::abs(p[i]) < 1e-15) {
+            if (q[i] < 0.0) return false;
+            continue;
+        }
+        const double r = q[i] / p[i];
+        if (p[i] < 0.0) {
+            if (r > t1) return false;
+            t0 = std::max(t0, r);
+        } else {
+            if (r < t0) return false;
+            t1 = std::min(t1, r);
+        }
+    }
+    const double ax = x0 + dx * t0, ay = y0 + dy * t0, bx = x0 + dx * t1, by = y0 + dy * t1;
+    x0 = ax;
+    y0 = ay;
+    x1 = bx;
+    y1 = by;
+    return t1 > t0;
+}
+
+bool onEdge(const std::array<double, 2>& p) { return p[0] < kEdge || p[0] > 1.0 - kEdge || p[1] < kEdge || p[1] > 1.0 - kEdge; }
+
+std::vector<BridgePart> prepareBridges(const std::vector<BridgeShape>& bridges, double meters) {
+    std::vector<BridgePart> out;
+    const double step = 12.0 / meters;
+    for (const BridgeShape& b : bridges) {
+        std::vector<std::vector<std::array<double, 2>>> parts;
+        std::vector<std::array<double, 2>> cur;
+        auto flush = [&]() {
+            if (cur.size() >= 2) parts.push_back(cur);
+            cur.clear();
+        };
+        for (size_t i = 1; i < b.line.size(); ++i) {
+            double x0 = b.line[i - 1][0], y0 = b.line[i - 1][1], x1 = b.line[i][0], y1 = b.line[i][1], t0, t1;
+            if (!clipUnit(x0, y0, x1, y1, t0, t1)) {
+                flush();
+                continue;
+            }
+            if (!cur.empty() && (std::abs(cur.back()[0] - x0) > 1e-12 || std::abs(cur.back()[1] - y0) > 1e-12)) flush();
+            if (cur.empty()) cur.push_back({x0, y0});
+            cur.push_back({x1, y1});
+            if (t1 < 1.0) flush();
+        }
+        flush();
+        for (const auto& part : parts) {
+            BridgePart bp;
+            bp.width = b.width;
+            bp.openA = onEdge(part.front());
+            bp.openB = onEdge(part.back());
+            bp.pts.push_back(part.front());
+            double total = 0.0;
+            for (size_t i = 1; i < part.size(); ++i) {
+                const auto& a = part[i - 1];
+                const auto& c = part[i];
+                const double len = std::hypot(c[0] - a[0], c[1] - a[1]);
+                total += len;
+                const int count = std::max(1, static_cast<int>(std::ceil(len / step)));
+                for (int k = 1; k <= count; ++k) bp.pts.push_back({a[0] + (c[0] - a[0]) * k / count, a[1] + (c[1] - a[1]) * k / count});
+            }
+            if (total * meters >= 3.0) out.push_back(std::move(bp));
+        }
+    }
+    return out;
+}
+
 bool onBoundary(const Point& a, const Point& b) {
     for (double bound : {0.0, 1.0}) {
         if (std::abs(a.u - bound) < kEdge && std::abs(b.u - bound) < kEdge) return true;
@@ -201,7 +286,8 @@ bool onBoundary(const Point& a, const Point& b) {
 
 const BuildingMaterial& buildingMaterial(int texture) { return kMaterials[std::clamp(texture, 0, BuildingTextures - 1)]; }
 
-std::vector<std::array<double, 2>> buildingSamplePoints(const std::vector<BuildingShape>& shapes, int z, int x, int y) {
+std::vector<std::array<double, 2>> buildingSamplePoints(const std::vector<BuildingShape>& shapes, const std::vector<BridgeShape>& bridges,
+                                                        int z, int x, int y) {
     std::vector<std::array<double, 2>> out;
     for (const Prepared& b : prepare(shapes))
         for (const auto& p : b.rings.front()) {
@@ -209,11 +295,17 @@ std::vector<std::array<double, 2>> buildingSamplePoints(const std::vector<Buildi
             toGeo(z, x, y, p, lat, lon);
             out.push_back({lat, lon});
         }
+    for (const BridgePart& bp : prepareBridges(bridges, tileMeters(z, y)))
+        for (const auto& p : bp.pts) {
+            double lat, lon;
+            toGeo(z, x, y, p, lat, lon);
+            out.push_back({lat, lon});
+        }
     return out;
 }
 
-BuildingMesh buildBuildingMesh(const std::vector<BuildingShape>& shapes, int z, int x, int y, const std::vector<double>& heights,
-                               int maxAtlas) {
+BuildingMesh buildBuildingMesh(const std::vector<BuildingShape>& shapes, const std::vector<BridgeShape>& bridges, int z, int x, int y,
+                               const std::vector<double>& heights, int maxAtlas) {
     BuildingMesh mesh;
     const std::vector<Prepared> all = prepare(shapes);
     toGeo(z, x, y, {0.5, 0.5}, mesh.lat, mesh.lon);
@@ -425,6 +517,133 @@ BuildingMesh buildBuildingMesh(const std::vector<BuildingShape>& shapes, int z, 
         }
         if (!roof.verts.empty()) roofs.push_back(std::move(roof));
         ++mesh.buildings;
+    }
+
+    const std::uint32_t concrete = rgb(212, 210, 203);
+    const float concreteLayer = static_cast<float>(WallConcrete);
+    for (const BridgePart& bp : prepareBridges(bridges, tileMeters(z, y))) {
+        const size_t n = bp.pts.size();
+        std::vector<Point> pts;
+        pts.reserve(n);
+        std::vector<double> ground(n, fallback);
+        for (size_t i = 0; i < n; ++i) {
+            double lat, lon;
+            toGeo(z, x, y, bp.pts[i], lat, lon);
+            Vec3 e2, n2, u2;
+            enuFrame(lat, lon, e2, n2, u2);
+            const Vec3 local = toEnu(geodeticToEcef(lat, lon, 0.0));
+            pts.push_back({local.x, local.y, local.z, Vec3{dot(u2, E), dot(u2, N), dot(u2, U)}, bp.pts[i][0], bp.pts[i][1]});
+            if (sample < heights.size() && std::isfinite(heights[sample])) ground[i] = heights[sample];
+            ++sample;
+        }
+        std::vector<double> dist(n, 0.0);
+        for (size_t i = 1; i < n; ++i) dist[i] = dist[i - 1] + std::hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+        const double total = dist.back();
+        if (total < 3.0) continue;
+        const double highest = *std::max_element(ground.begin(), ground.end());
+        const double a0 = bp.openA ? highest : ground.front(), a1 = bp.openB ? highest : ground.back();
+        std::vector<double> deck(n);
+        for (size_t i = 0; i < n; ++i) {
+            const double line = a0 + (a1 - a0) * dist[i] / total;
+            const double edge = std::min(bp.openA ? 1e9 : dist[i], bp.openB ? 1e9 : total - dist[i]);
+            const double r = total > 20.0 ? std::clamp(edge / 25.0, 0.0, 1.0) : 0.0;
+            deck[i] = std::max(line, ground[i] + 5.5 * r * r * (3.0 - 2.0 * r));
+        }
+        for (int pass = 0; pass < 2; ++pass) {
+            std::vector<double> next = deck;
+            for (size_t i = 1; i + 1 < n; ++i) next[i] = (deck[i - 1] + 2.0 * deck[i] + deck[i + 1]) / 4.0;
+            deck.swap(next);
+        }
+        std::vector<Vec3> left(n), along(n);
+        for (size_t i = 0; i < n; ++i) {
+            const Point& a = pts[i == 0 ? 0 : i - 1];
+            const Point& c = pts[i + 1 < n ? i + 1 : n - 1];
+            double dx = c.x - a.x, dy = c.y - a.y;
+            const double len = std::hypot(dx, dy);
+            if (len < 1e-9) {
+                dx = 1.0;
+                dy = 0.0;
+            } else {
+                dx /= len;
+                dy /= len;
+            }
+            along[i] = Vec3{dx, dy, 0.0};
+            left[i] = Vec3{-dy, dx, 0.0};
+        }
+        const double half = bp.width * 0.5;
+        constexpr double kThick = 1.1, kParapet = 0.95;
+        auto at = [&](size_t i, double offset, double h) {
+            const Point& p = pts[i];
+            return Vec3{p.x + left[i].x * offset + p.up.x * h, p.y + left[i].y * offset + p.up.y * h, p.z + p.up.z * h};
+        };
+        auto wall = [&](const Vec3& p, const Vec3& nrm, double u, double v) {
+            return vertex(p, nrm, static_cast<float>(u), static_cast<float>(v), 0.0f, concreteLayer, concrete, static_cast<float>(p.z), 0.0f);
+        };
+        size_t c0 = 0;
+        while (c0 + 1 < n) {
+            size_t c1 = c0 + 1;
+            while (c1 + 1 < n && dist[c1] - dist[c0] < 60.0) ++c1;
+            Roof roof;
+            std::vector<std::uint32_t> rowL, rowR;
+            for (size_t i = c0; i <= c1; ++i) {
+                for (int sideSign : {1, -1}) {
+                    const Vec3 p = at(i, sideSign * half, deck[i]);
+                    const std::uint32_t idx = vertex(p, Vec3{0.0, 0.0, 1.0}, static_cast<float>(p.x), static_cast<float>(p.y), -1.0f,
+                                                     static_cast<float>(RoofShingles), kWhite, static_cast<float>(p.z), 1.0f);
+                    roof.verts.push_back(idx);
+                    roof.minX = std::min(roof.minX, p.x);
+                    roof.minY = std::min(roof.minY, p.y);
+                    roof.maxX = std::max(roof.maxX, p.x);
+                    roof.maxY = std::max(roof.maxY, p.y);
+                    (sideSign > 0 ? rowL : rowR).push_back(idx);
+                }
+            }
+            for (size_t k = 0; k + 1 < rowL.size(); ++k) quad(rowL[k], rowR[k], rowR[k + 1], rowL[k + 1]);
+            roofs.push_back(std::move(roof));
+            c0 = c1;
+        }
+        for (size_t i = 0; i + 1 < n; ++i) {
+            for (int sideSign : {1, -1}) {
+                const Vec3 nrm = left[i] * static_cast<double>(sideSign);
+                const double off = sideSign * half;
+                const std::uint32_t a = wall(at(i, off, deck[i] - kThick), nrm, dist[i], 0.0);
+                const std::uint32_t b = wall(at(i + 1, off, deck[i + 1] - kThick), nrm, dist[i + 1], 0.0);
+                const std::uint32_t c = wall(at(i + 1, off, deck[i + 1] + kParapet), nrm, dist[i + 1], kThick + kParapet);
+                const std::uint32_t d = wall(at(i, off, deck[i] + kParapet), nrm, dist[i], kThick + kParapet);
+                quad(a, b, c, d);
+            }
+            const Vec3 down{0.0, 0.0, -1.0};
+            quad(wall(at(i, half, deck[i] - kThick), down, dist[i], 0.0), wall(at(i, -half, deck[i] - kThick), down, dist[i], bp.width),
+                 wall(at(i + 1, -half, deck[i + 1] - kThick), down, dist[i + 1], bp.width), wall(at(i + 1, half, deck[i + 1] - kThick), down, dist[i + 1], 0.0));
+        }
+        for (int end = 0; end < 2; ++end) {
+            if (end == 0 ? bp.openA : bp.openB) continue;
+            const size_t i = end == 0 ? 0 : n - 1;
+            const Vec3 nrm = along[i] * (end == 0 ? -1.0 : 1.0);
+            quad(wall(at(i, half, deck[i] - kThick), nrm, 0.0, 0.0), wall(at(i, -half, deck[i] - kThick), nrm, bp.width, 0.0),
+                 wall(at(i, -half, deck[i] + kParapet), nrm, bp.width, kThick + kParapet), wall(at(i, half, deck[i] + kParapet), nrm, 0.0, kThick + kParapet));
+        }
+        double lastPier = -1e9;
+        for (size_t i = 0; i < n; ++i) {
+            if (dist[i] < 10.0 || dist[i] > total - 10.0 || dist[i] - lastPier < 35.0) continue;
+            const double low = ground[i] - 1.0, high = deck[i] - kThick;
+            if (high - ground[i] < 3.5) continue;
+            lastPier = dist[i];
+            const double ha = 0.8, hc = std::max(1.0, half * 0.55);
+            const Point& p = pts[i];
+            auto corner = [&](double sa, double sc, double h) {
+                return Vec3{p.x + along[i].x * sa + left[i].x * sc + p.up.x * h, p.y + along[i].y * sa + left[i].y * sc + p.up.y * h, p.z + p.up.z * h};
+            };
+            const double sx[4] = {-ha, ha, ha, -ha}, sy[4] = {-hc, -hc, hc, hc};
+            for (int k = 0; k < 4; ++k) {
+                const int m = (k + 1) % 4;
+                const Vec3 mid{(sx[k] + sx[m]) * 0.5, (sy[k] + sy[m]) * 0.5, 0.0};
+                const Vec3 nrm = normalize(along[i] * mid.x + left[i] * mid.y);
+                const double w = std::hypot(sx[m] - sx[k], sy[m] - sy[k]);
+                quad(wall(corner(sx[k], sy[k], low), nrm, 0.0, 0.0), wall(corner(sx[m], sy[m], low), nrm, w, 0.0),
+                     wall(corner(sx[m], sy[m], high), nrm, w, high - low), wall(corner(sx[k], sy[k], high), nrm, 0.0, high - low));
+            }
+        }
     }
 
     if (roofs.empty() || maxAtlas <= 0) return mesh;
