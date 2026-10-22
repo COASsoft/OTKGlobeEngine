@@ -27,6 +27,9 @@
 - Releases publish the npm package and the NuGet package when `NPM_TOKEN` and `NUGET_API_KEY` repository secrets are set.
 
 ### Loading
+- Fly-to now rises high enough to keep the destination in view and comes down near the end, like Google Earth. It used to sink steadily on a straight line, skimming a few hundred metres above oceans and plains half a world away, which loaded thousands of tiles nobody wanted: a fly-in from space to Seattle went from 280 of 479 frames with missing detail to 6 of 407, and blurry stand-ins from 266 frames to none.
+- While the camera moves, the engine prefetches the view it is heading for: the fly-to destination, or about a quarter second ahead along the current pan, zoom and turn.
+- Borders and other lines drawn on the map no longer turn into a wide white band on tiles drawn while the camera was far away; such tiles are redrawn once the camera comes much closer.
 - Place and street names are hidden when a hill, mountain or 3D building stands between them and the camera, instead of showing through.
 - 3D buildings are solid for the camera: first-person view stands on a roof instead of inside a building, and the orbiting camera cannot dip into one.
 - Names with characters the label font does not have (Japanese, Chinese, Arabic and others) are left out instead of being drawn as empty boxes; such labels also kept a view from ever finishing loading.
