@@ -1252,6 +1252,23 @@ void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dp
             f.height = ecefToGeodetic(it.anchor).alt;
             shown.insert(it.key);
         }
+        if (std::getenv("OTK_LABEL_DEBUG")) {
+            static std::unordered_set<std::uint64_t> previous;
+            int born = 0, died = 0, bornMarks = 0, diedMarks = 0;
+            for (std::uint64_t k : shown)
+                if (!previous.count(k)) {
+                    ++born;
+                    if (!(k >> 63)) ++bornMarks;
+                }
+            for (std::uint64_t k : previous)
+                if (!shown.count(k)) {
+                    ++died;
+                    if (!(k >> 63)) ++diedMarks;
+                }
+            std::fprintf(stderr, "[labels] frame %llu candidates %zu overlayTiles %zu placed %zu born %d (%d marks) died %d (%d marks)\n",
+                         static_cast<unsigned long long>(frame_), candidates.size(), overlay.size(), placed.size(), born, bornMarks, died, diedMarks);
+            previous = shown;
+        }
         T.animating = false;
         for (auto it = T.fades.begin(); it != T.fades.end();) {
             Fade& f = it->second;
