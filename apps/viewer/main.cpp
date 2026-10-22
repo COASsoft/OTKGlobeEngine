@@ -356,7 +356,70 @@ void checkHoles() {
 
 void showStatus(const std::string& s);
 
+#if defined(__ANDROID__)
+void androidInsets() {
+    static std::chrono::steady_clock::time_point last;
+    const auto now = std::chrono::steady_clock::now();
+    if (last.time_since_epoch().count() != 0 && now - last < std::chrono::seconds(1)) return;
+    last = now;
+    auto* activity = static_cast<const ANativeActivity*>(sapp_android_get_native_activity());
+    if (!activity || !activity->vm || !activity->clazz) return;
+    JavaVM* vm = activity->vm;
+    JNIEnv* env = nullptr;
+    bool attached = false;
+    if (vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK) {
+        if (vm->AttachCurrentThread(&env, nullptr) != JNI_OK) return;
+        attached = true;
+    }
+    auto call = [&](jobject obj, const char* name, const char* sig) -> jobject {
+        if (!obj) return nullptr;
+        jclass cls = env->GetObjectClass(obj);
+        jmethodID m = env->GetMethodID(cls, name, sig);
+        jobject out = nullptr;
+        if (m && !env->ExceptionCheck()) out = env->CallObjectMethod(obj, m);
+        if (env->ExceptionCheck()) {
+            env->ExceptionClear();
+            out = nullptr;
+        }
+        env->DeleteLocalRef(cls);
+        return out;
+    };
+    jobject window = call(activity->clazz, "getWindow", "()Landroid/view/Window;");
+    jobject decor = call(window, "getDecorView", "()Landroid/view/View;");
+    jobject insets = call(decor, "getRootWindowInsets", "()Landroid/view/WindowInsets;");
+    int inset[4] = {0, 0, 0, 0};
+    bool ok = insets != nullptr;
+    if (insets) {
+        jclass cls = env->GetObjectClass(insets);
+        const char* names[4] = {"getSystemWindowInsetLeft", "getSystemWindowInsetTop", "getSystemWindowInsetRight", "getSystemWindowInsetBottom"};
+        for (int i = 0; i < 4 && ok; ++i) {
+            jmethodID m = env->GetMethodID(cls, names[i], "()I");
+            if (!m || env->ExceptionCheck()) {
+                env->ExceptionClear();
+                ok = false;
+                break;
+            }
+            inset[i] = env->CallIntMethod(insets, m);
+            if (env->ExceptionCheck()) {
+                env->ExceptionClear();
+                ok = false;
+            }
+        }
+        env->DeleteLocalRef(cls);
+    }
+    for (jobject o : {insets, decor, window})
+        if (o) env->DeleteLocalRef(o);
+    if (attached) vm->DetachCurrentThread();
+    if (!ok) return;
+    const double d = std::max(static_cast<double>(sapp_dpi_scale()), 0.5);
+    state->engine.setControlsPadding(inset[0] / d, inset[1] / d, inset[2] / d, inset[3] / d);
+}
+#endif
+
 void frame() {
+#if defined(__ANDROID__)
+    androidInsets();
+#endif
     watchdogBeat();
     if (!state->shotPath.empty()) {
         state->engine.setViewport(state->width, state->height, 1.0f);
