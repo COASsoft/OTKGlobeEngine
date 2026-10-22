@@ -215,6 +215,7 @@ namespace OTKGlobeEngine
         [DllImport(Lib)] public static extern int otk_labels_layer(IntPtr e);
         [DllImport(Lib)] public static extern void otk_set_controls(IntPtr e, uint controls);
         [DllImport(Lib)] public static extern uint otk_controls(IntPtr e);
+        [DllImport(Lib)] public static extern void otk_set_controls_padding(IntPtr e, double left, double top, double right, double bottom);
         [DllImport(Lib)] public static extern int otk_basemap_count(IntPtr e);
         [DllImport(Lib)] public static extern int otk_basemap_name(IntPtr e, int index, byte[] output, int capacity);
         [DllImport(Lib)] public static extern void otk_set_basemap(IntPtr e, int index);
@@ -344,6 +345,8 @@ namespace OTKGlobeEngine
             set => Native.otk_set_basemap(Handle, value);
         }
         public int BasemapCount => Native.otk_basemap_count(Handle);
+        public void SetControlsPadding(double left, double top, double right, double bottom) =>
+            Native.otk_set_controls_padding(Handle, left, top, right, bottom);
         public string BasemapName(int index)
         {
             var buffer = new byte[256];
