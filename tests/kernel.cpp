@@ -114,6 +114,27 @@ int main() {
     GeodesicLine line = geodesicInverse(47.0359, -122.9049, 46.9694, -122.9027);
     check(std::abs(line.distance - 7393.0) < 15.0, "geodesic distance");
 
+    {
+        const int n = 65;
+        std::vector<float> cone(static_cast<size_t>(n) * n);
+        for (int j = 0; j < n; ++j)
+            for (int i = 0; i < n; ++i)
+                cone[static_cast<size_t>(j) * n + i] = static_cast<float>(std::max(1000.0 - 30.0 * std::hypot(i - 32.0, j - 32.0), 50.0));
+        std::vector<Feature> rings = contourLines(cone, n, n, -1.0, -1.0, 1.0, 1.0, 100.0, 5);
+        bool closed = rings.size() == 9;
+        size_t points = 0;
+        bool index = false;
+        for (const Feature& f : rings) {
+            const std::vector<Coord>& c = f.geometries.front().coords;
+            closed = closed && c.size() >= 4 && std::abs(c.front().lat - c.back().lat) < 1e-9 && std::abs(c.front().lon - c.back().lon) < 1e-9;
+            points += c.size();
+            index = index || (f.name == "500 m" && f.style.showLabel);
+        }
+        check(closed, "contour rings close");
+        check(points < 400, "contour lines simplified");
+        check(index, "index contour labelled");
+    }
+
     std::string legacy = R"(<event version="2.0" uid="u1" type="a-f-G" how="m-g" time="2026-01-01T00:00:00Z" start="2026-01-01T00:00:00Z" )"
                          R"(stale="2026-01-02T00:00:00Z"><point lat="47" lon="-122" hae="0" ce="10" le="10"/><detail>)"
                          R"(<__ote_attributes><a k="unit" v="alpha"/></__ote_attributes></detail></event>)";
