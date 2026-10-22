@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <cstdlib>
 #include <string>
 #include <string_view>
 
@@ -404,6 +405,8 @@ MvtLayer readMvtLayer(Reader layer) {
                 } else if (vf == 6 && vw == 0) {
                     std::uint64_t raw = v.varint();
                     num = static_cast<double>(static_cast<std::int64_t>((raw >> 1) ^ (~(raw & 1) + 1)));
+                } else if (vf == 7 && vw == 0) {
+                    num = static_cast<double>(v.varint());
                 } else if (vf == 3 && vw == 1 && v.end - v.p >= 8) {
                     std::memcpy(&num, v.p, 8);
                     v.p += 8;
@@ -665,6 +668,9 @@ std::shared_ptr<VectorTile> decodeOverlayTile(const std::vector<std::uint8_t>& r
     if (data.empty()) return nullptr;
     auto tile = std::make_shared<VectorTile>();
     tile->overlay = true;
+    tile->z = z;
+    tile->x = x;
+    tile->y = y;
     float origin[2];
     toLonLat(z, x, y, 0.0, 1.0, origin);
     tile->originLon = origin[0];
@@ -792,6 +798,38 @@ std::shared_ptr<VectorTile> decodeOverlayTile(const std::vector<std::uint8_t>& r
                 std::string_view cls = f.text(layer, "class");
                 const int rank = cls == "ocean" || cls == "sea" ? 0 : cls == "bay" || cls == "strait" ? 1 : 2;
                 tile->marks.push_back({MarkType::Water, static_cast<std::uint8_t>(rank), 0, std::move(name), {}, {lonLat(mid[0], mid[1], extent)}});
+            }
+        } else if (layer.name == "building" && z >= 14) {
+            for (Reader fr : layer.features) {
+                MvtFeature f = readMvtFeature(fr);
+                if (f.type != 3 || f.number(layer, "hide_3d", 0.0) > 0.5) continue;
+                const float height = static_cast<float>(f.number(layer, "render_height", 5.0));
+                const float minHeight = static_cast<float>(f.number(layer, "render_min_height", 0.0));
+                std::uint32_t colour = 0;
+                std::string_view hex = f.text(layer, "colour");
+                if (hex.size() == 7 && hex[0] == '#') {
+                    const unsigned long v = std::strtoul(std::string(hex.substr(1)).c_str(), nullptr, 16);
+                    colour = static_cast<std::uint32_t>(((v >> 16) & 0xFF) | (v & 0xFF00) | ((v & 0xFF) << 16)) | 0xFF000000u;
+                }
+                BuildingShape* current = nullptr;
+                for (const auto& part : f.parts) {
+                    if (part.size() < 4) continue;
+                    double area = 0.0;
+                    for (size_t i = 0; i + 1 < part.size(); ++i) area += part[i][0] * part[i + 1][1] - part[i + 1][0] * part[i][1];
+                    std::vector<std::array<float, 2>> ring;
+                    ring.reserve(part.size());
+                    for (const auto& p : part) ring.push_back({static_cast<float>(p[0] / extent), static_cast<float>(p[1] / extent)});
+                    if (area > 0.0) {
+                        tile->buildings.emplace_back();
+                        current = &tile->buildings.back();
+                        current->height = height;
+                        current->minHeight = minHeight;
+                        current->colour = colour;
+                        current->rings.push_back(std::move(ring));
+                    } else if (current && area < 0.0) {
+                        current->rings.push_back(std::move(ring));
+                    }
+                }
             }
         } else if (layer.name == "waterway") {
             for (Reader fr : layer.features) {
