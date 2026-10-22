@@ -176,6 +176,10 @@ public final class OTKGlobeView: OTEPlatformView, MTKViewDelegate {
     }
     public func setLabelsSource(_ urlOrPath: String) { otk_set_labels_source(engine, urlOrPath) }
     public var labelsLayer: Int32 { otk_labels_layer(engine) }
+    public var buildings: Bool {
+        get { otk_buildings(engine) != 0 }
+        set { otk_set_buildings(engine, newValue ? 1 : 0) }
+    }
     public var controls: UInt32 {
         get { otk_controls(engine) }
         set { otk_set_controls(engine, newValue) }
