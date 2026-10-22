@@ -60,6 +60,7 @@ public:
     }
 
     bool remote() const override { return !local_; }
+    int maxConcurrent() const override { return layer_.maxRequests; }
     bool vector() const override { return layer_.type == SourceType::Mvt; }
     std::string cacheKey() const override { return useCache() ? key_ : std::string(); }
     bool cached(int z, int x, int y) override { return useCache() && cache_->has(key_, z, x, y); }
@@ -77,7 +78,7 @@ public:
             out = readFile(z, x, y);
             return true;
         }
-        bool offline = offline_ && offline_->load();
+        bool offline = !layer_.stream || (offline_ && offline_->load());
         if (useCache()) {
             std::int64_t expires = 0;
             std::vector<std::uint8_t> data;
@@ -85,7 +86,7 @@ public:
                 out.status = 200;
                 out.data = std::move(data);
                 out.fromCache = true;
-                out.stale = expires <= TileCache::now();
+                out.stale = layer_.stream && expires <= TileCache::now();
                 return true;
             }
         }
@@ -106,7 +107,7 @@ public:
         std::vector<std::uint8_t> data;
         std::int64_t expires = 0;
         bool have = useCache() && cache_->get(key_, z, x, y, data, expires);
-        bool offline = offline_ && offline_->load();
+        bool offline = !layer_.stream || (offline_ && offline_->load());
         if (have && (expires > TileCache::now() || offline)) {
             r.status = 200;
             r.data = std::move(data);
@@ -136,13 +137,14 @@ public:
     }
 
     bool refresh(int z, int x, int y) override {
-        if (local_ || (offline_ && offline_->load()) || !useCache()) return false;
+        if (local_ || !layer_.stream || (offline_ && offline_->load()) || !useCache()) return false;
         int status = 0;
         network(z, x, y, false, status);
         return status == 200;
     }
 
-    int download(int z, int x, int y) override {
+    int download(int z, int x, int y, std::int64_t& bytes) override {
+        bytes = 0;
         if (local_) return readFile(z, x, y).status;
         if (useCache() && cache_->has(key_, z, x, y)) {
             cache_->pin(key_, z, x, y);
@@ -150,7 +152,7 @@ public:
         }
         if (offline_ && offline_->load()) return -2;
         int status = 0;
-        network(z, x, y, true, status);
+        bytes = static_cast<std::int64_t>(network(z, x, y, true, status).size());
         return status;
     }
 
@@ -429,7 +431,7 @@ std::string layerIdentity(const ImageryLayer& l) {
     std::snprintf(buf, sizeof(buf), "|%d|%d|%d|%d|%.17g|%d|%d|%d|%d|%p", l.minZoom, l.maxZoom, l.srid, l.tileSize, l.level0Resolution,
                   l.tms ? 1 : 0, l.cache ? 1 : 0, l.expirySeconds, l.polarFill ? 1 : 0, static_cast<const void*>(l.source.get()));
     id += buf + std::string("|") + l.wmsLayers + "|" + l.wmsStyles + "|" + l.wmsFormat + "|" + l.wmsVersion + "|" + l.wmsExtra + "|" + l.userAgent +
-          (l.labels ? "|labels" : "");
+          (l.labels ? "|labels" : "") + (l.stream ? "" : "|local") + "|" + std::to_string(l.maxRequests);
     for (const auto& [name, value] : l.headers) id += "|" + name + ":" + value;
     return id;
 }
