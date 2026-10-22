@@ -205,6 +205,7 @@ private:
         int fillCount = 0;
         int lineCount = 0;
         int roadCount = 0;
+        int solidRoads = 0;
     };
     struct DrawTile {
         QuadKey key;
@@ -340,6 +341,7 @@ private:
     bool sunOn_ = false;
     Vec3 sunDir_;
     std::function<void(int, int)> overlay_;
+    std::unordered_map<TileId, std::uint64_t, TileIdHash> labelTileUse_;
     std::vector<TileMatrix> matrices_;
     std::vector<bool> vectorLayers_;
     std::unordered_map<QuadKey, TerrainTile, QuadKeyHash> terrain_;
