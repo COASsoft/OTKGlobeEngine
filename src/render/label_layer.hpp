@@ -39,7 +39,7 @@ public:
     void drawRoads(const std::vector<RoadBatch>& batches, const GeoRect& tile, double unitDeg, double dpi);
     void drawSurface(const GeoRect& tile, double unitDeg, double dpi);
     void drawLabels(const Camera& cam, const GroundFn& ground, double dpi, const std::vector<GeoRect>& visible,
-                    const std::vector<const VectorTile*>& overlay, int view);
+                    const std::vector<const VectorTile*>& overlay, int view, bool places);
 
 private:
     struct Batch {
