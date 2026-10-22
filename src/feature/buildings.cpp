@@ -395,6 +395,33 @@ BuildingMesh buildBuildingMesh(const std::vector<BuildingShape>& shapes, const s
             else top = 9.5;
         }
         const double bottom = b.minHeight > 0.0f ? b.minHeight : -kBury;
+        {
+            if (mesh.heights.empty()) mesh.heights.assign(static_cast<std::size_t>(kBuildingHeightGrid) * kBuildingHeightGrid, 0);
+            const Ring& outer = b.rings.front();
+            double minX = 1.0, minY = 1.0, maxX = 0.0, maxY = 0.0;
+            for (const auto& p : outer) {
+                minX = std::min(minX, p[0]);
+                minY = std::min(minY, p[1]);
+                maxX = std::max(maxX, p[0]);
+                maxY = std::max(maxY, p[1]);
+            }
+            const int g = kBuildingHeightGrid;
+            const int i0 = std::clamp(static_cast<int>(minX * g), 0, g - 1), i1 = std::clamp(static_cast<int>(maxX * g), 0, g - 1);
+            const int j0 = std::clamp(static_cast<int>(minY * g), 0, g - 1), j1 = std::clamp(static_cast<int>(maxY * g), 0, g - 1);
+            const std::uint8_t value = static_cast<std::uint8_t>(std::clamp(top, 0.0, 255.0));
+            for (int j = j0; j <= j1; ++j)
+                for (int i = i0; i <= i1; ++i) {
+                    const double cx = (i + 0.5) / g, cy = (j + 0.5) / g;
+                    bool in = i0 == i1 || j0 == j1;
+                    for (size_t a = 0, c = outer.size() - 1; !in && a < outer.size(); c = a++) {
+                        const auto& pa = outer[a];
+                        const auto& pc = outer[c];
+                        if ((pa[1] > cy) != (pc[1] > cy) && cx < (pc[0] - pa[0]) * (cy - pa[1]) / (pc[1] - pa[1]) + pa[0]) in = !in;
+                    }
+                    std::uint8_t& cell = mesh.heights[static_cast<std::size_t>(j) * g + i];
+                    if (in && value > cell) cell = value;
+                }
+        }
         const std::uint32_t pick = hash >> 8;
         int texture = WallConcrete;
         std::uint32_t tint = kWhite;
