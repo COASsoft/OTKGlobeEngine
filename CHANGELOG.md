@@ -26,6 +26,8 @@
 - Releases publish the npm package and the NuGet package when `NPM_TOKEN` and `NUGET_API_KEY` repository secrets are set.
 
 ### Loading
+- The Topographic map is now Esri's World Topographic Map, which covers the whole world. It used to be USGS topo maps laid over the satellite imagery, so satellite showed while the slow USGS tiles loaded and everywhere outside the US.
+- `ImageryLayer::photo` marks map layers that are not aerial photos (the built-in Topographic, Streets and Vector maps). On those, buildings get plain roofs and trees are hidden instead of being coloured from map tiles.
 - A road name could swap between two copies of itself every frame in some views (it looked like flashing and kept the map redrawing forever); road names now try the next spot along the road when the first spot is taken.
 - Faster first view of a new area: the automatic road and building download starts 0.3 s after the camera stops and fetches the zoom-14 tiles (buildings and street names) before the lower zooms, and building roofs are painted from whatever imagery is already loaded instead of waiting up to 4 s for sharp tiles, then repainted as sharper tiles arrive. On a 4 GB tablet a new city shows its 3D buildings in about 5 s (was over 20 s).
 - Roads, street names and 3D buildings now appear by themselves anywhere in the world: when the camera stops while zoomed in close (12 m per pixel or closer), the engine downloads that area (up to about 3 km around the centre) into the cache, pinned like a manual download, so it keeps working offline afterwards. Areas already fetched are not asked for again. `Engine::setAutoDownloadLabels(false)` (`otk_set_auto_download_labels`) turns it off for strictly offline use.
