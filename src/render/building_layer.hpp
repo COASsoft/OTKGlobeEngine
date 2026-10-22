@@ -18,14 +18,15 @@ namespace otk {
 
 class BuildingLayer {
 public:
-    struct Imagery {
+    struct Piece {
         sg_view view{};
+        float fx0 = 0.0f, fy0 = 0.0f, fx1 = 1.0f, fy1 = 1.0f;
         float u0 = 0.0f, v0 = 0.0f, u1 = 1.0f, v1 = 1.0f;
         int z = -1;
     };
     using TileFn = std::function<int(int x, int y, double priority, std::shared_ptr<const VectorTile>& out)>;
     using HeightsFn = std::function<std::vector<double>(const std::vector<std::pair<double, double>>& latLon)>;
-    using ImageryFn = std::function<bool(double west, double south, double east, double north, Imagery& out)>;
+    using ImageryFn = std::function<void(double west, double south, double east, double north, int level, bool request, std::vector<Piece>& out)>;
 
     BuildingLayer() = default;
     ~BuildingLayer();
@@ -34,7 +35,8 @@ public:
 
     void shutdown();
     void clear();
-    void update(const Camera& cam, const TileFn& tile, const HeightsFn& heights, double exaggeration, bool terrain);
+    void retry();
+    void update(const Camera& cam, const TileFn& tile, const HeightsFn& heights, const ImageryFn& imagery, double exaggeration, bool terrain);
     void bake(const ImageryFn& imagery, bool flip);
     void draw(const Camera& cam, Vec3 light, bool sun);
     bool busy() const { return busy_; }
@@ -57,7 +59,10 @@ private:
         std::vector<RoofCell> cells;
         bool baked = false;
         int bakedLevel = -1;
-        double bakeCheck = 0.0;
+        int availableLevel = -1;
+        int availableMin = -1;
+        int target = 16;
+        double imageryCheck = 0.0;
         Vec3 origin, east, north, up;
         double appear = -1.0;
         double distance = 0.0;
