@@ -5,6 +5,7 @@
 #include "feature/feature_layer.hpp"
 #include "model/model_layer.hpp"
 #include "model/pointcloud.hpp"
+#include "render/building_layer.hpp"
 #include "render/label_layer.hpp"
 #include "tiles3d/tileset.hpp"
 #include "raster/tile_cache.hpp"
@@ -103,6 +104,9 @@ public:
     const std::string& labelsSource() const { return labelsSource_; }
     int labelsLayer() const { return overlayLayer_; }
     void setContours(std::shared_ptr<const ContourSet> set);
+    void setBuildings(bool enabled);
+    bool buildings() const { return buildingsOn_; }
+    BuildingLayer::ImageryFn roofImagery();
     void setOverlay(std::function<void(int width, int height)> draw) { overlay_ = std::move(draw); }
     bool terrainEnabled() const { return terrainEnabled_; }
     bool hasContours() const { return contours_ != nullptr; }
@@ -331,6 +335,10 @@ private:
     std::string labelsSource_ = "https://tiles.openfreemap.org/planet";
     int overlayLayer_ = -1;
     std::shared_ptr<const ContourSet> contours_;
+    BuildingLayer buildings_;
+    bool buildingsOn_ = true;
+    bool sunOn_ = false;
+    Vec3 sunDir_;
     std::function<void(int, int)> overlay_;
     std::vector<TileMatrix> matrices_;
     std::vector<bool> vectorLayers_;
