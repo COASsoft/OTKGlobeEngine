@@ -164,6 +164,10 @@ public final class OTKGlobeView: OTEPlatformView, MTKViewDelegate {
     }
     @discardableResult
     public func addContoursInView(interval: Double, majorEvery: Int32 = 5) -> Int32 { otk_add_contours_in_view(engine, interval, majorEvery, 0) }
+    public func setContours(_ enabled: Bool, interval: Double = 0, unit: otk_distance_unit = OTK_DISTANCE_METRIC) {
+        otk_set_contours(engine, enabled ? 1 : 0, interval, unit)
+    }
+    public var contours: Bool { otk_contours(engine) != 0 }
     public func setTerrainSlope(_ enabled: Bool) { otk_set_terrain_slope(engine, enabled ? 1 : 0, 0.6, 45) }
     public func setGridType(_ type: otk_grid_type) { otk_set_grid_type(engine, type) }
     public var labels: Bool {
