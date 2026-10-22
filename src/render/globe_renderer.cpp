@@ -114,7 +114,11 @@ bool GlobeRenderer::init() {
     if (!budgetSet_) {
         double ram = physicalMemoryMb();
         double vram = videoMemoryMb();
-#if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
+#if defined(__EMSCRIPTEN__)
+        (void)ram;
+        (void)vram;
+        setMemoryBudget(512);
+#elif defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
         if (ram > 0) setMemoryBudget(static_cast<int>(std::clamp(ram * 0.16, 256.0, 1024.0)));
 #else
         if (vram > 0) setMemoryBudget(static_cast<int>(std::clamp(vram * 0.35, 256.0, 1536.0)));
