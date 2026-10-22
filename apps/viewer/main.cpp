@@ -586,6 +586,10 @@ void frame() {
         }
         return;
     }
+    if (!state->script.empty()) {
+        state->shotElapsed += sapp_frame_duration();
+        runScript();
+    }
     state->engine.setViewport(sapp_width(), sapp_height(), sapp_dpi_scale());
     if (state->stereo >= 0) state->engine.frameStereo(sglue_swapchain(), state->stereo);
     else state->engine.frame(sglue_swapchain());
@@ -1182,6 +1186,14 @@ bool runScript() {
             state->drag.at = t;
             state->dragging = true;
             in.pointerDown(77, st.v[0], st.v[1], otk::PointerType::Mouse, st.op == "rdrag" ? otk::MouseButton::Right : otk::MouseButton::Left, 0);
+        } else if (st.op == "fly") {
+            otk::View v;
+            v.lat = st.v[0];
+            v.lon = st.v[1];
+            v.gsd = st.v[2];
+            v.tilt = st.v[3];
+            v.azimuth = st.v[4];
+            state->engine.flyTo(v, st.v[5] > 0 ? st.v[5] : 3.0);
         } else if (st.op == "view") {
             otk::View v;
             v.lat = st.v[0];
