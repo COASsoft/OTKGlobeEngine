@@ -155,6 +155,8 @@ namespace OTKGlobeEngine
         [DllImport(Lib)] public static extern int otk_add_bullseye(IntPtr e, double lat, double lon, double radiusM, int rings, double bearingStep, int reference, int unit, uint argb);
         [DllImport(Lib)] public static extern int otk_add_range_bearing(IntPtr e, double lat1, double lon1, double lat2, double lon2, int reference, int unit, int distanceUnit, uint argb);
         [DllImport(Lib)] public static extern int otk_add_contours_in_view(IntPtr e, double interval, int majorEvery, uint argb);
+        [DllImport(Lib)] public static extern void otk_set_contours(IntPtr e, int enabled, double interval, int unit);
+        [DllImport(Lib)] public static extern int otk_contours(IntPtr e);
         [DllImport(Lib)] public static extern void otk_set_terrain_slope(IntPtr e, int enabled, float opacity, double maxSlopeDegrees);
         [DllImport(Lib)] public static extern void otk_set_grid_type(IntPtr e, int type);
         [DllImport(Lib)] public static extern void otk_set_memory_budget(IntPtr e, int megabytes);
@@ -273,6 +275,8 @@ namespace OTKGlobeEngine
         public int AddRangeBearing(double lat1, double lon1, double lat2, double lon2, int reference = 1, int unit = 0, int distanceUnit = 0, uint argb = 0) =>
             Native.otk_add_range_bearing(Handle, lat1, lon1, lat2, lon2, reference, unit, distanceUnit, argb);
         public int AddContoursInView(double interval, int majorEvery = 5, uint argb = 0) => Native.otk_add_contours_in_view(Handle, interval, majorEvery, argb);
+        public void SetContours(bool enabled, double interval = 0, int unit = 0) => Native.otk_set_contours(Handle, enabled ? 1 : 0, interval, unit);
+        public bool Contours => Native.otk_contours(Handle) != 0;
         public void SetTerrainSlope(bool enabled, float opacity = 0.6f, double maxSlopeDegrees = 45) => Native.otk_set_terrain_slope(Handle, enabled ? 1 : 0, opacity, maxSlopeDegrees);
         public int GridType { set => Native.otk_set_grid_type(Handle, value); }
 
