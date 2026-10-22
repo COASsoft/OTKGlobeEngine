@@ -176,6 +176,21 @@ public final class OTKGlobeView: OTEPlatformView, MTKViewDelegate {
     }
     public func setLabelsSource(_ urlOrPath: String) { otk_set_labels_source(engine, urlOrPath) }
     public var labelsLayer: Int32 { otk_labels_layer(engine) }
+    public var controls: UInt32 {
+        get { otk_controls(engine) }
+        set { otk_set_controls(engine, newValue) }
+    }
+    public var basemap: Int32 {
+        get { otk_basemap(engine) }
+        set { otk_set_basemap(engine, newValue) }
+    }
+    public var basemapNames: [String] {
+        (0..<otk_basemap_count(engine)).map { i in
+            var buffer = [CChar](repeating: 0, count: 256)
+            otk_basemap_name(engine, i, &buffer, Int32(buffer.count))
+            return String(cString: buffer)
+        }
+    }
     @discardableResult
     public func downloadLabels(west: Double, south: Double, east: Double, north: Double, maxZoom: Int32 = 14) -> Int32 {
         otk_download_labels(engine, west, south, east, north, maxZoom)
