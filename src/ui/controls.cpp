@@ -1,3 +1,6 @@
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
 #include "ui/controls.hpp"
 
 #include "otk/engine.hpp"
@@ -30,6 +33,11 @@ constexpr int kLatin = 0x180 - 0xA0;
 constexpr int kExtra[] = {0x2013, 0x2014, 0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2026};
 constexpr int kGlyphs = kAscii + kLatin + static_cast<int>(sizeof(kExtra) / sizeof(kExtra[0]));
 constexpr double kPi = 3.14159265358979323846;
+#if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
+constexpr float kButton = 40.0f;
+#else
+constexpr float kButton = 34.0f;
+#endif
 
 constexpr std::uint32_t rgba(int r, int g, int b, float a) {
     return static_cast<std::uint32_t>(r) | static_cast<std::uint32_t>(g) << 8 | static_cast<std::uint32_t>(b) << 16 |
@@ -349,13 +357,13 @@ std::string Controls::fit(const std::string& s, float width, int size) const {
     return dots;
 }
 
-void Controls::button(const Target& t, bool enabled) {
+void Controls::button(const Target& t, bool active) {
     targets_.push_back(t);
     const bool over = hover_.item == t.item && hover_.index == t.index;
     const bool down = pressId_ >= 0 && pressed_.item == t.item && pressed_.index == t.index && over;
     const float r = std::round(4.0f * dpi_);
     shadow(t.x0, t.y0 + dpi_, t.x1, t.y1 + dpi_, r, 3.0f * dpi_, kShade);
-    box(t.x0, t.y0, t.x1, t.y1, r, !enabled ? kFace : down ? kFacePress : over ? kFaceHover : kFace, kRim, std::max(1.0f, dpi_));
+    box(t.x0, t.y0, t.x1, t.y1, r, down || active ? kFacePress : over ? kFaceHover : kFace, kRim, std::max(1.0f, dpi_));
 }
 
 Controls::Target Controls::hit(double x, double y) const {
@@ -558,7 +566,8 @@ void Controls::drawPanel() {
     const float right = anchor.x0 - std::round(8.0f * u);
     const float left = right - width;
     float top = anchor.y0;
-    const float floor = static_cast<float>(height_) - std::round(10.0f * u);
+    const bool strip = (flags_ & (ControlScale | ControlAttribution)) != 0;
+    const float floor = static_cast<float>(height_) - std::round(10.0f * u) - (strip ? std::round(18.0f * u) : 0.0f);
     if (top + height > floor) top = floor - height;
     top = std::max(top, std::round(10.0f * u));
     const float r = std::round(6.0f * u);
@@ -703,7 +712,7 @@ void Controls::drawCredits() {
     const float W = static_cast<float>(width_), H = static_cast<float>(height_);
     const float pad = std::round(8.0f * u), lineH = std::round(16.0f * u);
     const bool cluster = (flags_ & (ControlZoom | ControlCompass | ControlTilt | ControlLayers)) != 0;
-    const float bx1 = cluster ? W - std::round(10.0f * u) - std::round(34.0f * u) - std::round(8.0f * u) : W - std::round(8.0f * u);
+    const float bx1 = cluster ? W - std::round(10.0f * u) - std::round(kButton * u) - std::round(8.0f * u) : W - std::round(8.0f * u);
     const float maxW = std::max(bx1 - 2.0f * pad - std::round(8.0f * u), 40.0f * u);
     float w = 0.0f;
     std::vector<std::string> rows;
@@ -746,7 +755,7 @@ void Controls::draw(int width, int height, double dpi) {
     const float u = dpi_;
     const View view = engine_.view();
     const bool strip = (flags_ & (ControlScale | ControlAttribution)) != 0;
-    const float size = std::round(34.0f * u), gap = std::round(8.0f * u), margin = std::round(10.0f * u);
+    const float size = std::round(kButton * u), gap = std::round(8.0f * u), margin = std::round(10.0f * u);
     const float right = static_cast<float>(width) - margin;
     float bottom = static_cast<float>(height) - margin - (strip ? std::round(18.0f * u) : 0.0f);
     auto next = [&](float h) {
@@ -773,7 +782,7 @@ void Controls::draw(int width, int height, double dpi) {
     }
     if (flags_ & ControlLayers) {
         const float top = next(size);
-        button({right - size, top, right, top + size, Item::Layers, -1});
+        button({right - size, top, right, top + size, Item::Layers, -1}, panel_);
         drawLayersButton();
         if (panel_) drawPanel();
     }
