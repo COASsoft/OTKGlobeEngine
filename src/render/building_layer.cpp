@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <set>
 
@@ -38,8 +39,6 @@ constexpr int kMaxAtlas = 1024;
 #else
 constexpr int kMaxAtlas = 2048;
 #endif
-constexpr double kPi = 3.14159265358979323846;
-
 double seconds() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
 
 void tileCenter(int x, int y, double& lat, double& lon) {
@@ -258,7 +257,8 @@ void BuildingLayer::upload(Tile& t, const BuildingMesh& mesh) {
     }
 }
 
-void BuildingLayer::update(const Camera& cam, const TileFn& tile, const HeightsFn& heights, double exaggeration, bool terrain) {
+void BuildingLayer::update(const Camera& cam, const TileFn& tile, const HeightsFn& heights, const ImageryFn& imagery, double exaggeration,
+                           bool terrain) {
     ++frame_;
     busy_ = false;
     const double now = seconds();
@@ -361,10 +361,26 @@ void BuildingLayer::update(const Camera& cam, const TileFn& tile, const HeightsF
             tiles_.erase(key);
         }
     }
-    for (const auto& [key, t] : tiles_) {
+    for (auto& [key, t] : tiles_) {
         if (t.used != frame_) continue;
         if (t.building) busy_ = true;
-        if (t.ready && (now - t.appear < 0.7 || (t.atlasSize > 0 && !t.baked))) busy_ = true;
+        if (!t.ready) continue;
+        if (now - t.appear < 0.7) busy_ = true;
+        if (t.atlasSize <= 0 || !imagery) continue;
+        t.target = t.distance < 700.0 ? 18 : t.distance < 1500.0 ? 17 : 16;
+        if (now - t.imageryCheck >= 0.5) {
+            t.imageryCheck = now;
+            int sum = 0, low = 99;
+            for (const RoofCell& c : t.cells) {
+                Imagery im;
+                const int z = imagery(c.west, c.south, c.east, c.north, t.target, im) ? im.z : 0;
+                sum += z;
+                low = std::min(low, z);
+            }
+            t.availableLevel = sum;
+            t.availableMin = low == 99 ? 0 : low;
+        }
+        if ((!t.baked || t.availableMin < t.target - 1) && now - t.appear < 12.0) busy_ = true;
     }
 }
 
@@ -373,19 +389,12 @@ void BuildingLayer::bake(const ImageryFn& imagery, bool flip) {
     const double now = seconds();
     std::vector<Tile*> todo;
     for (auto& [key, t] : tiles_) {
-        if (!t.ready || t.atlasSize <= 0 || t.used + 1 < frame_) continue;
+        if (!t.ready || t.atlasSize <= 0 || t.used + 1 < frame_ || t.availableLevel < 0) continue;
         if (!t.baked) {
-            todo.push_back(&t);
+            if (t.availableMin >= t.target - 1 || now - t.appear > 4.0) todo.push_back(&t);
             continue;
         }
-        if (now - t.bakeCheck < 2.0) continue;
-        t.bakeCheck = now;
-        int level = 0;
-        for (const RoofCell& c : t.cells) {
-            Imagery im;
-            if (imagery(c.west, c.south, c.east, c.north, im)) level += im.z;
-        }
-        if (level > t.bakedLevel + static_cast<int>(t.cells.size()) / 3) todo.push_back(&t);
+        if (t.availableLevel > t.bakedLevel) todo.push_back(&t);
     }
     if (todo.empty()) return;
     std::sort(todo.begin(), todo.end(), [](const Tile* a, const Tile* b) { return a->distance < b->distance; });
@@ -409,7 +418,7 @@ void BuildingLayer::bake(const ImageryFn& imagery, bool flip) {
         quads.reserve(t.cells.size());
         for (const RoofCell& c : t.cells) {
             Imagery im;
-            if (!imagery(c.west, c.south, c.east, c.north, im) || !im.view.id) continue;
+            if (!imagery(c.west, c.south, c.east, c.north, -1, im) || !im.view.id) continue;
             levels[k] += im.z;
             const float x0 = static_cast<float>(c.x) / s * 2.0f - 1.0f, x1 = static_cast<float>(c.x + c.w) / s * 2.0f - 1.0f;
             const float ya = flip ? 1.0f - 2.0f * static_cast<float>(c.y) / s : -1.0f + 2.0f * static_cast<float>(c.y) / s;
@@ -451,9 +460,21 @@ void BuildingLayer::bake(const ImageryFn& imagery, bool flip) {
             }
         }
         sg_end_pass();
+        {
+            int hist[24] = {};
+            for (const RoofCell& c : t.cells) {
+                Imagery im;
+                const int zz = imagery(c.west, c.south, c.east, c.north, -1, im) ? im.z : 0;
+                ++hist[std::clamp(zz, 0, 23)];
+            }
+            std::fprintf(stderr, "[bake] tile %d/%d cells %zu atlas %d hist", t.x, t.y, t.cells.size(), t.atlasSize);
+            for (int zz = 0; zz < 24; ++zz) if (hist[zz]) std::fprintf(stderr, " z%d:%d", zz, hist[zz]);
+            if (!t.cells.empty()) std::fprintf(stderr, " cell0 %.6f %.6f %.6f %.6f %dx%d", t.cells[0].west, t.cells[0].south, t.cells[0].east, t.cells[0].north, t.cells[0].w, t.cells[0].h);
+            std::fputc(10, stderr);
+        }
         t.baked = true;
         t.bakedLevel = levels[k];
-        t.bakeCheck = now;
+        t.availableLevel = std::min(t.availableLevel, levels[k]);
     }
 }
 
