@@ -565,6 +565,8 @@ void GlobeRenderer::applyLayers() {
         ImageryLayer l;
         l.name = "Labels";
         l.labels = true;
+        l.stream = false;
+        l.maxRequests = 4;
         l.minZoom = 0;
         l.maxZoom = 14;
         std::string lower = labelsSource_;
