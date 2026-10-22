@@ -27,7 +27,7 @@ def emsdk_env(emsdk):
     for line in out.splitlines():
         if '=' in line:
             k, v = line.split('=', 1)
-            env[k] = v
+            env[k.upper() if platform.system() == 'Windows' else k] = v
     return env
 
 
@@ -53,8 +53,10 @@ def main():
         tool = os.path.join(emsdk, 'emsdk.bat' if platform.system() == 'Windows' else 'emsdk')
         subprocess.run([tool, 'install', 'latest'], check=True)
         subprocess.run([tool, 'activate', 'latest'], check=True)
-    env = {**os.environ, **emsdk_env(emsdk)}
-    emcmake = 'emcmake.bat' if platform.system() == 'Windows' and shutil.which('emcmake.bat', path=env.get('PATH')) else 'emcmake'
+    base = {k.upper(): v for k, v in os.environ.items()} if platform.system() == 'Windows' else dict(os.environ)
+    env = {**base, **emsdk_env(emsdk)}
+    tools = os.path.normpath(os.path.join(emsdk, 'upstream', 'emscripten'))
+    emcmake = next((os.path.join(tools, n) for n in ('emcmake.exe', 'emcmake.bat', 'emcmake') if os.path.exists(os.path.join(tools, n))), 'emcmake')
     subprocess.run([emcmake, 'cmake', '-S', ROOT, '-B', args.build_dir, '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release'],
                    check=True, env=env, shell=platform.system() == 'Windows')
     subprocess.run(['cmake', '--build', args.build_dir], check=True, env=env)
