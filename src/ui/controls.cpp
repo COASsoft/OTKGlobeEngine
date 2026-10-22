@@ -190,6 +190,13 @@ void Controls::setFlags(std::uint32_t flags) {
     dirty_ = true;
 }
 
+void Controls::setPadding(float left, float top, float right, float bottom) {
+    const std::array<float, 4> next{std::max(left, 0.0f), std::max(top, 0.0f), std::max(right, 0.0f), std::max(bottom, 0.0f)};
+    if (next == padding_) return;
+    padding_ = next;
+    dirty_ = true;
+}
+
 bool Controls::ready() {
     if (failed_) return false;
     if (pipeline_.id) return true;
@@ -567,9 +574,9 @@ void Controls::drawPanel() {
     const float left = right - width;
     float top = anchor.y0;
     const bool strip = (flags_ & (ControlScale | ControlAttribution)) != 0;
-    const float floor = static_cast<float>(height_) - std::round(10.0f * u) - (strip ? std::round(18.0f * u) : 0.0f);
+    const float floor = bottom_ - std::round(10.0f * u) - (strip ? std::round(18.0f * u) : 0.0f);
     if (top + height > floor) top = floor - height;
-    top = std::max(top, std::round(10.0f * u));
+    top = std::max(top, top_ + std::round(10.0f * u));
     const float r = std::round(6.0f * u);
     shadow(left, top + u, right, top + height + u, r, 5.0f * u, kShade);
     box(left, top, right, top + height, r, rgba(255, 255, 255, 0.97f), kRim, std::max(1.0f, u));
@@ -650,7 +657,7 @@ void Controls::drawPanel() {
 void Controls::drawStrip(double metersPerPixel) {
     const float u = dpi_;
     const float h = std::round(18.0f * u);
-    const float W = static_cast<float>(width_), H = static_cast<float>(height_);
+    const float W = right_, H = bottom_;
     const float y0 = H - h, baseline = H - std::round(5.0f * u);
     float x = W - std::round(8.0f * u);
     float left = x;
@@ -693,7 +700,8 @@ void Controls::drawStrip(double metersPerPixel) {
         left = std::min(left, creditsX);
     }
     if (pieces.empty()) return;
-    box(left - std::round(8.0f * u), y0, W + 2.0f, H + 2.0f, 0.0f, kStrip);
+    box(left - std::round(8.0f * u), y0, W + (W >= static_cast<float>(width_) ? 2.0f : 0.0f), H + (H >= static_cast<float>(height_) ? 2.0f : 0.0f),
+        0.0f, kStrip);
     for (const auto& p : pieces) text(p.text, p.x, baseline, kSmall, kText);
     if (barX1 > barX0) {
         const float s = std::max(1.0f, 1.3f * u);
@@ -709,7 +717,7 @@ void Controls::drawCredits() {
     const std::vector<std::string> credits = engine_.credits();
     if (credits.empty()) return;
     const float u = dpi_;
-    const float W = static_cast<float>(width_), H = static_cast<float>(height_);
+    const float W = right_, H = bottom_;
     const float pad = std::round(8.0f * u), lineH = std::round(16.0f * u);
     const bool cluster = (flags_ & (ControlZoom | ControlCompass | ControlTilt | ControlLayers)) != 0;
     const float bx1 = cluster ? W - std::round(10.0f * u) - std::round(kButton * u) - std::round(8.0f * u) : W - std::round(8.0f * u);
@@ -756,8 +764,11 @@ void Controls::draw(int width, int height, double dpi) {
     const View view = engine_.view();
     const bool strip = (flags_ & (ControlScale | ControlAttribution)) != 0;
     const float size = std::round(kButton * u), gap = std::round(8.0f * u), margin = std::round(10.0f * u);
-    const float right = static_cast<float>(width) - margin;
-    float bottom = static_cast<float>(height) - margin - (strip ? std::round(18.0f * u) : 0.0f);
+    top_ = std::round(padding_[1] * u);
+    right_ = static_cast<float>(width) - std::round(padding_[2] * u);
+    bottom_ = static_cast<float>(height) - std::round(padding_[3] * u);
+    const float right = right_ - margin;
+    float bottom = bottom_ - margin - (strip ? std::round(18.0f * u) : 0.0f);
     auto next = [&](float h) {
         const float top = bottom - h;
         bottom = top - gap;
