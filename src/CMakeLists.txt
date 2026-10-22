@@ -110,6 +110,7 @@ add_library(otkglobeengine STATIC
     tiles3d/tileset.cpp
     render/globe_renderer.cpp
     render/label_layer.cpp
+    render/building_layer.cpp
     render/gfx_impl.cpp)
 target_link_libraries(otkglobeengine PUBLIC otk_kernel)
 
@@ -174,13 +175,15 @@ set(_otk_shaders
     render/shaders/vector.glsl
     render/shaders/points.glsl
     render/shaders/snapshot.glsl
-    render/shaders/labels.glsl)
+    render/shaders/labels.glsl
+    render/shaders/buildings.glsl)
 if(OTK_CONTROLS)
     target_sources(otkglobeengine PRIVATE ui/controls.cpp)
     target_compile_definitions(otkglobeengine PRIVATE OTK_CONTROLS)
     list(APPEND _otk_shaders ui/controls.glsl)
 endif()
 otk_add_shaders(otkglobeengine ${_otk_shaders})
+otk_embed(otkglobeengine building_textures ${PROJECT_SOURCE_DIR}/assets/buildings/facades.jpg)
 if(OTK_EMBED_BACKDROP)
     otk_embed(otkglobeengine world_backdrop ${PROJECT_SOURCE_DIR}/assets/world/blue-marble-2048.jpg)
     target_compile_definitions(otkglobeengine PRIVATE OTK_EMBED_BACKDROP)
