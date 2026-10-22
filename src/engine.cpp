@@ -1883,7 +1883,7 @@ void Engine::updateAutoDownload() {
         I.autoChecked = false;
         return;
     }
-    if (I.autoChecked || I.flying || now - I.autoMoved < std::chrono::milliseconds(700) || !I.labelDownloads.empty()) return;
+    if (I.autoChecked || I.flying || now - I.autoMoved < std::chrono::milliseconds(300) || !I.labelDownloads.empty()) return;
     I.autoChecked = true;
     if (I.camera.gsd > 12.0 || I.camera.firstPerson) return;
     const int layer = I.globe.labelsLayer();
@@ -1902,7 +1902,10 @@ void Engine::updateAutoDownload() {
         for (int y = t.y0; y <= t.y1; ++y)
             for (int x = t.x0; x <= t.x1; ++x)
                 fresh = I.autoTiles.insert((static_cast<std::uint64_t>(x) << 32) | static_cast<std::uint32_t>(y)).second || fresh;
-    if (fresh) downloadLabels(r, 14);
+    if (!fresh) return;
+    const bool freeMap = source.find("openfreemap.org") != std::string::npos;
+    if (const int id = I.globe.loader().startDownload(layer, r, 14, 14, freeMap ? kFreeMapBytes : 0)) I.labelDownloads.push_back(id);
+    downloadLabels(r, 13);
 }
 
 void Engine::frame(const sg_swapchain& swapchain) {
