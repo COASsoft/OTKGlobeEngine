@@ -73,7 +73,7 @@ globe.destroy();
 ```
 
 - `open` reads KML/KMZ, GeoJSON, GPX, Shapefile (zipped), CoT, CSV, MBTiles, GeoPackage, glTF models and more.
-- Roads, street names and 3D buildings show up for an area after `downloadRoads()` (or the "Download roads" button in the layers panel). They are kept, so the area keeps working without internet.
+- Roads, street names and 3D buildings load by themselves when you zoom in close, anywhere in the world. `downloadRoads()` (or the "Download roads" button in the layers panel) fetches a larger area ahead of time.
 - `setControls` takes a mask from `Controls` (`Controls.Zoom | Controls.Compass`, for example) to keep only some buttons.
 
 TypeScript types are included.
