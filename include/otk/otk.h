@@ -173,6 +173,23 @@ OTK_API void otk_set_labels(otk_engine* e, int enabled);
 OTK_API int otk_labels(const otk_engine* e);
 OTK_API void otk_set_labels_source(otk_engine* e, const char* url_or_path);
 OTK_API int otk_labels_layer(const otk_engine* e);
+
+typedef enum otk_control {
+    OTK_CONTROL_ZOOM = 1,
+    OTK_CONTROL_COMPASS = 2,
+    OTK_CONTROL_TILT = 4,
+    OTK_CONTROL_LAYERS = 8,
+    OTK_CONTROL_SCALE = 16,
+    OTK_CONTROL_ATTRIBUTION = 32,
+    OTK_CONTROL_ALL = 63
+} otk_control;
+
+OTK_API void otk_set_controls(otk_engine* e, uint32_t controls);
+OTK_API uint32_t otk_controls(const otk_engine* e);
+OTK_API int otk_basemap_count(const otk_engine* e);
+OTK_API int otk_basemap_name(const otk_engine* e, int index, char* out, int capacity);
+OTK_API void otk_set_basemap(otk_engine* e, int index);
+OTK_API int otk_basemap(const otk_engine* e);
 OTK_API int otk_download_labels(otk_engine* e, double west, double south, double east, double north, int max_zoom);
 OTK_API uint64_t otk_add_tileset(otk_engine* e, const char* path_or_url, double max_sse);
 OTK_API uint64_t otk_add_tileset_ex(otk_engine* e, const char* path_or_url, double max_sse, const char* headers, int lighting,
