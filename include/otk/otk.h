@@ -194,6 +194,8 @@ OTK_API int otk_basemap_name(const otk_engine* e, int index, char* out, int capa
 OTK_API void otk_set_basemap(otk_engine* e, int index);
 OTK_API int otk_basemap(const otk_engine* e);
 OTK_API int otk_download_labels(otk_engine* e, double west, double south, double east, double north, int max_zoom);
+OTK_API void otk_set_auto_download_labels(otk_engine* e, int enabled);
+OTK_API int otk_auto_download_labels(const otk_engine* e);
 OTK_API uint64_t otk_add_tileset(otk_engine* e, const char* path_or_url, double max_sse);
 OTK_API uint64_t otk_add_tileset_ex(otk_engine* e, const char* path_or_url, double max_sse, const char* headers, int lighting,
                                     int cache_offline);
