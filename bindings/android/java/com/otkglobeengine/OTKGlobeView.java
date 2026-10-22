@@ -7,6 +7,8 @@ import android.opengl.GLSurfaceView;
 import android.util.AttributeSet;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
+import android.view.View;
+import android.view.WindowInsets;
 
 import java.util.ArrayList;
 
@@ -22,6 +24,7 @@ public class OTKGlobeView extends GLSurfaceView implements GLSurfaceView.Rendere
     private int width = 1;
     private int height = 1;
     private final float density;
+    private boolean autoPadding = true;
     private final ArrayList<Runnable> pending = new ArrayList<>();
     private Ready ready;
     private ConnectivityManager.NetworkCallback networkCallback;
@@ -327,6 +330,36 @@ public class OTKGlobeView extends GLSurfaceView implements GLSurfaceView.Rendere
                 requestRender();
             }
         });
+    }
+
+    public void setControlsPadding(final float left, final float top, final float right, final float bottom) {
+        autoPadding = false;
+        applyControlsPadding(left, top, right, bottom);
+    }
+
+    private void applyControlsPadding(final float left, final float top, final float right, final float bottom) {
+        run(new Runnable() {
+            @Override
+            public void run() {
+                OTKGlobeEngine.nativeSetControlsPadding(engine, left, top, right, bottom);
+                requestRender();
+            }
+        });
+    }
+
+    @Override
+    public WindowInsets onApplyWindowInsets(WindowInsets insets) {
+        if (autoPadding) {
+            int[] at = new int[2];
+            getLocationInWindow(at);
+            View root = getRootView();
+            float left = Math.max(0, insets.getSystemWindowInsetLeft() - at[0]);
+            float top = Math.max(0, insets.getSystemWindowInsetTop() - at[1]);
+            float right = Math.max(0, insets.getSystemWindowInsetRight() - (root.getWidth() - at[0] - getWidth()));
+            float bottom = Math.max(0, insets.getSystemWindowInsetBottom() - (root.getHeight() - at[1] - getHeight()));
+            applyControlsPadding(left / density, top / density, right / density, bottom / density);
+        }
+        return super.onApplyWindowInsets(insets);
     }
 
     public void setBasemap(final int index) {
