@@ -31,7 +31,7 @@ public:
     void shutdown();
 
 private:
-    enum class Item { None, ZoomIn, ZoomOut, Compass, Tilt, Layers, Panel, Basemap, Labels, Contours, Terrain, Download, Scale, Credits };
+    enum class Item { None, ZoomIn, ZoomOut, Compass, Tilt, Layers, Panel, Basemap, Labels, Buildings, Contours, Terrain, Download, Scale, Credits };
     struct Target {
         float x0 = 0, y0 = 0, x1 = 0, y1 = 0;
         Item item = Item::None;
