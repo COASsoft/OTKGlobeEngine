@@ -320,6 +320,10 @@ JNIEXPORT void JNICALL OTK_FN(nativeSetControls)(JNIEnv*, jclass, jlong h, jint 
     otk_set_controls(E(h), static_cast<uint32_t>(controls));
 }
 
+JNIEXPORT void JNICALL OTK_FN(nativeSetControlsPadding)(JNIEnv*, jclass, jlong h, jfloat l, jfloat t, jfloat r, jfloat b) {
+    otk_set_controls_padding(E(h), l, t, r, b);
+}
+
 JNIEXPORT void JNICALL OTK_FN(nativeSetBasemap)(JNIEnv*, jclass, jlong h, jint index) { otk_set_basemap(E(h), index); }
 
 JNIEXPORT void JNICALL OTK_FN(nativeSetContours)(JNIEnv*, jclass, jlong h, jboolean v, jdouble interval, jint unit) {
