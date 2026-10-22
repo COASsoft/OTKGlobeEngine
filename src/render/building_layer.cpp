@@ -37,12 +37,14 @@ constexpr std::size_t kBakeBytes = 2 * 1024 * 1024;
 #if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE) || defined(__EMSCRIPTEN__)
 constexpr int kMaxAtlas = 1024;
 constexpr std::size_t kMaxTiles = 20;
-constexpr int kCanopyStep = 2;
+constexpr int kMaxTrees = 5000;
+constexpr double kTreeRadius = 1100.0;
 constexpr int kCanopyAtlas = 1024;
 #else
 constexpr int kMaxAtlas = 2048;
 constexpr std::size_t kMaxTiles = 40;
-constexpr int kCanopyStep = 1;
+constexpr int kMaxTrees = 12000;
+constexpr double kTreeRadius = 1800.0;
 constexpr int kCanopyAtlas = 2048;
 #endif
 
@@ -324,7 +326,8 @@ void BuildingLayer::update(const Camera& cam, const TileFn& tile, const HeightsF
             Tile& t = it->second;
             t.used = frame_;
             t.distance = d;
-            bool redo = t.canopyFailed && !t.building && now >= t.retryAt && jobs_ < kMaxJobs;
+            bool redo = (t.canopyFailed && !t.building && now >= t.retryAt && jobs_ < kMaxJobs) ||
+                        (!t.withTrees && canopy && !t.building && d < kTreeRadius * 0.8 && jobs_ < kMaxJobs);
             if (!redo && t.shapesMissing && t.recheck && !t.building && jobs_ < kMaxJobs) {
                 t.recheck = false;
                 std::shared_ptr<const VectorTile> probe;
@@ -353,8 +356,10 @@ void BuildingLayer::update(const Camera& cam, const TileFn& tile, const HeightsF
         t.used = frame_;
         t.distance = d;
         const bool hasShapes = state > 0 && vt && !(vt->buildings.empty() && vt->bridges.empty());
+        const CanopyFn trees = d < kTreeRadius ? canopy : CanopyFn{};
+        t.withTrees = static_cast<bool>(trees);
         t.shapesMissing = state < 0;
-        if (!hasShapes && !canopy) {
+        if (!hasShapes && !trees) {
             t.empty = true;
             continue;
         }
@@ -364,7 +369,7 @@ void BuildingLayer::update(const Camera& cam, const TileFn& tile, const HeightsF
         std::vector<BuildingShape> shapes = hasShapes ? vt->buildings : std::vector<BuildingShape>{};
         std::vector<BridgeShape> bridges = hasShapes ? vt->bridges : std::vector<BridgeShape>{};
         const int x = key.first, y = key.second;
-        t.job = std::async(std::launch::async, [shapes = std::move(shapes), bridges = std::move(bridges), x, y, heights, canopy, exaggeration, terrain]() {
+        t.job = std::async(std::launch::async, [shapes = std::move(shapes), bridges = std::move(bridges), x, y, heights, canopy = trees, exaggeration, terrain]() {
             auto sample = [&](const std::vector<std::array<double, 2>>& points) {
                 std::vector<double> h;
                 if (terrain && !points.empty() && heights) {
@@ -389,7 +394,7 @@ void BuildingLayer::update(const Camera& cam, const TileFn& tile, const HeightsF
                 out.canopyFailed = result < 0;
                 if (result > 0)
                     out.canopy = std::make_shared<BuildingMesh>(
-                        buildCanopyMesh(grid, kCanopySize, kCanopyStep, kZoom, x, y, sample(canopySamplePoints(kZoom, x, y)), kCanopyAtlas));
+                        buildCanopyMesh(grid, kCanopySize, kMaxTrees, kZoom, x, y, sample(canopySamplePoints(kZoom, x, y)), kCanopyAtlas));
             }
             return out;
         });
@@ -547,6 +552,8 @@ void BuildingLayer::draw(const Camera& cam, Vec3 light, bool sun) {
         Part& t = tile.parts[part];
         if (!t.indexCount) continue;
         if (part == 1 && (!t.baked || t.bakedMin < t.target - 2)) continue;
+        const double partGrow = part == 1 ? grow * std::clamp((kTreeRadius - tile.distance) / 400.0, 0.0, 1.0) : grow;
+        if (partGrow <= 0.01) continue;
         Mat4 rot = Mat4::identity();
         rot.at(0, 0) = t.east.x;
         rot.at(1, 0) = t.east.y;
@@ -559,7 +566,7 @@ void BuildingLayer::draw(const Camera& cam, Vec3 light, bool sun) {
         rot.at(2, 2) = t.up.z;
         building_vs_params_t vs{};
         toFloat(cam.viewProjRel() * translation(t.origin - cam.eye()) * rot, vs.mvp);
-        vs.params[0] = static_cast<float>(grow);
+        vs.params[0] = static_cast<float>(partGrow);
         Vec3 l = sun ? normalize(light) : normalize(t.east * -0.45 + t.north * 0.55 + t.up * 0.7);
         float intensity = 0.46f;
         if (sun) {
