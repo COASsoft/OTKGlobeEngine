@@ -30,14 +30,16 @@ constexpr double kFade = 900.0;
 constexpr double kMaxAbove = 6000.0;
 constexpr double kFadeAbove = 3500.0;
 constexpr int kMaxJobs = 2;
-constexpr std::size_t kMaxTiles = 40;
 constexpr size_t kBakesPerFrame = 2;
 constexpr std::size_t kBakeBytes = 2 * 1024 * 1024;
 #if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
 constexpr int kMaxAtlas = 1024;
+constexpr std::size_t kMaxTiles = 20;
 #else
 constexpr int kMaxAtlas = 2048;
+constexpr std::size_t kMaxTiles = 40;
 #endif
+
 double seconds() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
 
 void tileCenter(int x, int y, double& lat, double& lon) {
