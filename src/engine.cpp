@@ -31,6 +31,9 @@ namespace otk {
 
 namespace {
 
+constexpr std::int64_t kFreeMapTiles = 3000;
+constexpr std::int64_t kFreeMapBytes = 50ll * 1024 * 1024;
+
 struct ContourRequest {
     GeoRect region;
     GeoRect need;
@@ -397,6 +400,38 @@ struct Engine::Impl {
         const GlobeRenderer* g = &globe;
         contourJob = std::async(std::launch::async, [g, q] { return buildContours(*g, q); });
         contourDue = true;
+    }
+
+    std::vector<int> labelDownloads;
+    std::int64_t labelDone = -1;
+    std::chrono::steady_clock::time_point labelRetry;
+    bool downloadDue = false;
+
+    void updateDownloads() {
+        if (labelDownloads.empty()) {
+            downloadDue = false;
+            return;
+        }
+        std::int64_t done = 0;
+        bool finished = false;
+        for (auto it = labelDownloads.begin(); it != labelDownloads.end();) {
+            const DownloadStatus s = globe.loader().downloadStatus(*it);
+            done += s.done;
+            if (s.finished) {
+                finished = true;
+                it = labelDownloads.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        const auto now = std::chrono::steady_clock::now();
+        if (finished || (done != labelDone && now - labelRetry > std::chrono::milliseconds(1500))) {
+            labelDone = done;
+            labelRetry = now;
+            globe.retryUnavailable();
+            dirty = true;
+        }
+        downloadDue = !labelDownloads.empty();
     }
 
     std::uint64_t sanityFrame = 0;
@@ -1065,6 +1100,29 @@ void Engine::setLabelsSource(const std::string& urlOrPath) {
 }
 
 std::string Engine::labelsSource() const { return impl_->globe.labelsSource(); }
+
+int Engine::labelsLayer() const { return impl_->globe.labelsLayer(); }
+
+int Engine::downloadLabels(const Region& region, int maxZoom) {
+    const int layer = impl_->globe.labelsLayer();
+    const auto& m = impl_->globe.matrices();
+    if (layer < 0 || layer >= static_cast<int>(m.size())) return 0;
+    maxZoom = std::clamp(maxZoom, 0, 14);
+    std::int64_t maxBytes = 0;
+    if (impl_->globe.labelsSource().find("openfreemap.org") != std::string::npos) {
+        auto count = [&](int z) {
+            std::int64_t n = 0;
+            for (const auto& r : regionRanges(m[layer], region, 0, z)) n += r.count();
+            return n;
+        };
+        while (maxZoom > 0 && count(maxZoom) > kFreeMapTiles) --maxZoom;
+        maxBytes = kFreeMapBytes;
+    }
+    const int id = impl_->globe.loader().startDownload(layer, region, 0, maxZoom, maxBytes);
+    if (id) impl_->labelDownloads.push_back(id);
+    impl_->dirty = true;
+    return id;
+}
 
 std::vector<GridLabel> Engine::gridLabels() const {
     std::vector<GridLabel> out;
@@ -1736,6 +1794,7 @@ void Engine::frame(const sg_swapchain& swapchain) {
     impl_->animate();
     impl_->followTerrain();
     impl_->updateContours();
+    impl_->updateDownloads();
     impl_->globe.render(impl_->camera, &swapchain, nullptr, swapchain.width, swapchain.height);
     impl_->sanity();
     impl_->dirty = false;
@@ -1791,6 +1850,7 @@ void Engine::frameXr(const XrView* views, const sg_swapchain* targets, int count
         rv[i] = {&cams[i], &targets[i], nullptr, v.x, v.y, v.width, v.height, !sameTarget};
     }
     impl_->updateContours();
+    impl_->updateDownloads();
     Camera select = impl_->camera;
     const double grow = 1.1;
     select.setPose(center * (1.0 / count), toWorld(rotate(views[0].orientation, {1, 0, 0})), toWorld(rotate(views[0].orientation, {0, 1, 0})),
@@ -1828,6 +1888,7 @@ void Engine::frameStereo(const sg_swapchain& swapchain, double eyeSeparation) {
     impl_->animate();
     impl_->followTerrain();
     impl_->updateContours();
+    impl_->updateDownloads();
     impl_->renderStereo(&swapchain, nullptr, swapchain.width, swapchain.height, eyeSeparation);
     impl_->sanity();
     impl_->dirty = false;
@@ -1838,6 +1899,7 @@ void Engine::frameStereoOffscreen(const sg_attachments& attachments, int width, 
     impl_->animate();
     impl_->followTerrain();
     impl_->updateContours();
+    impl_->updateDownloads();
     impl_->renderStereo(nullptr, &attachments, width, height, eyeSeparation);
     impl_->sanity();
     impl_->dirty = false;
@@ -1848,13 +1910,14 @@ void Engine::frameOffscreen(const sg_attachments& attachments, int width, int he
     impl_->animate();
     impl_->followTerrain();
     impl_->updateContours();
+    impl_->updateDownloads();
     impl_->globe.render(impl_->camera, nullptr, &attachments, width, height);
     impl_->sanity();
     impl_->dirty = false;
 }
 
 bool Engine::needsRedraw() const {
-    return impl_->dirty || impl_->flying || impl_->globe.busy() || impl_->input->active() || impl_->globe.reachabilityChanged() || impl_->contourDue;
+    return impl_->dirty || impl_->flying || impl_->globe.busy() || impl_->input->active() || impl_->globe.reachabilityChanged() || impl_->contourDue || impl_->downloadDue;
 }
 
 Stats Engine::stats() const { return impl_->globe.stats(); }
