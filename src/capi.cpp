@@ -485,6 +485,10 @@ void otk_set_basemap(otk_engine* e, int index) { e->engine.setBasemap(index); }
 
 int otk_basemap(const otk_engine* e) { return e->engine.basemap(); }
 
+void otk_set_auto_download_labels(otk_engine* e, int enabled) { e->engine.setAutoDownloadLabels(enabled != 0); }
+
+int otk_auto_download_labels(const otk_engine* e) { return e->engine.autoDownloadLabels() ? 1 : 0; }
+
 int otk_download_labels(otk_engine* e, double west, double south, double east, double north, int max_zoom) {
     return e->engine.downloadLabels({west, south, east, north}, max_zoom > 0 ? max_zoom : 14);
 }
