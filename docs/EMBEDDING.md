@@ -129,6 +129,7 @@ otk_set_grid(e, 1);
 otk_set_labels(e, 1);
 otk_set_labels_source(e, "/maps/roads.pmtiles");
 otk_set_contours(e, 1, 0.0, OTK_DISTANCE_METRIC);
+int roads = otk_download_labels(e, -122.96, 47.00, -122.84, 47.08, 14);
 char mgrs[32];
 otk_to_mgrs(47.04, -122.90, 5, mgrs, sizeof mgrs);
 ```
