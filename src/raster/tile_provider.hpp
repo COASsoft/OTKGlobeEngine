@@ -41,7 +41,11 @@ public:
     virtual std::string cacheKey() const { return {}; }
     virtual bool available(int, int, int) const { return true; }
     virtual bool refresh(int, int, int) { return false; }
-    virtual int download(int z, int x, int y) { return fetch(z, x, y).status; }
+    virtual int download(int z, int x, int y, std::int64_t& bytes) {
+        FetchResult r = fetch(z, x, y);
+        bytes = static_cast<std::int64_t>(r.data.size());
+        return r.status;
+    }
 
 protected:
     TileMatrix matrix_;
