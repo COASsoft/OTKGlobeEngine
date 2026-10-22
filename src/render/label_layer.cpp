@@ -79,6 +79,11 @@ constexpr RoadStyle kRoads[12] = {
     {{13.0f, 14, 15, 16, 18, 20}, {0.7f, 1.2f, 1.8f, 2.8f, 5.0f, 7.0f}, 0.0f, 3.0f, 3.0f, {0.8f, 0.8f, 0.8f, 0.4f}},
 };
 constexpr float kRoadShade[4] = {0.08f, 0.08f, 0.08f, 0.55f};
+constexpr float kContourColor[4] = {0.545f, 0.353f, 0.169f, 1.0f};
+constexpr float kContourMinor = 1.0f;
+constexpr float kContourIndex = 1.8f;
+constexpr float kContourMinorAlpha = 0.6f;
+constexpr float kContourIndexAlpha = 0.88f;
 
 struct LabelVertex {
     float x, y, u, v;
@@ -157,7 +162,7 @@ TextStyle markStyle(const TileMark& m, double dpi) {
                         : TextStyle{11.5f, 0.0f, blue, dark, 1.0f, 0.0f, 3.0f};
         break;
     case MarkType::Waterway: s = {11.0f, 0.2f, blue, dark, 1.0f, 0.0f, 2.0f}; break;
-    case MarkType::Contour: s = {10.5f, 0.0f, rgba(20, 20, 20, 1.0f), rgba(255, 255, 255, 0.9f), 1.4f, 0.0f, 2.0f}; break;
+    case MarkType::Contour: s = {10.5f, 0.0f, rgba(0, 0, 0, 1.0f), rgba(255, 255, 255, 0.92f), 1.5f, 0.0f, 2.0f}; break;
     }
     return scaled(s, dpi);
 }
@@ -172,7 +177,7 @@ float markZoom(const TileMark& m) {
     case MarkType::Park: return r == 0 ? 6.0f : 14.5f;
     case MarkType::Water: return r == 0 ? 2.5f : r == 1 ? 8.0f : m.zoom <= 10 ? std::max(8.0f, static_cast<float>(m.zoom)) : 12.0f;
     case MarkType::Waterway: return r == 0 ? 12.0f : r == 1 ? 13.5f : 14.5f;
-    case MarkType::Contour: return 0.0f;
+    case MarkType::Contour: return m.zoom > 2 ? m.zoom - 1.5f : 0.0f;
     }
     return 20.0f;
 }
@@ -184,7 +189,7 @@ float markBase(const TileMark& m) {
     case MarkType::Water: return 2.4f;
     case MarkType::Park: return 2.6f;
     case MarkType::Waterway: return 3.0f;
-    case MarkType::Contour: return 3.4f;
+    case MarkType::Contour: return 20.0f;
     default: return 3.2f;
     }
 }
@@ -584,6 +589,7 @@ void LabelLayer::shutdown() {
     if (sg_isvalid()) {
         for (auto& [k, b] : batches_)
             if (b.buffer.id) sg_destroy_buffer(b.buffer);
+        if (contourBuffer_.id) sg_destroy_buffer(contourBuffer_);
         for (sg_pipeline p : {linePipeline_, labelPipeline_, iconPipeline_}) sg_destroy_pipeline(p);
         for (sg_shader s : {lineShader_, labelShader_, iconShader_}) sg_destroy_shader(s);
         sg_destroy_buffer(quad_);
@@ -596,6 +602,9 @@ void LabelLayer::shutdown() {
         sg_destroy_sampler(sampler_);
     }
     batches_.clear();
+    contourBuffer_ = {};
+    contoursUploaded_ = nullptr;
+    contours_.reset();
     text_->fades.clear();
     if (loading_.valid()) loading_.wait();
     ready_ = false;
@@ -616,6 +625,61 @@ void LabelLayer::beginFrame() {
     ++frame_;
     decodes_ = 0;
     trim();
+    if (ready_ && contours_.get() != contoursUploaded_) {
+        if (contourBuffer_.id) sg_destroy_buffer(contourBuffer_);
+        contourBuffer_ = {};
+        contoursUploaded_ = contours_.get();
+        if (contours_ && !contours_->segments.empty()) {
+            sg_buffer_desc d{};
+            d.data = {contours_->segments.data(), contours_->segments.size() * sizeof(float)};
+            contourBuffer_ = sg_make_buffer(&d);
+        }
+    }
+}
+
+void LabelLayer::setContours(std::shared_ptr<const ContourSet> set) { contours_ = std::move(set); }
+
+void LabelLayer::drawContours(const GeoRect& tile, double unitDeg, double dpi) {
+    if (!ready_ || !contours_ || contoursUploaded_ != contours_.get() || !contourBuffer_.id) return;
+    const ContourSet& set = *contours_;
+    if (!tile.intersects(set.bounds) || !(set.meters > 0.0)) return;
+    const double ratio = unitDeg * 111320.0 * dpi / set.meters;
+    const float fade = std::clamp(static_cast<float>(3.0 - ratio), 0.0f, 1.0f);
+    if (fade <= 0.0f || sg_query_buffer_state(contourBuffer_) != SG_RESOURCESTATE_VALID) return;
+    const double span = tile.north - tile.south;
+    if (span <= 0.0) return;
+    const double coslat = std::max(std::cos((tile.south + tile.north) * 0.5 * kDegToRad), 0.05);
+    bline_params_t p{};
+    p.frame[0] = static_cast<float>(coslat);
+    p.frame[1] = static_cast<float>(unitDeg);
+    p.frame[2] = static_cast<float>(dpi);
+    p.frame[3] = 1.0f;
+    for (int l = 0; l < 2; ++l) {
+        p.styles[l][0] = l == 0 ? kContourMinor : kContourIndex;
+        std::memcpy(p.colors[l], kContourColor, sizeof(p.colors[l]));
+        p.colors[l][3] = (l == 0 ? kContourMinorAlpha : kContourIndexAlpha) * fade;
+    }
+    p.xform[0] = static_cast<float>(2.0 / span);
+    p.xform[1] = static_cast<float>(2.0 / span);
+    p.xform[2] = static_cast<float>((set.bounds.west - tile.west) / span * 2.0 - 1.0);
+    p.xform[3] = static_cast<float>((set.bounds.south - tile.south) / span * 2.0 - 1.0);
+    const double margin = unitDeg * 4.0;
+    const GeoRect grown{tile.west - margin / coslat, tile.south - margin, tile.east + margin / coslat, tile.north + margin};
+    bool applied = false;
+    for (const ContourBucket& b : set.buckets) {
+        if (b.count <= 0 || !grown.intersects(b.bounds)) continue;
+        if (!applied) {
+            sg_apply_pipeline(linePipeline_);
+            applied = true;
+        }
+        sg_bindings bind{};
+        bind.vertex_buffers[0] = quad_;
+        bind.vertex_buffers[1] = contourBuffer_;
+        bind.vertex_buffer_offsets[1] = b.first * static_cast<int>(6 * sizeof(float));
+        sg_apply_bindings(&bind);
+        sg_apply_uniforms(UB_bline_params, SG_RANGE(p));
+        sg_draw(0, 6, b.count);
+    }
 }
 
 void LabelLayer::uploadAtlas() {
@@ -1055,7 +1119,7 @@ void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dp
                     if (q[2] <= d0 || q[2] >= d1) continue;
                     worst = std::max(worst, std::abs((x1 - x0) * (y0 - q[1]) - (x0 - q[0]) * (y1 - y0)) / cl);
                 }
-                if (worst > 3.0 * dpi) continue;
+                if (worst > (m->type == MarkType::Contour ? 4.0 : 3.0) * dpi) continue;
                 cx = (x0 + x1) * 0.5;
                 cy = (y0 + y1) * 0.5;
                 angle = std::atan2(y1 - y0, x1 - x0);
