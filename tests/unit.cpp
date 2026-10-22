@@ -160,8 +160,8 @@ int main() {
         edge.height = 30.0f;
         edge.rings.push_back(rect(1.0 - 10.0 / tileM, 0.7, 20.0, 15.0));
         const std::vector<BuildingShape> shapes{house, tower, edge};
-        const auto points = buildingSamplePoints(shapes, 14, 2598, 5759);
-        const BuildingMesh mesh = buildBuildingMesh(shapes, 14, 2598, 5759, std::vector<double>(points.size(), 100.0), 2048);
+        const auto points = buildingSamplePoints(shapes, {}, 14, 2598, 5759);
+        const BuildingMesh mesh = buildBuildingMesh(shapes, {}, 14, 2598, 5759, std::vector<double>(points.size(), 100.0), 2048);
         bool indices = !mesh.indices.empty() && mesh.indices.size() % 3 == 0;
         for (std::uint32_t i : mesh.indices) indices = indices && i < mesh.vertices.size();
         bool sloped = false, tall = false, boundaryWall = false;
