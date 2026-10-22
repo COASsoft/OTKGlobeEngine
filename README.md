@@ -46,7 +46,7 @@ Every file in a release is listed in `SHA256SUMS.txt` so you can check your down
 npm install otkglobeengine
 ```
 
-Your server must send two headers so the engine can use threads. The [web package README](bindings/web/README.md) shows them, along with a complete example. In the browser, downloaded roads last until the page is closed; for maps that keep working offline across restarts, use a native build.
+Your server must send two headers so the engine can use threads. The [web package README](bindings/web/README.md) shows them, along with a complete example. In the browser, roads and buildings that have loaded last until the page is closed; for maps that keep working offline across restarts, use a native build.
 
 ## First program
 
@@ -76,7 +76,7 @@ The map comes with zoom, compass, 2D/3D and layer buttons in the bottom-right co
 
 - **Maps:** satellite, topographic and street maps out of the box; add your own from almost any tile server or offline file.
 - **Terrain:** real 3D mountains and valleys, with line of sight, viewshed and elevation profiles.
-- **Labels and roads:** country, state, city and town names are built in. Roads, street names and buildings can be downloaded for an area and then work offline.
+- **Labels and roads:** country, state, city and town names are built in. Roads, street names and 3D buildings load by themselves anywhere in the world when you zoom in, and stay saved so that area works offline afterwards.
 - **3D buildings:** built from OpenStreetMap, with roofs taken from the satellite image, on by default.
 - **Your data:** KML/KMZ, GeoJSON, GPX, Shapefile, CoT, CSV, TAK data packages, 3D models (glTF, OBJ, COLLADA), 3D Tiles and LAS point clouds.
 - **Offline:** everything you have viewed is cached, and whole regions can be downloaded ahead of time ([docs/OFFLINE.md](docs/OFFLINE.md)).
