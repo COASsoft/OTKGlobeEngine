@@ -791,7 +791,7 @@ void GlobeRenderer::setBuildings(bool enabled) {
     buildingsOn_ = enabled;
     if (!enabled) buildings_.clear();
     applyLayers();
-    busy_ = true;
+    markDirty({-180, -90, 180, 90});
 }
 
 void GlobeRenderer::setLabels(bool enabled) {
@@ -1550,6 +1550,7 @@ void GlobeRenderer::processLoads() {
                 d.data = {t.vector->roads.data(), t.vector->roads.size() * sizeof(float)};
                 tex.roads = sg_make_buffer(&d);
                 tex.roadCount = static_cast<int>(t.vector->roads.size() / 6);
+                tex.solidRoads = static_cast<int>(t.vector->solidRoads);
             }
             t.vector->fillVertices.clear();
             t.vector->fillVertices.shrink_to_fit();
@@ -2569,7 +2570,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                     if (vd.tile->roadCount > 0) {
                         RoadBatch rb;
                         rb.buffer = vd.tile->roads;
-                        rb.count = vd.tile->roadCount;
+                        rb.count = buildingsOn_ && lb.north - lb.south < 0.015 ? vd.tile->solidRoads : vd.tile->roadCount;
                         std::memcpy(rb.xform, vd.xform, sizeof(rb.xform));
                         roads.push_back(rb);
                     }
@@ -3045,15 +3046,29 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             const double maxLat = maxLatitude(m.srid);
             const double s = std::max(b.south, -maxLat), n = std::min(b.north, maxLat);
             if (s >= n) continue;
-            for (const TileRange& r : regionRanges(m, {b.west, s, b.east, n}, z, z))
+            const int deep = std::min(z + 3, m.maxZoom);
+            for (const TileRange& r : regionRanges(m, {b.west, s, b.east, n}, deep, deep))
                 for (int ty = r.y0; ty <= r.y1; ++ty)
                     for (int tx = r.x0; tx <= r.x1; ++tx)
-                        for (int up = 0; up <= 6 && z - up >= 0; ++up) {
-                            auto it = imagery_.find(TileId{overlayLayer_, z - up, tx >> up, ty >> up});
+                        for (int up = 0; up <= 8 && deep - up >= 0; ++up) {
+                            const TileId lid{overlayLayer_, deep - up, tx >> up, ty >> up};
+                            auto it = imagery_.find(lid);
                             if (it == imagery_.end() || !it->second.vector) continue;
+                            labelTileUse_[lid] = frame_;
+                            it->second.used = frame_;
                             if (seenOverlay.insert(it->second.vector.get()).second) overlayTiles.push_back(it->second.vector.get());
                             break;
                         }
+        }
+        for (auto it = labelTileUse_.begin(); it != labelTileUse_.end();) {
+            auto tex = imagery_.find(it->first);
+            if (it->second + 30 < frame_ || it->first.layer != overlayLayer_ || tex == imagery_.end() || !tex->second.vector) {
+                it = labelTileUse_.erase(it);
+                continue;
+            }
+            tex->second.used = frame_;
+            if (it->second != frame_ && seenOverlay.insert(tex->second.vector.get()).second) overlayTiles.push_back(tex->second.vector.get());
+            ++it;
         }
         if (contours_ && contours_->marks) overlayTiles.push_back(contours_->marks.get());
         labels_.drawLabels(dc, ground, dpiScale_, visibleRects, overlayTiles, 0, labelsOn_);
