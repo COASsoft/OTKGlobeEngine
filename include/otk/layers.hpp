@@ -39,6 +39,8 @@ struct ImageryLayer {
     std::vector<std::pair<std::string, std::string>> headers;
     bool visible = true;
     bool labels = false;
+    bool stream = true;
+    int maxRequests = 0;
     std::shared_ptr<HostTileSource> source;
 };
 
