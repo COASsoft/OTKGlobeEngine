@@ -693,26 +693,37 @@ void Controls::drawStrip(double metersPerPixel) {
         line(barX0, by, barX0, by - 5.0f * u, s, kText);
         line(barX1, by, barX1, by - 5.0f * u, s, kText);
     }
-    if (creditsOpen_ && !credits.empty()) {
-        const float pad = std::round(8.0f * u), lineH = std::round(16.0f * u);
-        const float maxW = W - 2.0f * pad - 20.0f * u;
-        float w = 0.0f;
-        std::vector<std::string> rows;
-        for (const auto& c : credits) {
-            rows.push_back(fit(c, maxW, kSmall));
-            w = std::max(w, measure(rows.back(), kSmall));
-        }
-        const float bx1 = W - std::round(8.0f * u), bx0 = bx1 - w - 2.0f * pad;
-        const float by1 = y0 - std::round(6.0f * u), by0 = by1 - lineH * static_cast<float>(rows.size()) - pad * 1.5f;
-        const float r = std::round(5.0f * u);
-        shadow(bx0, by0 + u, bx1, by1 + u, r, 4.0f * u, kShade);
-        box(bx0, by0, bx1, by1, r, rgba(255, 255, 255, 0.97f), kRim, std::max(1.0f, u));
-        targets_.push_back({bx0, by0, bx1, by1, Item::Credits, -1});
-        float ly = by0 + pad * 0.75f + lineH - 4.0f * u;
-        for (const auto& row : rows) {
-            text(row, bx0 + pad, ly, kSmall, kText);
-            ly += lineH;
-        }
+}
+
+void Controls::drawCredits() {
+    if (!creditsOpen_ || !(flags_ & ControlAttribution)) return;
+    const std::vector<std::string> credits = engine_.credits();
+    if (credits.empty()) return;
+    const float u = dpi_;
+    const float W = static_cast<float>(width_), H = static_cast<float>(height_);
+    const float pad = std::round(8.0f * u), lineH = std::round(16.0f * u);
+    const bool cluster = (flags_ & (ControlZoom | ControlCompass | ControlTilt | ControlLayers)) != 0;
+    const float bx1 = cluster ? W - std::round(10.0f * u) - std::round(34.0f * u) - std::round(8.0f * u) : W - std::round(8.0f * u);
+    const float maxW = std::max(bx1 - 2.0f * pad - std::round(8.0f * u), 40.0f * u);
+    float w = 0.0f;
+    std::vector<std::string> rows;
+    for (const auto& c : credits) {
+        if (c.empty()) continue;
+        rows.push_back(fit(c, maxW, kSmall));
+        w = std::max(w, measure(rows.back(), kSmall));
+    }
+    if (rows.empty()) return;
+    const float bx0 = bx1 - w - 2.0f * pad;
+    const float by1 = H - std::round(18.0f * u) - std::round(6.0f * u);
+    const float by0 = by1 - lineH * static_cast<float>(rows.size()) - pad * 1.5f;
+    const float r = std::round(5.0f * u);
+    shadow(bx0, by0 + u, bx1, by1 + u, r, 4.0f * u, kShade);
+    box(bx0, by0, bx1, by1, r, rgba(255, 255, 255, 0.97f), kRim, std::max(1.0f, u));
+    targets_.push_back({bx0, by0, bx1, by1, Item::Credits, -1});
+    float ly = by0 + pad * 0.75f + lineH - 4.0f * u;
+    for (const auto& row : rows) {
+        text(row, bx0 + pad, ly, kSmall, kText);
+        ly += lineH;
     }
 }
 
@@ -766,6 +777,7 @@ void Controls::draw(int width, int height, double dpi) {
         drawLayersButton();
         if (panel_) drawPanel();
     }
+    drawCredits();
     if (verts_.empty()) return;
     sg_write_buffer_desc wd{};
     wd.src.data = {verts_.data(), verts_.size() * sizeof(Vertex)};
