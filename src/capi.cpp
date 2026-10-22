@@ -636,6 +636,12 @@ int otk_add_contours_in_view(otk_engine* e, double interval, int major_every, ui
     return static_cast<int>(e->engine.addContours(e->engine.viewRegion(), interval, major_every, 256, argb ? argb : 0xFFB0703Au).size());
 }
 
+void otk_set_contours(otk_engine* e, int enabled, double interval, otk_distance_unit unit) {
+    e->engine.setContours(enabled != 0, interval, static_cast<otk::DistanceUnit>(unit));
+}
+
+int otk_contours(const otk_engine* e) { return e->engine.contoursEnabled() ? 1 : 0; }
+
 void otk_set_terrain_slope(otk_engine* e, int enabled, float opacity, double max_slope_degrees) {
     e->engine.setTerrainSlope(enabled != 0, opacity > 0 ? opacity : 0.6f, max_slope_degrees > 0 ? max_slope_degrees : 45.0);
 }
