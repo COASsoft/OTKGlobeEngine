@@ -22,8 +22,8 @@ out vec4 frag_color;
 bool sphere(vec3 o, vec3 d, vec3 c, float r, out float t0, out float t1) {
     vec3 oc = o - c;
     float b = dot(oc, d);
-    float q = dot(oc, oc) - r * r;
-    float disc = b * b - q;
+    float h = length(oc - b * d);
+    float disc = (r - h) * (r + h);
     if (disc < 0.0) {
         t0 = 0.0;
         t1 = 0.0;
