@@ -312,6 +312,10 @@ JNIEXPORT void JNICALL OTK_FN(nativeSetGrid)(JNIEnv*, jclass, jlong h, jboolean 
 
 JNIEXPORT void JNICALL OTK_FN(nativeSetLabels)(JNIEnv*, jclass, jlong h, jboolean v) { otk_set_labels(E(h), v ? 1 : 0); }
 
+JNIEXPORT jint JNICALL OTK_FN(nativeDownloadLabels)(JNIEnv*, jclass, jlong h, jdouble w, jdouble s, jdouble e, jdouble n, jint maxZ) {
+    return otk_download_labels(E(h), w, s, e, n, maxZ);
+}
+
 JNIEXPORT void JNICALL OTK_FN(nativeSetContours)(JNIEnv*, jclass, jlong h, jboolean v, jdouble interval, jint unit) {
     otk_set_contours(E(h), v ? 1 : 0, interval, static_cast<otk_distance_unit>(unit));
 }
