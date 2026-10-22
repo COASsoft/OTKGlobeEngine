@@ -17,3 +17,6 @@
 __pycache__/
 /research/
 /screenshots/atak/
+/bindings/web/dist/
+/bindings/web/LICENSE
+/bindings/web/node_modules/
