@@ -69,6 +69,7 @@ struct ViewerState {
     int gridType = 0;
     bool slope = false;
     double contourInterval = 0;
+    int controls = -1;
     bool contours = false;
     std::vector<std::array<double, 3>> bullseyes;
     std::vector<std::array<double, 4>> rings;
@@ -158,29 +159,8 @@ void fileLog(const char* tag, uint32_t level, uint32_t item, const char* msg, ui
 }
 
 std::vector<otk::ImageryLayer> preset(int i) {
-    std::vector<otk::ImageryLayer> layers = otk::defaultLayers();
-    if (i == 1) {
-        otk::ImageryLayer topo;
-        topo.name = "USGS Topo";
-        topo.url = "https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}";
-        topo.minZoom = 3;
-        topo.maxZoom = 16;
-        layers.push_back(topo);
-    } else if (i == 3) {
-        otk::ImageryLayer v;
-        v.name = "OpenFreeMap";
-        v.type = otk::SourceType::Mvt;
-        v.url = "https://tiles.openfreemap.org/planet";
-        v.maxZoom = 14;
-        layers = {v, otk::polarFillLayer()};
-    } else if (i == 2) {
-        otk::ImageryLayer osm;
-        osm.name = "OpenStreetMap";
-        osm.url = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
-        osm.maxZoom = 19;
-        layers = {osm, otk::polarFillLayer()};
-    }
-    return layers;
+    const std::vector<otk::Basemap> maps = otk::defaultBasemaps();
+    return maps[static_cast<size_t>(std::clamp(i, 0, static_cast<int>(maps.size()) - 1))].layers;
 }
 
 void init() {
@@ -266,6 +246,8 @@ void init() {
     for (const auto& f : state->featureFiles) state->engine.loadFeatures(f);
     state->engine.setGridEnabled(state->grid);
     state->engine.setLabelsEnabled(state->labels);
+    if (state->controls >= 0) state->engine.setControls(static_cast<std::uint32_t>(state->controls));
+    else if (!state->shotPath.empty()) state->engine.setControls(0);
     if (state->contours) state->engine.setContours(true, state->contourInterval);
     state->engine.setElevationHeatmap(state->heat);
     state->engine.setTerrainTransparency(state->xray);
@@ -782,11 +764,12 @@ void event(const sapp_event* e) {
         }
         break;
     case SAPP_EVENTTYPE_MOUSE_MOVE:
-        if (state->mouseDown) eng.input().pointerMove(0, e->mouse_x, e->mouse_y, e->modifiers);
+        eng.input().pointerMove(0, e->mouse_x, e->mouse_y, e->modifiers);
         state->mouseX = e->mouse_x;
         state->mouseY = e->mouse_y;
         break;
     case SAPP_EVENTTYPE_MOUSE_LEAVE:
+        if (!state->mouseDown) eng.input().pointerMove(0, -1e6, -1e6, 0);
         break;
     case SAPP_EVENTTYPE_MOUSE_SCROLL:
         eng.input().wheel(state->mouseX, state->mouseY, e->scroll_x, e->scroll_y, false, e->modifiers);
@@ -1023,6 +1006,8 @@ void parseArgs(int argc, char** argv) {
             state->gridType = std::clamp(std::atoi(argv[++i]), 0, 2);
         } else if (a == "--slope") {
             state->slope = std::atoi(argv[++i]) != 0;
+        } else if (a == "--controls") {
+            state->controls = std::atoi(argv[++i]);
         } else if (a == "--contours") {
             state->contours = true;
             state->contourInterval = std::max(0.0, std::atof(argv[++i]));
@@ -1114,6 +1099,12 @@ bool runScript() {
                 std::fclose(df);
             }
         if (st.op == "wheel") in.wheel(st.v[0], st.v[1], 0, st.v[2], false, 0);
+        else if (st.op == "tap") {
+            in.pointerDown(78, st.v[0], st.v[1], otk::PointerType::Mouse, otk::MouseButton::Left, 0);
+            in.pointerUp(78, st.v[0], st.v[1]);
+        } else if (st.op == "hover") {
+            in.pointerMove(79, st.v[0], st.v[1]);
+        }
         else if (st.op == "preset") {
             state->preset = static_cast<int>(st.v[0]);
             state->engine.setLayers(withAdded(preset(state->preset)));
