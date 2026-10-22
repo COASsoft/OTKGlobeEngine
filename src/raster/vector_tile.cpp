@@ -679,7 +679,7 @@ std::shared_ptr<VectorTile> decodeOverlayTile(const std::vector<std::uint8_t>& r
         int order;
         float v[6];
     };
-    std::vector<Road> roads;
+    std::vector<Road> roads, bridgeRoads;
     auto lonLat = [&](double px, double py, double extent) {
         float ll[2];
         toLonLat(z, x, y, px / extent, py / extent, ll);
@@ -720,9 +720,36 @@ std::shared_ptr<VectorTile> decodeOverlayTile(const std::vector<std::uint8_t>& r
             for (Reader fr : layer.features) {
                 MvtFeature f = readMvtFeature(fr);
                 if (f.type != 2) continue;
+                const std::string_view cls = f.text(layer, "class");
+                const bool bridge = f.text(layer, "brunnel") == "bridge";
+                if (bridge && z >= 14) {
+                    const bool ramp = f.number(layer, "ramp", 0.0) > 0.5;
+                    const float width = ramp ? 6.0f
+                                        : cls == "motorway" ? 12.0f
+                                        : cls == "trunk" ? 11.0f
+                                        : cls == "primary" ? 10.0f
+                                        : cls == "secondary" ? 9.0f
+                                        : cls == "tertiary" ? 8.5f
+                                        : cls == "minor" ? 7.5f
+                                        : cls == "service" ? 5.5f
+                                        : cls == "track" ? 4.0f
+                                        : cls == "path" ? 3.0f
+                                        : cls == "rail" ? 6.0f
+                                        : cls == "transit" ? 5.0f
+                                                           : 7.0f;
+                    for (const auto& part : f.parts) {
+                        if (part.size() < 2) continue;
+                        BridgeShape b;
+                        b.width = width;
+                        b.line.reserve(part.size());
+                        for (const auto& p : part) b.line.push_back({static_cast<float>(p[0] / extent), static_cast<float>(p[1] / extent)});
+                        tile->bridges.push_back(std::move(b));
+                    }
+                }
                 RoadClass rc;
-                if (!roadClass(f.text(layer, "class"), f.number(layer, "ramp", 0.0) > 0.5, f.text(layer, "brunnel") == "tunnel", rc)) continue;
+                if (!roadClass(cls, f.number(layer, "ramp", 0.0) > 0.5, f.text(layer, "brunnel") == "tunnel", rc)) continue;
                 const int order = roadOrder(rc);
+                std::vector<Road>& sink = bridge ? bridgeRoads : roads;
                 for (const auto& part : f.parts) {
                     double along = 0.0;
                     for (size_t i = 1; i < part.size(); ++i) {
@@ -733,7 +760,7 @@ std::shared_ptr<VectorTile> decodeOverlayTile(const std::vector<std::uint8_t>& r
                         double x0 = part[i - 1][0], y0 = part[i - 1][1], x1 = part[i][0], y1 = part[i][1], t0, t1;
                         if (clipSegment(x0, y0, x1, y1, 0.0, extent, t0, t1) && t1 > t0) {
                             const std::array<double, 2> ca = lonLat(x0, y0, extent), cb = lonLat(x1, y1, extent);
-                            roads.push_back({order,
+                            sink.push_back({order,
                                              {static_cast<float>(ca[0] - tile->originLon), static_cast<float>(ca[1] - tile->originLat),
                                               static_cast<float>(cb[0] - tile->originLon), static_cast<float>(cb[1] - tile->originLat),
                                               static_cast<float>(along + t0 * length), static_cast<float>(4 + static_cast<int>(rc))}});
@@ -848,8 +875,11 @@ std::shared_ptr<VectorTile> decodeOverlayTile(const std::vector<std::uint8_t>& r
     }
     for (TileMark& m : tile->marks) m.zoom = static_cast<std::uint8_t>(std::clamp(z, 0, 255));
     std::stable_sort(roads.begin(), roads.end(), [](const Road& a, const Road& b) { return a.order < b.order; });
-    tile->roads.reserve(roads.size() * 6);
+    std::stable_sort(bridgeRoads.begin(), bridgeRoads.end(), [](const Road& a, const Road& b) { return a.order < b.order; });
+    tile->roads.reserve((roads.size() + bridgeRoads.size()) * 6);
     for (const Road& r : roads) tile->roads.insert(tile->roads.end(), r.v, r.v + 6);
+    tile->solidRoads = roads.size();
+    for (const Road& r : bridgeRoads) tile->roads.insert(tile->roads.end(), r.v, r.v + 6);
     return tile;
 }
 
