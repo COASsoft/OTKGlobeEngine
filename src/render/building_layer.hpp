@@ -27,6 +27,7 @@ public:
     using TileFn = std::function<int(int x, int y, double priority, std::shared_ptr<const VectorTile>& out)>;
     using HeightsFn = std::function<std::vector<double>(const std::vector<std::pair<double, double>>& latLon)>;
     using ImageryFn = std::function<void(double west, double south, double east, double north, int level, bool request, std::vector<Piece>& out)>;
+    using CanopyFn = std::function<int(int x, int y, std::vector<std::uint8_t>& out)>;
 
     BuildingLayer() = default;
     ~BuildingLayer();
@@ -36,19 +37,15 @@ public:
     void shutdown();
     void clear();
     void retry();
-    void update(const Camera& cam, const TileFn& tile, const HeightsFn& heights, const ImageryFn& imagery, double exaggeration, bool terrain);
+    void update(const Camera& cam, const TileFn& tile, const HeightsFn& heights, const ImageryFn& imagery, const CanopyFn& canopy,
+                double exaggeration, bool terrain);
     void bake(const ImageryFn& imagery, bool flip);
     void draw(const Camera& cam, Vec3 light, bool sun);
     bool busy() const { return busy_; }
     int drawn() const { return drawn_; }
 
 private:
-    struct Tile {
-        int x = 0, y = 0;
-        std::future<std::shared_ptr<BuildingMesh>> job;
-        bool building = false;
-        bool ready = false;
-        bool empty = false;
+    struct Part {
         sg_buffer vbuf{};
         sg_buffer ibuf{};
         int indexCount = 0;
@@ -62,15 +59,31 @@ private:
         int availableLevel = -1;
         int availableMin = -1;
         int target = 16;
-        double imageryCheck = 0.0;
         Vec3 origin, east, north, up;
+    };
+    struct Meshes {
+        std::shared_ptr<BuildingMesh> buildings, canopy;
+        bool canopyFailed = false;
+    };
+    struct Tile {
+        int x = 0, y = 0;
+        std::future<Meshes> job;
+        bool building = false;
+        bool ready = false;
+        bool empty = false;
+        bool canopyFailed = false;
+        bool shapesMissing = false;
+        bool recheck = false;
+        double retryAt = 0.0;
+        Part parts[2];
+        double imageryCheck = 0.0;
         double appear = -1.0;
         double distance = 0.0;
         std::uint64_t used = 0;
     };
 
     bool ready();
-    void upload(Tile& t, const BuildingMesh& mesh);
+    void upload(Part& p, const BuildingMesh& mesh);
     void release(Tile& t);
 
     std::map<std::pair<int, int>, Tile> tiles_;
