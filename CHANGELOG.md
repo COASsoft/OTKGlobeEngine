@@ -14,6 +14,7 @@
 ### Controls
 - Built-in map controls in the bottom-right corner, plain and on by default: zoom in and out, a compass that shows and resets north, a 2D/3D button, a layers button with the map list and switches for labels, contours and 3D terrain plus a roads download, a scale bar (metric or imperial) and the map credits. They work with mouse, touch and pen and take a press before the map does.
 - `Engine::setControls(mask)` turns them off or keeps only some (`ControlZoom`, `ControlCompass`, `ControlTilt`, `ControlLayers`, `ControlScale`, `ControlAttribution`; `otk_set_controls`, .NET `Controls`, Swift `controls`, Android `setControls`, viewer `--controls`). `-DOTK_CONTROLS=OFF` leaves them out of the build. The code lives in `src/ui`.
+- `Engine::setControlsPadding` moves the controls clear of system bars or app UI (`otk_set_controls_padding`); Android's `OTKGlobeView` and the Android viewer follow the window insets, so the controls stay above a tablet taskbar.
 - Map list: `Engine::setBasemaps`, `basemaps`, `setBasemap`, `basemap` and `otk::defaultBasemaps()` (`otk_set_basemap`, `otk_basemap`, `otk_basemap_count`, `otk_basemap_name`); the viewer's `1`-`4` keys use the same list.
 - `ImageryLayer::attribution`, listed first by `credits()`; the default imagery and maps fill it in. New getters `terrainEnabled`, `contourInterval` and `contourUnit`.
 
