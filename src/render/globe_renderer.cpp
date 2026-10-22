@@ -2171,8 +2171,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     traverse(cam, {0, 0, 0}, tiles);
     traverse(cam, {0, 1, 0}, tiles);
     profileMark(1);
-    auto overview = [&](double gsdScale, double scale, double widen) {
-        Camera wide = cam;
+    auto overview = [&](double gsdScale, double scale, double widen, const Camera* base = nullptr) {
+        Camera wide = base ? *base : cam;
         if (gsdScale != 1.0) {
             int side = static_cast<int>(std::hypot(static_cast<double>(cam.width), static_cast<double>(cam.height)));
             wide.width = side;
@@ -2230,6 +2230,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             if (!zoomingOut && margin > 1.0) overview(1.0, 2.0, margin);
             overview(2.0, zoomingOut ? 1.2 : 3.0, 1.0);
             overview(4.0, zoomingOut ? 2.0 : 6.0, 1.0);
+            if (hasLookahead_) overview(1.0, lookaheadPriority_, 1.2, &lookahead_);
             if (zoomRate_ > 1.5) overview(8.0, 3.0, 1.0);
 
             overviewCache_.assign(prefetch_.begin() + static_cast<std::ptrdiff_t>(own), prefetch_.end());
@@ -2350,6 +2351,14 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     };
     double visibleDone = -1;
     std::vector<Work> work;
+    auto lineDegFor = [&](const QuadKey& key) {
+        Bounds jb = bounds(key);
+        Vec3 jc = geodeticToEcef(0.5 * (jb.south + jb.north), 0.5 * (jb.west + jb.east), 0.0);
+        double jr = (jb.north - jb.south) * kDegToRad * kWgs84A * 0.75;
+        double jd = std::max(length(jc - cam.eye()) - jr, cam.eyeAboveGround());
+        return std::max(cam.pixelSizeAt(std::max(std::sqrt(jd * length(jc - cam.eye())), cam.eyeAboveGround())) / 111320.0,
+                        (jb.north - jb.south) / kSurfaceSize * 0.85);
+    };
     for (size_t i = 0; i < needs_.size(); ++i) {
         auto it = surface_.find(needs_[i].key);
         bool pf = needs_[i].prefetch;
@@ -2358,6 +2367,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         } else {
             it->second.used = frame_;
             if (it->second.complete && it->second.overlaysOmitted && !standIn(cam, needs_[i].key)) it->second.complete = false;
+            if (it->second.complete && (labelsOn_ || contours_) && it->second.lineDeg > 0.0 && lineDegFor(needs_[i].key) * 2.0 < it->second.lineDeg)
+                it->second.complete = false;
             if (!it->second.complete && progressed(it->second)) work.push_back({needs_[i].priority * 1.5, i, true, pf});
             else if (!it->second.complete) work.push_back({needs_[i].priority, i, false, pf});
         }
@@ -2404,7 +2415,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         double jr = (jb.north - jb.south) * kDegToRad * kWgs84A * 0.75;
         double jd = std::max(length(jc - cam.eye()) - jr, cam.eyeAboveGround());
         double texelDeg = std::min((jb.north - jb.south) / kSurfaceSize, cam.pixelSizeAt(jd) / 111320.0);
-        const double labelDeg = std::max(cam.pixelSizeAt(std::max(length(jc - cam.eye()), cam.eyeAboveGround())) / 111320.0,
+        const double labelDeg = std::max(cam.pixelSizeAt(std::max(std::sqrt(jd * length(jc - cam.eye())), cam.eyeAboveGround())) / 111320.0,
                                          (jb.north - jb.south) / kSurfaceSize * 0.85);
         if (labelsOn_ && !labels_.prepare({jb.west, jb.south, jb.east, jb.north}, labelDeg)) {
             buildSurfaceJob(needs_[i].key, needs_[i].priority, nullptr, nullptr, nullptr, 0, placeholder);
@@ -2604,6 +2615,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             s->sourceZ = job.sourceZ;
             s->degraded = job.degraded;
             s->overlaysOmitted = job.overlaysOmitted;
+            s->lineDeg = jobLabel.count(job.key) ? jobLabel[job.key] : 0.0;
             s->presentable = job.presentable;
             continue;
         }
@@ -2635,6 +2647,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         s->sourceZ = job.sourceZ;
         s->degraded = job.degraded;
         s->overlaysOmitted = job.overlaysOmitted;
+        s->lineDeg = jobLabel.count(job.key) ? jobLabel[job.key] : 0.0;
         s->presentable = job.presentable;
     }
 
