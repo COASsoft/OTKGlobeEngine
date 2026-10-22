@@ -101,6 +101,7 @@ public:
     bool labels() const { return labelsOn_; }
     void setLabelsSource(const std::string& source);
     const std::string& labelsSource() const { return labelsSource_; }
+    int labelsLayer() const { return overlayLayer_; }
     void setContours(std::shared_ptr<const ContourSet> set);
     bool hasContours() const { return contours_ != nullptr; }
     void setSkyVisible(bool visible) { skyVisible_ = visible; }
