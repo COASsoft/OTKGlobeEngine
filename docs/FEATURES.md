@@ -45,7 +45,7 @@ Everything the engine can do, grouped by area. For a quick overview see the [REA
 ## Loading behaviour
 - Continuous level of detail: toward the edge of its detail range each surface takes on its parent's colours while keeping its own fine detail, so imagery levels coloured differently by the provider blend without tile edges, and refining or merging does not pop (`Engine::setLodMorph`, 0 to 1)
 - Missing tiles are drawn from the nearest loaded ancestor, never blank; new and upgraded tiles cross-fade, and the most urgent decoded tiles reach the GPU first
-- Parent, child and zoom-out prefetch inside a GPU memory budget (512 MB desktop, 256 MB mobile by default)
+- Parent, child and zoom-out prefetch inside a GPU memory budget (by default 35% of video memory on desktops, 16% of RAM on phones and tablets)
 - Separate local (cache, files) and network loader pools
 - Airgap-ready cache: expired tiles shown instantly and refreshed in the background, unreachable hosts fail fast and are re-probed, pinned region downloads that wait out outages, size limit, MBTiles/GeoPackage export and import into the cache, built-in world backdrop where nothing is cached ([docs/OFFLINE.md](docs/OFFLINE.md))
 
