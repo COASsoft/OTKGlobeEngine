@@ -35,6 +35,8 @@ InputController::Pointer* InputController::find(int id) {
     return nullptr;
 }
 
+bool InputController::claimed(int id) const { return std::find(claimed_.begin(), claimed_.end(), id) != claimed_.end(); }
+
 void InputController::centroid(double& x, double& y) const {
     x = y = 0;
     if (pointers_.empty()) return;
@@ -65,6 +67,10 @@ void InputController::beginMulti() {
 }
 
 void InputController::pointerDown(int id, double x, double y, PointerType type, MouseButton button, int modifiers) {
+    if (claim_ && !find(id) && (claimed(id) || claim_(0, id, x, y))) {
+        if (!claimed(id)) claimed_.push_back(id);
+        return;
+    }
     flinging_ = false;
     velX_ = velY_ = 0;
     if (Pointer* existing = find(id)) {
@@ -107,8 +113,15 @@ void InputController::pointerDown(int id, double x, double y, PointerType type, 
 }
 
 void InputController::pointerMove(int id, double x, double y, int modifiers) {
+    if (claimed(id)) {
+        if (claim_) claim_(1, id, x, y);
+        return;
+    }
     Pointer* p = find(id);
-    if (!p) return;
+    if (!p) {
+        if (claim_ && pointers_.empty()) claim_(4, id, x, y);
+        return;
+    }
     double prevX = p->x, prevY = p->y;
     p->x = x;
     p->y = y;
@@ -213,15 +226,30 @@ void InputController::multiMove() {
 }
 
 void InputController::pointerUp(int id, double x, double y) {
+    if (claimed(id)) {
+        claimed_.erase(std::find(claimed_.begin(), claimed_.end(), id));
+        if (claim_) claim_(2, id, x, y);
+        return;
+    }
     if (Pointer* p = find(id)) {
         if (p->x != x || p->y != y) pointerMove(id, x, y, p->modifiers);
     }
     endPointer(id, false);
 }
 
-void InputController::pointerCancel(int id) { endPointer(id, true); }
+void InputController::pointerCancel(int id) {
+    if (claimed(id)) {
+        claimed_.erase(std::find(claimed_.begin(), claimed_.end(), id));
+        if (claim_) claim_(3, id, 0, 0);
+        return;
+    }
+    endPointer(id, true);
+}
 
 void InputController::cancelAll() {
+    for (int id : claimed_)
+        if (claim_) claim_(3, id, 0, 0);
+    claimed_.clear();
     pointers_.clear();
     mode_ = Mode::Idle;
     flinging_ = false;
@@ -306,6 +334,7 @@ void InputController::endPointer(int id, bool cancelled) {
 }
 
 void InputController::wheel(double x, double y, double dx, double dy, bool precise, int modifiers) {
+    if (claim_ && claim_(5, -1, x, y)) return;
     flinging_ = false;
     if ((modifiers & ModShift) && settings_.tilt) {
         engine_.tiltBy(dy * (precise ? 0.15 : 4.0));
