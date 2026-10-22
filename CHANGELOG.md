@@ -27,6 +27,7 @@
 - Releases publish the npm package and the NuGet package when `NPM_TOKEN` and `NUGET_API_KEY` repository secrets are set.
 
 ### Loading
+- The sky near the ground showed faint stripes when looking at the horizon (lost precision in 32-bit floats at Earth scale); it is a smooth gradient again.
 - Fly-to now rises high enough to keep the destination in view and comes down near the end, like Google Earth. It used to sink steadily on a straight line, skimming a few hundred metres above oceans and plains half a world away, which loaded thousands of tiles nobody wanted: a fly-in from space to Seattle went from 280 of 479 frames with missing detail to 6 of 407, and blurry stand-ins from 266 frames to none.
 - While the camera moves, the engine prefetches the view it is heading for: the fly-to destination, or about a quarter second ahead along the current pan, zoom and turn.
 - Borders and other lines drawn on the map no longer turn into a wide white band on tiles drawn while the camera was far away; such tiles are redrawn once the camera comes much closer.
