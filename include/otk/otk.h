@@ -173,6 +173,8 @@ OTK_API void otk_set_labels(otk_engine* e, int enabled);
 OTK_API int otk_labels(const otk_engine* e);
 OTK_API void otk_set_labels_source(otk_engine* e, const char* url_or_path);
 OTK_API int otk_labels_layer(const otk_engine* e);
+OTK_API void otk_set_buildings(otk_engine* e, int enabled);
+OTK_API int otk_buildings(const otk_engine* e);
 
 typedef enum otk_control {
     OTK_CONTROL_ZOOM = 1,
