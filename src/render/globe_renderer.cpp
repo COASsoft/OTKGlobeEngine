@@ -485,11 +485,13 @@ std::vector<std::string> GlobeRenderer::credits() const {
         }
     std::stable_sort(all.begin(), all.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
     std::vector<std::string> out;
+    for (const auto& l : userLayers_)
+        if (l.visible && !l.attribution.empty() && std::find(out.begin(), out.end(), l.attribution) == out.end()) out.push_back(l.attribution);
     for (const auto& a : all) out.push_back(a.first);
     if (labelsOn_) {
         out.push_back("Boundaries: geoBoundaries (CC BY 4.0)");
         out.push_back("Places: GeoNames (CC BY 4.0), Natural Earth");
-        if (overlayLayer_ >= 0) out.push_back("Roads and places: OpenFreeMap, (c) OpenMapTiles, (c) OpenStreetMap contributors");
+        if (overlayLayer_ >= 0) out.push_back("Roads and places: OpenFreeMap \xC2\xA9 OpenMapTiles \xC2\xA9 OpenStreetMap contributors");
     }
     return out;
 }
@@ -2975,6 +2977,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         }
         drawSnapshot(alpha);
     }
+    if (!capture && !views && overlay_) overlay_(width, height);
     sg_end_pass();
     if (capture) {
         sg_pass show{};
@@ -2984,6 +2987,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         if (mainAttachments) show.attachments = *mainAttachments;
         sg_begin_pass(&show);
         drawSnapshot(1.0f);
+        if (overlay_) overlay_(width, height);
         sg_end_pass();
         snapshotShown_ = true;
         snapshotStart_ = tnow;
