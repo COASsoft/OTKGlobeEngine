@@ -58,7 +58,7 @@ private:
     float text(std::string_view s, float x, float baseline, int size, std::uint32_t color);
     float measure(std::string_view s, int size) const;
     std::string fit(const std::string& s, float width, int size) const;
-    void button(const Target& t, bool enabled = true);
+    void button(const Target& t, bool active = false);
     void drawZoom();
     void drawCompass(double azimuth);
     void drawTilt(bool flat);
