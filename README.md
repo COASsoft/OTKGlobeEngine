@@ -1,6 +1,6 @@
 # OTKGlobeEngine
 
-OTKGlobeEngine is a 3D map of the whole Earth that you can put inside your own app. It draws satellite imagery, terrain, roads, place names, 3D buildings and 3D trees, and it keeps working offline.
+OTKGlobeEngine is a 3D map of the whole Earth that you can put inside your own app. It draws satellite imagery, terrain, roads, place names and 3D buildings, and it keeps working offline.
 
 It runs on Windows, macOS, Linux (including Raspberry Pi), Android, iOS and iPadOS, and in web browsers. It is free to use, including in paid and closed-source products (Apache 2.0 license).
 
@@ -77,7 +77,7 @@ The map comes with zoom, compass, 2D/3D and layer buttons in the bottom-right co
 - **Maps:** satellite, topographic and street maps out of the box; add your own from almost any tile server or offline file.
 - **Terrain:** real 3D mountains and valleys, with line of sight, viewshed and elevation profiles.
 - **Labels and roads:** country, state, city and town names are built in. Roads, street names and 3D buildings load by themselves anywhere in the world when you zoom in, and stay saved so that area works offline afterwards.
-- **3D buildings and trees:** buildings from OpenStreetMap with roofs taken from the satellite image, and individual trees at their real height from a worldwide tree-height map, coloured from the satellite image. On by default.
+- **3D buildings:** built from OpenStreetMap, with roofs taken from the satellite image, on by default.
 - **Your data:** KML/KMZ, GeoJSON, GPX, Shapefile, CoT, CSV, TAK data packages, 3D models (glTF, OBJ, COLLADA), 3D Tiles and LAS point clouds.
 - **Offline:** everything you have viewed is cached, and whole regions can be downloaded ahead of time ([docs/OFFLINE.md](docs/OFFLINE.md)).
 - **Military:** MIL-STD-2525 symbols, MGRS grids, range and bearing, contours, magnetic declination, sun and moon times ([docs/MILITARY.md](docs/MILITARY.md)).
