@@ -317,6 +317,7 @@ public:
     Stats stats() const;
     void setControls(std::uint32_t controls);
     std::uint32_t controls() const;
+    void setControlsPadding(double left, double top, double right, double bottom);
 
 private:
     struct Impl;
