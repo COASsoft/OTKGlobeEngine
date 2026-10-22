@@ -41,6 +41,7 @@ struct ImageryLayer {
     bool labels = false;
     bool stream = true;
     int maxRequests = 0;
+    std::string attribution;
     std::shared_ptr<HostTileSource> source;
 };
 
@@ -69,7 +70,13 @@ struct Region {
     double north = 0;
 };
 
+struct Basemap {
+    std::string name;
+    std::vector<ImageryLayer> layers;
+};
+
 std::vector<ImageryLayer> defaultLayers();
+std::vector<Basemap> defaultBasemaps();
 ImageryLayer polarFillLayer();
 std::vector<ElevationLayer> defaultElevation();
 std::vector<ImageryLayer> loadMobac(const std::string& xmlOrPath);
