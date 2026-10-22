@@ -20,17 +20,33 @@ On Android, install `otkglobeengine-viewer-<version>-android-arm64.apk`.
 
 ## Install
 
-Pick the line that matches what you are building:
+There are two builds of the engine:
 
-| You are building | Get |
-| --- | --- |
-| A Windows, Linux or macOS app in C or C++ | The `.zip` / `.tar.gz` / `.deb` / `.rpm` from the release, then `find_package(OTKGlobeEngine)` in CMake |
-| A C# / .NET app | The `OTKGlobeEngine` NuGet package |
-| An Android app | The `.aar` from the release |
-| An iPhone, iPad or Mac app | `OTKGlobeEngine.xcframework.zip` from the release |
-| Something on a Raspberry Pi | `sudo apt install ./otkglobeengine-<version>-raspberrypi-arm64.deb` |
+- **Native** (the main one): for apps on Windows, macOS, Linux, Android, iPhone and iPad. Fastest, with the full feature set, and keeps downloaded maps on disk for offline use.
+- **Web**: the same engine compiled to WebAssembly for web pages. Use it only if your app runs in a browser.
+
+### Native apps
+
+Pick the line that matches what you are building. Everything except NuGet comes from the [latest release](https://github.com/grangedevgroup-code/OTKGlobeEngine/releases/latest).
+
+| You are building | Get | Then |
+| --- | --- | --- |
+| A C or C++ app on Windows, Linux or macOS | `.zip`, `.tar.gz`, `.deb` or `.rpm` | `find_package(OTKGlobeEngine)` in CMake |
+| A C# / .NET app | `dotnet add package OTKGlobeEngine` | `new OTKGlobeEngine.Engine(...)` |
+| An Android app | `otkglobeengine-<version>.aar` | Add `OTKGlobeView` to a layout |
+| An iPhone, iPad or Mac app | `OTKGlobeEngine-<version>.xcframework.zip` | Add `OTKGlobeView.swift` |
+| An app on a Raspberry Pi | `sudo apt install ./otkglobeengine-<version>-raspberrypi-arm64.deb` | `find_package(OTKGlobeEngine)` |
+| A C++ app built from source | `FetchContent_Declare(otk GIT_REPOSITORY https://github.com/grangedevgroup-code/OTKGlobeEngine.git GIT_TAG v<version>)` | `target_link_libraries(app PRIVATE otkglobeengine)` |
 
 Every file in a release is listed in `SHA256SUMS.txt` so you can check your download.
+
+### Web pages
+
+```
+npm install otkglobeengine
+```
+
+Your server must send two headers so the engine can use threads. The [web package README](bindings/web/README.md) shows them, along with a complete example. In the browser, downloaded roads last until the page is closed; for maps that keep working offline across restarts, use a native build.
 
 ## First program
 
