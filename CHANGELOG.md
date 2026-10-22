@@ -27,6 +27,7 @@
 
 ### Loading
 - Place and street names are hidden when a hill, mountain or 3D building stands between them and the camera, instead of showing through.
+- 3D buildings are solid for the camera: first-person view stands on a roof instead of inside a building, and the orbiting camera cannot dip into one.
 - Names with characters the label font does not have (Japanese, Chinese, Arabic and others) are left out instead of being drawn as empty boxes; such labels also kept a view from ever finishing loading.
 - The Vector map no longer draws every place name twice when the built-in labels are on.
 - Fixed Direct3D shader compiler warnings in the 3D model shader (`pow` of a possibly negative value).
