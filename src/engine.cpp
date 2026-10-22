@@ -212,6 +212,9 @@ struct Engine::Impl {
         GeoPoint g = ecefToGeodetic(p * kWgs84A);
         double lg0 = std::log(flyFrom.gsd), lg1 = std::log(flyTo.gsd);
         double lg = lg0 + (lg1 - lg0) * s + (flyPeak - std::max(lg0, lg1)) * std::sin(kPi * s);
+        const double travel = std::min(s, 1.0 - s) * omega * kWgs84A;
+        const double span = std::max(1.0, static_cast<double>(std::max(camera.width, camera.height)));
+        if (travel > 0.0) lg = std::max(lg, std::log(travel * 1.6 / span));
         double daz = std::fmod(flyTo.azimuth - flyFrom.azimuth + 540.0, 360.0) - 180.0;
         camera.focus.lat = g.lat;
         camera.focus.lon = g.lon;
@@ -411,6 +414,8 @@ struct Engine::Impl {
     std::unique_ptr<Controls> controls;
 #endif
     std::vector<int> labelDownloads;
+    std::array<double, 5> lastPose{};
+    bool havePose = false;
     bool autoDownload = true;
     std::array<double, 6> autoCam{};
     std::chrono::steady_clock::time_point autoMoved;
@@ -1908,10 +1913,47 @@ void Engine::updateAutoDownload() {
     downloadLabels(r, 13);
 }
 
+void Engine::updateLookahead() {
+    Impl& I = *impl_;
+    Camera& c = I.camera;
+    const std::array<double, 5> pose{c.focus.lat, c.focus.lon, std::log(std::max(c.gsd, 1e-6)), c.azimuth, c.tilt};
+    const bool moving = I.havePose && pose != I.lastPose;
+    if (c.firstPerson || (!I.flying && !moving)) {
+        I.globe.setLookahead(nullptr);
+    } else {
+        Camera ahead = c;
+        if (I.flying) {
+            ahead.focus.lat = I.flyTo.lat;
+            ahead.focus.lon = I.flyTo.lon;
+            ahead.gsd = I.flyTo.gsd;
+            ahead.azimuth = I.flyTo.azimuth;
+            ahead.tilt = I.flyTo.tilt;
+        } else {
+            constexpr double kFrames = 15.0;
+            double dAz = pose[3] - I.lastPose[3];
+            if (dAz > 180.0) dAz -= 360.0;
+            if (dAz < -180.0) dAz += 360.0;
+            double dLon = pose[1] - I.lastPose[1];
+            if (dLon > 180.0) dLon -= 360.0;
+            if (dLon < -180.0) dLon += 360.0;
+            ahead.focus.lat = std::clamp(pose[0] + (pose[0] - I.lastPose[0]) * kFrames, -89.9, 89.9);
+            ahead.focus.lon = std::remainder(pose[1] + dLon * kFrames, 360.0);
+            ahead.gsd = std::exp(pose[2] + std::clamp((pose[2] - I.lastPose[2]) * kFrames, -2.0, 2.0));
+            ahead.azimuth = std::fmod(pose[3] + dAz * kFrames + 360.0, 360.0);
+            ahead.tilt = std::clamp(pose[4] + (pose[4] - I.lastPose[4]) * kFrames, 0.0, c.maxTilt);
+        }
+        ahead.update();
+        I.globe.setLookahead(&ahead, I.flying ? 0.9 : 2.5);
+    }
+    I.lastPose = pose;
+    I.havePose = true;
+}
+
 void Engine::frame(const sg_swapchain& swapchain) {
     auto cpuStart = std::chrono::steady_clock::now();
     impl_->input->update();
     impl_->animate();
+    updateLookahead();
     impl_->followTerrain();
     impl_->updateContours();
     updateAutoDownload();
@@ -2008,6 +2050,7 @@ void Engine::Impl::renderStereo(const sg_swapchain* swapchain, const sg_attachme
 void Engine::frameStereo(const sg_swapchain& swapchain, double eyeSeparation) {
     impl_->input->update();
     impl_->animate();
+    updateLookahead();
     impl_->followTerrain();
     impl_->updateContours();
     updateAutoDownload();
@@ -2020,6 +2063,7 @@ void Engine::frameStereo(const sg_swapchain& swapchain, double eyeSeparation) {
 void Engine::frameStereoOffscreen(const sg_attachments& attachments, int width, int height, double eyeSeparation) {
     impl_->input->update();
     impl_->animate();
+    updateLookahead();
     impl_->followTerrain();
     impl_->updateContours();
     updateAutoDownload();
@@ -2032,6 +2076,7 @@ void Engine::frameStereoOffscreen(const sg_attachments& attachments, int width, 
 void Engine::frameOffscreen(const sg_attachments& attachments, int width, int height) {
     impl_->input->update();
     impl_->animate();
+    updateLookahead();
     impl_->followTerrain();
     impl_->updateContours();
     updateAutoDownload();
