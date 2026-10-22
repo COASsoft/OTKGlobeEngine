@@ -69,4 +69,9 @@ std::vector<std::array<double, 2>> buildingSamplePoints(const std::vector<Buildi
 BuildingMesh buildBuildingMesh(const std::vector<BuildingShape>& shapes, const std::vector<BridgeShape>& bridges, int z, int x, int y,
                                const std::vector<double>& heights, int maxAtlas);
 
+constexpr int kCanopyGround = 17;
+std::vector<std::array<double, 2>> canopySamplePoints(int z, int x, int y);
+BuildingMesh buildCanopyMesh(const std::vector<std::uint8_t>& canopy, int size, int step, int z, int x, int y,
+                             const std::vector<double>& ground, int atlas);
+
 }
