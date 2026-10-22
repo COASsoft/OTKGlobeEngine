@@ -465,6 +465,10 @@ void otk_set_controls(otk_engine* e, uint32_t controls) { e->engine.setControls(
 
 uint32_t otk_controls(const otk_engine* e) { return e->engine.controls(); }
 
+void otk_set_controls_padding(otk_engine* e, double left, double top, double right, double bottom) {
+    e->engine.setControlsPadding(left, top, right, bottom);
+}
+
 int otk_basemap_count(const otk_engine* e) { return static_cast<int>(e->engine.basemaps().size()); }
 
 int otk_basemap_name(const otk_engine* e, int index, char* out, int capacity) {
