@@ -5,6 +5,7 @@
 #include "feature/feature_layer.hpp"
 #include "model/model_layer.hpp"
 #include "model/pointcloud.hpp"
+#include "raster/canopy.hpp"
 #include "render/building_layer.hpp"
 #include "render/label_layer.hpp"
 #include "tiles3d/tileset.hpp"
@@ -306,6 +307,7 @@ private:
     double elapsedMs() const { return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - frameStart_).count(); }
 
     TileCache cache_;
+    CanopySource canopy_{&cache_};
 #if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE) || defined(__EMSCRIPTEN__)
     TileLoader loader_{3, 8};
     ElevationManager elevation_{4};
