@@ -1,5 +1,7 @@
 #pragma once
 
+#include "feature/buildings.hpp"
+
 #include <array>
 #include <cstdint>
 #include <memory>
@@ -50,6 +52,8 @@ struct VectorTile {
     bool overlay = false;
     std::vector<float> roads;
     std::vector<TileMark> marks;
+    std::vector<BuildingShape> buildings;
+    int z = 0, x = 0, y = 0;
 };
 
 std::shared_ptr<VectorTile> decodeVectorTile(const std::vector<std::uint8_t>& data, int z, int x, int y);
