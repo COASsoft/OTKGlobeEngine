@@ -62,7 +62,36 @@ std::vector<ImageryLayer> defaultLayers() {
     imagery.name = "World Imagery";
     imagery.url = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
     imagery.maxZoom = 19;
+    imagery.attribution = "Imagery: Esri, Maxar, Earthstar Geographics";
     return {imagery, polarFillLayer()};
+}
+
+std::vector<Basemap> defaultBasemaps() {
+    std::vector<Basemap> maps;
+    maps.push_back({"Satellite", defaultLayers()});
+    std::vector<ImageryLayer> topo = defaultLayers();
+    ImageryLayer usgs;
+    usgs.name = "USGS Topo";
+    usgs.url = "https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}";
+    usgs.minZoom = 3;
+    usgs.maxZoom = 16;
+    usgs.attribution = "Topo: USGS The National Map";
+    topo.push_back(usgs);
+    maps.push_back({"Topographic", topo});
+    ImageryLayer osm;
+    osm.name = "OpenStreetMap";
+    osm.url = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+    osm.maxZoom = 19;
+    osm.attribution = "\xC2\xA9 OpenStreetMap contributors";
+    maps.push_back({"Streets", {osm, polarFillLayer()}});
+    ImageryLayer vector;
+    vector.name = "OpenFreeMap";
+    vector.type = SourceType::Mvt;
+    vector.url = "https://tiles.openfreemap.org/planet";
+    vector.maxZoom = 14;
+    vector.attribution = "OpenFreeMap Â© OpenMapTiles, Â© OpenStreetMap contributors";
+    maps.push_back({"Vector", {vector, polarFillLayer()}});
+    return maps;
 }
 
 ImageryLayer polarFillLayer() {
@@ -74,6 +103,7 @@ ImageryLayer polarFillLayer() {
     polar.level0Resolution = 0.5625;
     polar.maxZoom = 7;
     polar.polarFill = true;
+    polar.attribution = "Polar fill: NASA Blue Marble";
     const float north[3] = {1.79f, 2.27f, 1.26f}, south[3] = {1.02f, 1.03f, 1.075f};
     for (int i = 0; i < 3; ++i) {
         polar.polarTintNorth[i] = north[i];
