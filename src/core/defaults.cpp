@@ -89,7 +89,7 @@ std::vector<Basemap> defaultBasemaps() {
     vector.type = SourceType::Mvt;
     vector.url = "https://tiles.openfreemap.org/planet";
     vector.maxZoom = 14;
-    vector.attribution = "OpenFreeMap Â© OpenMapTiles, Â© OpenStreetMap contributors";
+    vector.attribution = "OpenFreeMap \xC2\xA9 OpenMapTiles, \xC2\xA9 OpenStreetMap contributors";
     maps.push_back({"Vector", {vector, polarFillLayer()}});
     return maps;
 }
