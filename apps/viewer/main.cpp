@@ -66,7 +66,7 @@ struct ViewerState {
     int gridType = 0;
     bool slope = false;
     double contourInterval = 0;
-    bool contoursDone = false;
+    bool contours = false;
     std::vector<std::array<double, 3>> bullseyes;
     std::vector<std::array<double, 4>> rings;
     std::vector<std::array<double, 4>> rbLines;
@@ -263,6 +263,7 @@ void init() {
     for (const auto& f : state->featureFiles) state->engine.loadFeatures(f);
     state->engine.setGridEnabled(state->grid);
     state->engine.setLabelsEnabled(state->labels);
+    if (state->contours) state->engine.setContours(true, state->contourInterval);
     state->engine.setElevationHeatmap(state->heat);
     state->engine.setTerrainTransparency(state->xray);
 
@@ -456,7 +457,7 @@ void frame() {
         zooming = zooming || (state->bench > 0 && state->benchDone < state->bench);
         bool downloading = (state->downloadId && !state->engine.downloadStatus(state->downloadId).finished) || zooming;
         bool settled = state->shotElapsed > 1.0 && state->settledFrames > 10 && !downloading &&
-                       (!state->shotViewshed || state->viewshed) && (state->contourInterval <= 0 || state->contoursDone);
+                       (!state->shotViewshed || state->viewshed);
         if (settled || state->shotElapsed >= state->shotTimeout) {
             bool ok = saveImagePng(state->shotColor, state->width, state->height,
 #if defined(SOKOL_D3D11)
@@ -990,7 +991,8 @@ void parseArgs(int argc, char** argv) {
         } else if (a == "--slope") {
             state->slope = std::atoi(argv[++i]) != 0;
         } else if (a == "--contours") {
-            state->contourInterval = std::atof(argv[++i]);
+            state->contours = true;
+            state->contourInterval = std::max(0.0, std::atof(argv[++i]));
         } else if (a == "--bullseye") {
             std::array<double, 3> b{};
             if (std::sscanf(argv[++i], "%lf,%lf,%lf", &b[0], &b[1], &b[2]) == 3) state->bullseyes.push_back(b);
