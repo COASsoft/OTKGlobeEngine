@@ -1150,6 +1150,13 @@ void Engine::setLabelsEnabled(bool enabled) {
 
 bool Engine::labelsEnabled() const { return impl_->globe.labels(); }
 
+void Engine::setBuildingsEnabled(bool enabled) {
+    impl_->globe.setBuildings(enabled);
+    impl_->dirty = true;
+}
+
+bool Engine::buildingsEnabled() const { return impl_->globe.buildings(); }
+
 void Engine::setLabelsSource(const std::string& urlOrPath) {
     impl_->globe.setLabelsSource(urlOrPath);
     impl_->dirty = true;
