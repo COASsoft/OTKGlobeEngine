@@ -1123,6 +1123,8 @@ void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dp
             };
             bool found = false;
             double cx = 0, cy = 0, angle = 0, mid = 0;
+            const float hh = em * 1.25f;
+            std::vector<std::array<float, 4>> boxes;
             for (int k = 0; k < 7 && !found; ++k) {
                 const double offset = k == 0 ? 0.0 : ((k + 1) / 2) * need * 0.6 * (k % 2 ? 1.0 : -1.0);
                 mid = total * 0.5 + offset;
@@ -1140,27 +1142,29 @@ void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dp
                     worst = std::max(worst, std::abs((x1 - x0) * (y0 - q[1]) - (x0 - q[0]) * (y1 - y0)) / cl);
                 }
                 if (worst > (m->type == MarkType::Contour ? 4.0 : 3.0) * (c.held ? 2.0 : 1.0) * dpi) continue;
-                cx = (x0 + x1) * 0.5;
-                cy = (y0 + y1) * 0.5;
-                angle = std::atan2(y1 - y0, x1 - x0);
+                const double ax = (x0 + x1) * 0.5, ay = (y0 + y1) * 0.5;
+                if (ax < 0 || ay < 0 || ax > W || ay > H) continue;
+                double turn = std::atan2(y1 - y0, x1 - x0);
+                if (turn > kPi * 0.5) turn -= kPi;
+                if (turn < -kPi * 0.5) turn += kPi;
+                const float ca = static_cast<float>(std::cos(turn)), sa = static_cast<float>(std::sin(turn));
+                const int pieces = std::max(1, static_cast<int>(std::ceil(w / hh)));
+                boxes.clear();
+                for (int i = 0; i < pieces; ++i) {
+                    const float along = -w * 0.5f + (i + 0.5f) * w / pieces;
+                    const float px = static_cast<float>(ax) + along * ca, py = static_cast<float>(ay) + along * sa;
+                    const float r = std::max(w / pieces, hh) * 0.5f + s.padding;
+                    boxes.push_back({px - r, py - r, px + r, py + r});
+                }
+                bool clear = true;
+                for (const auto& b : boxes) clear = clear && free(b);
+                if (!clear) continue;
+                cx = ax;
+                cy = ay;
+                angle = turn;
                 found = true;
             }
-            if (!found || cx < 0 || cy < 0 || cx > W || cy > H) continue;
-            if (angle > kPi * 0.5) angle -= kPi;
-            if (angle < -kPi * 0.5) angle += kPi;
-            const float ca = static_cast<float>(std::cos(angle)), sa = static_cast<float>(std::sin(angle));
-            const float hh = em * 1.25f;
-            const int pieces = std::max(1, static_cast<int>(std::ceil(w / hh)));
-            std::vector<std::array<float, 4>> boxes;
-            for (int i = 0; i < pieces; ++i) {
-                const float along = -w * 0.5f + (i + 0.5f) * w / pieces;
-                const float px = static_cast<float>(cx) + along * ca, py = static_cast<float>(cy) + along * sa;
-                const float r = std::max(w / pieces, hh) * 0.5f + s.padding;
-                boxes.push_back({px - r, py - r, px + r, py + r});
-            }
-            bool clear = true;
-            for (const auto& b : boxes) clear = clear && free(b);
-            if (!clear) continue;
+            if (!found) continue;
             for (const auto& b : boxes) take(b);
             placedText[m->text].push_back({static_cast<float>(cx), static_cast<float>(cy)});
             double seg_t, px, py;
@@ -1263,21 +1267,8 @@ void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dp
     std::vector<std::pair<const Item*, float>> draw;
     std::unordered_set<std::uint64_t> shown;
     if (primary) {
-        std::unordered_set<std::uint64_t> placedKeys;
-        for (const Item& it : placed) placedKeys.insert(it.key);
         for (const Item& it : placed) {
-            auto existing = T.fades.find(it.key);
-            float inherited = 0.0f;
-            if (existing == T.fades.end() || existing->second.placed + 1 < frame_) {
-                for (auto old = T.fades.begin(); old != T.fades.end(); ++old) {
-                    if (placedKeys.count(old->first) || old->second.item.text != it.text || old->second.item.layout != it.layout) continue;
-                    if (length(old->second.item.anchor - it.anchor) > 600.0) continue;
-                    inherited = std::max(inherited, old->second.opacity);
-                    old->second.opacity = 0.0f;
-                }
-            }
             Fade& f = T.fades[it.key];
-            f.opacity = std::max(f.opacity, inherited);
             f.opacity = std::min(1.0f, f.opacity + (dt > 0.0f ? dt / kFadeIn : 1.0f));
             f.placed = frame_;
             f.item = it;
