@@ -390,12 +390,11 @@ void BuildingLayer::update(const Camera& cam, const TileFn& tile, const HeightsF
 
 void BuildingLayer::bake(const ImageryFn& imagery, bool flip) {
     if (!initialized_ || failed_ || !imagery) return;
-    const double now = seconds();
     std::vector<Tile*> todo;
     for (auto& [key, t] : tiles_) {
         if (!t.ready || t.atlasSize <= 0 || t.used + 1 < frame_ || t.availableLevel < 0) continue;
         if (!t.baked) {
-            if (t.availableMin >= t.target - 1 || now - t.appear > 4.0) todo.push_back(&t);
+            todo.push_back(&t);
             continue;
         }
         if (t.availableLevel > t.bakedLevel) todo.push_back(&t);
