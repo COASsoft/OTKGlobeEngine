@@ -69,19 +69,18 @@ std::vector<ImageryLayer> defaultLayers() {
 std::vector<Basemap> defaultBasemaps() {
     std::vector<Basemap> maps;
     maps.push_back({"Satellite", defaultLayers()});
-    std::vector<ImageryLayer> topo = defaultLayers();
-    ImageryLayer usgs;
-    usgs.name = "USGS Topo";
-    usgs.url = "https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}";
-    usgs.minZoom = 3;
-    usgs.maxZoom = 16;
-    usgs.attribution = "Topo: USGS The National Map";
-    topo.push_back(usgs);
-    maps.push_back({"Topographic", topo});
+    ImageryLayer topo;
+    topo.name = "Esri World Topographic Map";
+    topo.url = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}";
+    topo.maxZoom = 19;
+    topo.photo = false;
+    topo.attribution = "Topo: Esri, HERE, Garmin, FAO, NOAA, USGS, \xC2\xA9 OpenStreetMap contributors";
+    maps.push_back({"Topographic", {topo, polarFillLayer()}});
     ImageryLayer osm;
     osm.name = "OpenStreetMap";
     osm.url = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
     osm.maxZoom = 19;
+    osm.photo = false;
     osm.attribution = "\xC2\xA9 OpenStreetMap contributors";
     maps.push_back({"Streets", {osm, polarFillLayer()}});
     ImageryLayer vector;
@@ -89,6 +88,7 @@ std::vector<Basemap> defaultBasemaps() {
     vector.type = SourceType::Mvt;
     vector.url = "https://tiles.openfreemap.org/planet";
     vector.maxZoom = 14;
+    vector.photo = false;
     vector.attribution = "OpenFreeMap \xC2\xA9 OpenMapTiles, \xC2\xA9 OpenStreetMap contributors";
     maps.push_back({"Vector", {vector, polarFillLayer()}});
     return maps;
