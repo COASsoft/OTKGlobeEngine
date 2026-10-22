@@ -46,7 +46,6 @@ private:
     struct Font;
 
     bool ready();
-    void layout(int width, int height, double dpi);
     Target hit(double x, double y) const;
     void activate(const Target& t);
     void quad(float x0, float y0, float x1, float y1, float ox, float oy, const std::array<float, 4>& a, const std::array<float, 4>& b,
@@ -66,6 +65,7 @@ private:
     void drawLayersButton();
     void drawPanel();
     void drawStrip(double metersPerPixel);
+    void drawCredits();
 
     Engine& engine_;
     std::uint32_t flags_ = 0x3Fu;
