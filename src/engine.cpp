@@ -111,7 +111,7 @@ std::shared_ptr<ContourSet> buildContours(const GlobeRenderer& globe, const Cont
     std::vector<std::vector<float>> buckets(kBuckets * kBuckets);
     std::vector<GeoRect> boxes(kBuckets * kBuckets, GeoRect{1e9, 1e9, -1e9, -1e9});
     const double bw = (r.east - r.west) / kBuckets, bh = (r.north - r.south) / kBuckets;
-    const double piece = q.cell * 140.0;
+    const double piece = q.cell * 180.0;
     const auto zoomByte = static_cast<std::uint8_t>(std::clamp(std::floor(q.zoom), 0.0, 30.0));
     for (const ContourPath& path : traceContours(h, cols, rows, r.west, r.south, r.east, r.north, q.step, 5, 1, 0.33)) {
         const float style = path.major ? 1.0f : 0.0f;
