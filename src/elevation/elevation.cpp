@@ -852,12 +852,21 @@ std::vector<double> ElevationManager::query(const std::vector<std::pair<double, 
         return m.srid == 4326 ? units * 111319.49 * coslat : units * coslat;
     };
     std::vector<std::shared_ptr<ElevationProvider>> providers;
+    std::vector<double> finest;
     int generation = 0;
     {
         std::lock_guard lock(mutex_);
         providers = providers_;
+        finest = finest_;
         generation = generation_;
     }
+    auto yieldsTo = [&](int source, double target) {
+        const double mine = source < static_cast<int>(finest.size()) ? finest[source] : 1e12;
+        if (!(target < mine * 0.999)) return false;
+        for (int t = source + 1; t < static_cast<int>(finest.size()); ++t)
+            if (finest[t] < mine * 0.999) return true;
+        return false;
+    };
     {
         std::lock_guard lock(queryMutex_);
         if (queryGeneration_ != generation) {
@@ -881,7 +890,7 @@ std::vector<double> ElevationManager::query(const std::vector<std::pair<double, 
                 if (std::abs(lat) > maxLat) continue;
                 double coslat = std::max(std::cos(lat * kDegToRad), 0.01);
                 double target = resolutionMeters > 0 ? resolutionMeters : 0.0;
-                if (pass == 0 && yields(s, target > 0 ? target : 0.0)) continue;
+                if (pass == 0 && yieldsTo(s, target > 0 ? target : 0.0)) continue;
                 double px = projectX(m.srid, lon), py = projectY(m.srid, lat);
                 int z = m.maxZoom;
                 if (target > 0) {
