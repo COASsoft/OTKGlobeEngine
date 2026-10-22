@@ -75,6 +75,7 @@ private:
         bool canopyFailed = false;
         bool shapesMissing = false;
         bool recheck = false;
+        bool withTrees = false;
         double retryAt = 0.0;
         Part parts[2];
         double imageryCheck = 0.0;
