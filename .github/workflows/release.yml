@@ -221,8 +221,23 @@ jobs:
           name: pkg-nuget
           path: dist/*.nupkg
 
+  web:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - run: python3 scripts/web_build.py --pack
+      - run: |
+          mkdir -p dist
+          cp build/otkglobeengine-*.tgz dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg-web
+          path: dist/*.tgz
+
   release:
-    needs: [version, windows, linux, macos, apple-xcframework, android, bsd, nuget]
+    needs: [version, windows, linux, macos, apple-xcframework, android, bsd, nuget, web]
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions:
@@ -246,3 +261,22 @@ jobs:
           awk -v v="## $VERSION" '$0 == v {on = 1; next} /^## / {on = 0} on' CHANGELOG.md > notes.md
           gh release create "$GITHUB_REF_NAME" release-assets/* --title "OTKGlobeEngine $VERSION" --notes-file notes.md
           gh workflow run pages.yml --ref main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then echo "NPM_TOKEN not set, skipping npm"; exit 0; fi
+          npm publish release-assets/otkglobeengine-*.tgz --access public
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Publish to NuGet
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          if [ -z "$NUGET_API_KEY" ]; then echo "NUGET_API_KEY not set, skipping NuGet"; exit 0; fi
+          dotnet nuget push release-assets/*.nupkg --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
