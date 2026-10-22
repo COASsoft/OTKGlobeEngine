@@ -679,7 +679,7 @@ double GlobeRenderer::gridStep(const Camera& cam, int type) const {
 }
 
 int GlobeRenderer::maxRefine() const {
-    bool needsDetail = !features_.empty() || anyGrid() || !overlays_.empty() || labelsOn_;
+    bool needsDetail = !features_.empty() || anyGrid() || !overlays_.empty() || labelsOn_ || contours_;
     return needsDetail ? kMaxLevel : usefulLevel_;
 }
 
@@ -709,6 +709,14 @@ void GlobeRenderer::markDirty(const GeoRect& rect) {
         }
     }
     busy_ = true;
+}
+
+void GlobeRenderer::setContours(std::shared_ptr<const ContourSet> set) {
+    if (set == contours_) return;
+    if (contours_) markDirty(contours_->bounds);
+    contours_ = std::move(set);
+    labels_.setContours(contours_);
+    if (contours_) markDirty(contours_->bounds);
 }
 
 void GlobeRenderer::setLabels(bool enabled) {
@@ -2458,20 +2466,23 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 }
             }
         }
-        if (labelsOn_) {
+        if (labelsOn_ || contours_) {
             Bounds lb = bounds(job.key);
             double unit = jobLabel.count(job.key) ? jobLabel[job.key] : (lb.north - lb.south) / kSurfaceSize;
-            std::vector<RoadBatch> roads;
-            for (const VectorDraw& vd : job.vectors)
-                if (vd.tile->roadCount > 0) {
-                    RoadBatch rb;
-                    rb.buffer = vd.tile->roads;
-                    rb.count = vd.tile->roadCount;
-                    std::memcpy(rb.xform, vd.xform, sizeof(rb.xform));
-                    roads.push_back(rb);
-                }
-            labels_.drawRoads(roads, {lb.west, lb.south, lb.east, lb.north}, unit, dpiScale_);
-            labels_.drawSurface({lb.west, lb.south, lb.east, lb.north}, unit, dpiScale_);
+            if (contours_) labels_.drawContours({lb.west, lb.south, lb.east, lb.north}, unit, dpiScale_);
+            if (labelsOn_) {
+                std::vector<RoadBatch> roads;
+                for (const VectorDraw& vd : job.vectors)
+                    if (vd.tile->roadCount > 0) {
+                        RoadBatch rb;
+                        rb.buffer = vd.tile->roads;
+                        rb.count = vd.tile->roadCount;
+                        std::memcpy(rb.xform, vd.xform, sizeof(rb.xform));
+                        roads.push_back(rb);
+                    }
+                labels_.drawRoads(roads, {lb.west, lb.south, lb.east, lb.north}, unit, dpiScale_);
+                labels_.drawSurface({lb.west, lb.south, lb.east, lb.north}, unit, dpiScale_);
+            }
         }
         if (job.featureCount > 0 && (job.featureFirst + job.featureCount) * 6 * sizeof(float) <= kSurfaceBufferBytes)
             features_.drawSurface(featureBuffer_, job.featureFirst, job.featureCount);
@@ -2925,7 +2936,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     }
     std::vector<GeoRect> visibleRects;
     std::vector<const VectorTile*> overlayTiles;
-    if (labelsOn_) {
+    if (labelsOn_ || contours_) {
         visibleRects.reserve(tiles.size());
         std::unordered_set<const VectorTile*> seenOverlay;
         for (const auto& dt : tiles) {
@@ -2949,7 +2960,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                             break;
                         }
         }
-        labels_.drawLabels(dc, ground, dpiScale_, visibleRects, overlayTiles, 0);
+        if (contours_ && contours_->marks) overlayTiles.push_back(contours_->marks.get());
+        labels_.drawLabels(dc, ground, dpiScale_, visibleRects, overlayTiles, 0, labelsOn_);
     }
     features_.drawOverlay(dc, ground, dpiScale_, flipSurface_, &vectorLabels);
     if (!capture && snapshotShown_) {
@@ -3016,7 +3028,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 sg_draw(0, xray ? kGrid * kGrid * 6 : kIndexCount, 1);
             }
             if (!xray) objects();
-            if (labelsOn_) labels_.drawLabels(vc, ground, dpiScale_, visibleRects, overlayTiles, static_cast<int>(vi));
+            if (labelsOn_ || contours_) labels_.drawLabels(vc, ground, dpiScale_, visibleRects, overlayTiles, static_cast<int>(vi), labelsOn_);
             features_.drawOverlay(vc, ground, dpiScale_, flipSurface_, &vectorLabels);
             sg_end_pass();
         }
@@ -3084,7 +3096,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     }
     viewComplete_ = incomplete == 0;
     busy_ = pending || fading || snapshotShown_ || tilesBusy || stats_.pendingRequests > 0 || renders > 0 || builds > 0 || elevationChanged ||
-            (labelsOn_ && labels_.animating());
+            ((labelsOn_ || contours_) && labels_.animating());
     if (busyLog_ && busy_ && frame_ % 30 == 0)
         std::fprintf(stderr, "[otk] busy frame %llu pending %d fading %d tiles %d requests %d renders %d builds %d elevation %d needs %zu\n",
                      static_cast<unsigned long long>(frame_), pending ? 1 : 0, fading ? 1 : 0, tilesBusy ? 1 : 0, stats_.pendingRequests, renders, builds,
