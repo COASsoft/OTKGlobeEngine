@@ -70,7 +70,7 @@ otk_destroy(map);
 
 The map comes with zoom, compass, 2D/3D and layer buttons in the bottom-right corner. Turn them off with `otk_set_controls(map, 0)` if you want your own.
 
-[docs/EMBEDDING.md](docs/EMBEDDING.md) shows complete setups for Android, iOS, macOS, Windows (Direct3D), C# and Qt.
+[docs/EMBEDDING.md](docs/EMBEDDING.md) shows complete setups for Android, iOS, macOS, Windows (Direct3D), C# and Qt. For a web page, see the [web package README](bindings/web/README.md).
 
 ## What it can do
 
