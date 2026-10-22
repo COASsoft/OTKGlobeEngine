@@ -284,6 +284,16 @@ public class OTKGlobeView extends GLSurfaceView implements GLSurfaceView.Rendere
         });
     }
 
+    public void setContours(final boolean enabled, final double interval, final int unit) {
+        run(new Runnable() {
+            @Override
+            public void run() {
+                OTKGlobeEngine.nativeSetContours(engine, enabled, interval, unit);
+                requestRender();
+            }
+        });
+    }
+
     public void setLabelsSource(final String urlOrPath) {
         run(new Runnable() {
             @Override
