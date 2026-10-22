@@ -23,6 +23,20 @@ struct RoadBatch {
     float xform[4] = {};
 };
 
+struct ContourBucket {
+    int first = 0;
+    int count = 0;
+    GeoRect bounds;
+};
+
+struct ContourSet {
+    GeoRect bounds;
+    double meters = 0.0;
+    std::vector<float> segments;
+    std::vector<ContourBucket> buckets;
+    std::shared_ptr<VectorTile> marks;
+};
+
 class LabelLayer {
 public:
     LabelLayer();
