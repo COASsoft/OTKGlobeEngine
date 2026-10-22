@@ -186,6 +186,7 @@ typedef enum otk_control {
 
 OTK_API void otk_set_controls(otk_engine* e, uint32_t controls);
 OTK_API uint32_t otk_controls(const otk_engine* e);
+OTK_API void otk_set_controls_padding(otk_engine* e, double left, double top, double right, double bottom);
 OTK_API int otk_basemap_count(const otk_engine* e);
 OTK_API int otk_basemap_name(const otk_engine* e, int index, char* out, int capacity);
 OTK_API void otk_set_basemap(otk_engine* e, int index);
