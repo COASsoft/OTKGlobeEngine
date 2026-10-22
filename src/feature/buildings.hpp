@@ -13,6 +13,11 @@ struct BuildingShape {
     std::uint32_t colour = 0;
 };
 
+struct BridgeShape {
+    std::vector<std::array<float, 2>> line;
+    float width = 8.0f;
+};
+
 struct BuildingVertex {
     float position[3];
     float normal[3];
@@ -59,8 +64,9 @@ struct BuildingMaterial {
 };
 
 const BuildingMaterial& buildingMaterial(int texture);
-std::vector<std::array<double, 2>> buildingSamplePoints(const std::vector<BuildingShape>& shapes, int z, int x, int y);
-BuildingMesh buildBuildingMesh(const std::vector<BuildingShape>& shapes, int z, int x, int y, const std::vector<double>& heights,
-                               int maxAtlas);
+std::vector<std::array<double, 2>> buildingSamplePoints(const std::vector<BuildingShape>& shapes, const std::vector<BridgeShape>& bridges,
+                                                        int z, int x, int y);
+BuildingMesh buildBuildingMesh(const std::vector<BuildingShape>& shapes, const std::vector<BridgeShape>& bridges, int z, int x, int y,
+                               const std::vector<double>& heights, int maxAtlas);
 
 }
