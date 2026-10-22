@@ -326,7 +326,7 @@ void BuildingLayer::update(const Camera& cam, const TileFn& tile, const HeightsF
         t.y = key.second;
         t.used = frame_;
         t.distance = d;
-        if (state < 0 || !vt || vt->buildings.empty()) {
+        if (state < 0 || !vt || (vt->buildings.empty() && vt->bridges.empty())) {
             t.empty = true;
             continue;
         }
@@ -334,9 +334,10 @@ void BuildingLayer::update(const Camera& cam, const TileFn& tile, const HeightsF
         ++jobs_;
         busy_ = true;
         std::vector<BuildingShape> shapes = vt->buildings;
+        std::vector<BridgeShape> bridges = vt->bridges;
         const int x = key.first, y = key.second;
-        t.job = std::async(std::launch::async, [shapes = std::move(shapes), x, y, heights, exaggeration, terrain]() {
-            const std::vector<std::array<double, 2>> points = buildingSamplePoints(shapes, kZoom, x, y);
+        t.job = std::async(std::launch::async, [shapes = std::move(shapes), bridges = std::move(bridges), x, y, heights, exaggeration, terrain]() {
+            const std::vector<std::array<double, 2>> points = buildingSamplePoints(shapes, bridges, kZoom, x, y);
             std::vector<double> h;
             if (terrain && !points.empty() && heights) {
                 std::vector<std::pair<double, double>> ll;
@@ -348,7 +349,7 @@ void BuildingLayer::update(const Camera& cam, const TileFn& tile, const HeightsF
             } else {
                 h.assign(points.size(), 0.0);
             }
-            return std::make_shared<BuildingMesh>(buildBuildingMesh(shapes, kZoom, x, y, h, kMaxAtlas));
+            return std::make_shared<BuildingMesh>(buildBuildingMesh(shapes, bridges, kZoom, x, y, h, kMaxAtlas));
         });
     }
     if (tiles_.size() > kMaxTiles) {
