@@ -184,7 +184,7 @@ int main() {
         for (int j = 200; j < 260; ++j)
             for (int i = 300; i < 340; ++i) canopy[static_cast<std::size_t>(j) * 512 + i] = 25;
         const auto groundPoints = canopySamplePoints(14, 2598, 5759);
-        const BuildingMesh trees = buildCanopyMesh(canopy, 512, 2, 14, 2598, 5759, std::vector<double>(groundPoints.size(), 100.0), 1024);
+        const BuildingMesh trees = buildCanopyMesh(canopy, 512, 1000, 14, 2598, 5759, std::vector<double>(groundPoints.size(), 100.0), 1024);
         bool treeIndices = !trees.indices.empty() && trees.indices.size() % 3 == 0;
         for (std::uint32_t i : trees.indices) treeIndices = treeIndices && i < trees.vertices.size();
         double treeTop = -1e9, treeEast = 1e9, treeWest = -1e9;
@@ -198,7 +198,7 @@ int main() {
         check(treeEast > 0.0 && treeWest < tileM * 0.25, "tree canopy placed where the heights are");
         check(trees.atlas == 1024 && trees.cells.size() == 64 && trees.cells[0].north > trees.cells[63].south, "tree texture split into imagery cells");
         std::vector<std::uint8_t> bare(512 * 512, 0);
-        check(buildCanopyMesh(bare, 512, 2, 14, 2598, 5759, std::vector<double>(groundPoints.size(), 100.0), 1024).indices.empty(),
+        check(buildCanopyMesh(bare, 512, 1000, 14, 2598, 5759, std::vector<double>(groundPoints.size(), 100.0), 1024).indices.empty(),
               "no tree mesh without trees");
     }
 
