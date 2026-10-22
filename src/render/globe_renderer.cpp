@@ -329,6 +329,7 @@ bool GlobeRenderer::init() {
 
 void GlobeRenderer::shutdown() {
     if (!ready_) return;
+    buildings_.shutdown();
     if (sg_isvalid()) {
         for (auto& [k, t] : terrain_) sg_destroy_buffer(t.vbuf);
         for (auto& [k, s] : surface_) dropSurface(s);
@@ -491,12 +492,18 @@ std::vector<std::string> GlobeRenderer::credits() const {
     if (labelsOn_) {
         out.push_back("Boundaries: geoBoundaries (CC BY 4.0)");
         out.push_back("Places: GeoNames (CC BY 4.0), Natural Earth");
-        if (overlayLayer_ >= 0) out.push_back("Roads and places: OpenFreeMap \xC2\xA9 OpenMapTiles \xC2\xA9 OpenStreetMap contributors");
     }
+    if (overlayLayer_ >= 0)
+        out.push_back(std::string(buildingsOn_ ? "Roads, buildings and places" : "Roads and places") +
+                      ": OpenFreeMap \xC2\xA9 OpenMapTiles \xC2\xA9 OpenStreetMap contributors");
     return out;
 }
 
-void GlobeRenderer::setSunLighting(bool enabled, double unixSeconds) { models_.setSun(enabled, sunDirectionEcef(unixSeconds)); }
+void GlobeRenderer::setSunLighting(bool enabled, double unixSeconds) {
+    sunOn_ = enabled;
+    sunDir_ = sunDirectionEcef(unixSeconds);
+    models_.setSun(enabled, sunDir_);
+}
 
 std::uint64_t GlobeRenderer::addTileset(const std::string& uri, const TilesetOptions& options, Vec3* center, double* radius) {
     auto t = std::make_unique<Tileset3D>(uri, options, cache_.isOpen() ? &cache_ : nullptr, &offline_);
@@ -538,6 +545,7 @@ sg_view GlobeRenderer::backdrop() {
 }
 
 void GlobeRenderer::retryUnavailable() {
+    buildings_.retry();
     failed_.clear();
     failCount_.clear();
     for (auto& [k, s] : surface_)
@@ -557,13 +565,14 @@ void GlobeRenderer::setLayers(const std::vector<ImageryLayer>& layers) {
 void GlobeRenderer::setLabelsSource(const std::string& source) {
     if (labelsSource_ == source) return;
     labelsSource_ = source;
+    buildings_.clear();
     applyLayers();
 }
 
 void GlobeRenderer::applyLayers() {
     std::vector<ImageryLayer> all = userLayers_;
     overlayLayer_ = -1;
-    if (labelsOn_ && !labelsSource_.empty()) {
+    if ((labelsOn_ || buildingsOn_) && !labelsSource_.empty()) {
         ImageryLayer l;
         l.name = "Labels";
         l.labels = true;
@@ -723,6 +732,68 @@ void GlobeRenderer::setContours(std::shared_ptr<const ContourSet> set) {
     if (contours_) markDirty(contours_->bounds);
 }
 
+BuildingLayer::ImageryFn GlobeRenderer::roofImagery() {
+    if (baseLayer_ < 0 || baseLayer_ >= static_cast<int>(matrices_.size())) return {};
+    const int layer = baseLayer_;
+    return [this, layer](double w, double s, double e, double n, int level, bool request, std::vector<BuildingLayer::Piece>& out) {
+        out.clear();
+        const TileMatrix& bm = matrices_[layer];
+        const double maxLat = maxLatitude(bm.srid);
+        if (s < -maxLat || n > maxLat || !(e > w) || !(n > s) || bm.levels.empty()) return;
+        int lz = std::min({level, bm.maxZoom, 19});
+        while (lz > bm.minZoom && !bm.hasLevel(lz)) --lz;
+        if (lz < 0 || !bm.hasLevel(lz)) return;
+        const double X0 = projectX(bm.srid, w), X1 = projectX(bm.srid, e), Y0 = projectY(bm.srid, s), Y1 = projectY(bm.srid, n);
+        const double sx = bm.spanX(lz), sy = bm.spanY(lz);
+        const int tx0 = static_cast<int>(std::floor((X0 - bm.originX) / sx)), tx1 = static_cast<int>(std::floor((X1 - bm.originX) / sx));
+        const int ty0 = static_cast<int>(std::floor((bm.originY - Y1) / sy)), ty1 = static_cast<int>(std::floor((bm.originY - Y0) / sy));
+        if ((tx1 - tx0 + 1) * (ty1 - ty0 + 1) > 16) return;
+        const double t = now();
+        for (int ty = ty0; ty <= ty1; ++ty)
+            for (int tx = tx0; tx <= tx1; ++tx) {
+                const double px0 = std::max(X0, bm.originX + tx * sx), px1 = std::min(X1, bm.originX + (tx + 1) * sx);
+                const double py1 = std::min(Y1, bm.originY - ty * sy), py0 = std::max(Y0, bm.originY - (ty + 1) * sy);
+                if (px1 <= px0 || py1 <= py0) continue;
+                BuildingLayer::Piece p;
+                p.fx0 = static_cast<float>((px0 - X0) / (X1 - X0));
+                p.fx1 = static_cast<float>((px1 - X0) / (X1 - X0));
+                p.fy0 = static_cast<float>((Y1 - py1) / (Y1 - Y0));
+                p.fy1 = static_cast<float>((Y1 - py0) / (Y1 - Y0));
+                const TileId target{layer, lz, tx, ty};
+                if (request && imagery_.find(target) == imagery_.end()) {
+                    auto f = failed_.find(target);
+                    if (f == failed_.end() || f->second <= t) want(target, 0.5);
+                }
+                const double cx = 0.5 * (px0 + px1), cy = 0.5 * (py0 + py1);
+                for (int z = lz; z >= bm.minZoom && z >= 0; --z) {
+                    if (!bm.hasLevel(z)) continue;
+                    const double zx = bm.spanX(z), zy = bm.spanY(z);
+                    const int ax = static_cast<int>(std::floor((cx - bm.originX) / zx)), ay = static_cast<int>(std::floor((bm.originY - cy) / zy));
+                    auto it = imagery_.find(TileId{layer, z, ax, ay});
+                    if (it == imagery_.end() || !it->second.view.id || it->second.vector) continue;
+                    it->second.used = frame_;
+                    const double minX = bm.originX + ax * zx, maxY = bm.originY - ay * zy;
+                    p.view = it->second.view;
+                    p.u0 = static_cast<float>(std::clamp((px0 - minX) / zx, 0.0, 1.0));
+                    p.u1 = static_cast<float>(std::clamp((px1 - minX) / zx, 0.0, 1.0));
+                    p.v0 = static_cast<float>(std::clamp((maxY - py1) / zy, 0.0, 1.0));
+                    p.v1 = static_cast<float>(std::clamp((maxY - py0) / zy, 0.0, 1.0));
+                    p.z = z;
+                    break;
+                }
+                out.push_back(p);
+            }
+    };
+}
+
+void GlobeRenderer::setBuildings(bool enabled) {
+    if (buildingsOn_ == enabled) return;
+    buildingsOn_ = enabled;
+    if (!enabled) buildings_.clear();
+    applyLayers();
+    busy_ = true;
+}
+
 void GlobeRenderer::setLabels(bool enabled) {
     if (labelsOn_ == enabled) return;
     labelsOn_ = enabled;
@@ -788,6 +859,7 @@ bool GlobeRenderer::removeOverlay(std::uint64_t id) {
 }
 
 void GlobeRenderer::invalidateTerrain() {
+    buildings_.clear();
     ++terrainEpoch_;
     for (auto& [k, t] : terrain_) t.complete = false;
     busy_ = true;
@@ -2349,6 +2421,23 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         jobs.push_back(std::move(job));
         ++renders;
     }
+    if (buildingsOn_ && overlayLayer_ >= 0 && overlayLayer_ < static_cast<int>(matrices_.size())) {
+        auto tileFn = [this](int x, int y, double priority, std::shared_ptr<const VectorTile>& out) {
+            const TileId id{overlayLayer_, 14, x, y};
+            auto it = imagery_.find(id);
+            if (it != imagery_.end()) {
+                it->second.used = frame_;
+                out = it->second.vector;
+                return out ? 1 : -1;
+            }
+            auto f = failed_.find(id);
+            if (f != failed_.end()) return f->second == std::numeric_limits<double>::infinity() ? -1 : 0;
+            want(id, priority / 1000.0);
+            return 0;
+        };
+        auto heightsFn = [this](const std::vector<std::pair<double, double>>& ll) { return elevation_.query(ll, 4.0); };
+        buildings_.update(cam, tileFn, heightsFn, roofImagery(), exaggeration_, terrainEnabled_);
+    }
     {
         std::sort(requests_.begin(), requests_.end(), [](const auto& a, const auto& b) {
             const TileId& x = a.first;
@@ -2535,6 +2624,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     }
 
     if (!mipQueue.empty()) generateMips(mipQueue);
+    if (buildingsOn_) buildings_.bake(roofImagery(), flipSurface_);
 
     profileMark(5);
     const RenderView* firstView = views && !views->empty() ? &views->front() : nullptr;
@@ -2583,6 +2673,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     stats_.tilesetTiles = 0;
     stats_.tilesetFailed = 0;
     auto drawObjects = [&]() {
+        if (buildingsOn_) buildings_.draw(dc, sunDir_, sunOn_);
         models_.draw(dc, ground);
         points_.draw(dc, dpiScale_);
         for (auto& [id, t] : tilesets_) {
@@ -3011,6 +3102,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             if (v.width > 0) sg_apply_viewport(v.x, v.y, v.width, v.height, true);
             if (skyVisible_) drawSky(vc);
             auto objects = [&]() {
+                if (buildingsOn_) buildings_.draw(vc, sunDir_, sunOn_);
                 models_.draw(vc, ground, true);
                 points_.draw(vc, dpiScale_);
                 for (auto& [id, t] : tilesets_) t->draw(vc, models_, points_, dpiScale_);
@@ -3102,7 +3194,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     }
     viewComplete_ = incomplete == 0;
     busy_ = pending || fading || snapshotShown_ || tilesBusy || stats_.pendingRequests > 0 || renders > 0 || builds > 0 || elevationChanged ||
-            ((labelsOn_ || contours_) && labels_.animating());
+            ((labelsOn_ || contours_) && labels_.animating()) || (buildingsOn_ && buildings_.busy());
     if (busyLog_ && busy_ && frame_ % 30 == 0)
         std::fprintf(stderr, "[otk] busy frame %llu pending %d fading %d tiles %d requests %d renders %d builds %d elevation %d needs %zu\n",
                      static_cast<unsigned long long>(frame_), pending ? 1 : 0, fading ? 1 : 0, tilesBusy ? 1 : 0, stats_.pendingRequests, renders, builds,
