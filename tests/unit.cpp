@@ -179,6 +179,27 @@ int main() {
               "roof atlas cells");
         check(lowest > 97.7 && lowest < 98.2, "buildings stand on the sampled ground");
         check(east <= tileM * 0.5 * 1.004 + 0.5 && !boundaryWall, "buildings clipped to the tile without walls on the tile edge");
+
+        std::vector<std::uint8_t> canopy(512 * 512, 0);
+        for (int j = 200; j < 260; ++j)
+            for (int i = 300; i < 340; ++i) canopy[static_cast<std::size_t>(j) * 512 + i] = 25;
+        const auto groundPoints = canopySamplePoints(14, 2598, 5759);
+        const BuildingMesh trees = buildCanopyMesh(canopy, 512, 2, 14, 2598, 5759, std::vector<double>(groundPoints.size(), 100.0), 1024);
+        bool treeIndices = !trees.indices.empty() && trees.indices.size() % 3 == 0;
+        for (std::uint32_t i : trees.indices) treeIndices = treeIndices && i < trees.vertices.size();
+        double treeTop = -1e9, treeEast = 1e9, treeWest = -1e9;
+        for (const BuildingVertex& v : trees.vertices) {
+            treeTop = std::max(treeTop, static_cast<double>(v.position[2]));
+            treeEast = std::min(treeEast, static_cast<double>(v.position[0]));
+            treeWest = std::max(treeWest, static_cast<double>(v.position[0]));
+        }
+        check(groundPoints.size() == kCanopyGround * kCanopyGround && treeIndices, "tree canopy mesh from heights");
+        check(treeTop > 120.0 && treeTop < 126.0, "tree canopy stands on the ground at the canopy height");
+        check(treeEast > 0.0 && treeWest < tileM * 0.25, "tree canopy placed where the heights are");
+        check(trees.atlas == 1024 && trees.cells.size() == 64 && trees.cells[0].north > trees.cells[63].south, "tree texture split into imagery cells");
+        std::vector<std::uint8_t> bare(512 * 512, 0);
+        check(buildCanopyMesh(bare, 512, 2, 14, 2598, 5759, std::vector<double>(groundPoints.size(), 100.0), 1024).indices.empty(),
+              "no tree mesh without trees");
     }
 
     auto kml = parseFeatures(data("styles.kml"));
