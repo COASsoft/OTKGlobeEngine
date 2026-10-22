@@ -110,6 +110,11 @@ public:
     BuildingLayer::ImageryFn roofImagery();
     void setOverlay(std::function<void(int width, int height)> draw) { overlay_ = std::move(draw); }
     bool terrainEnabled() const { return terrainEnabled_; }
+    void setLookahead(const Camera* cam, double priority = 2.5) {
+        hasLookahead_ = cam != nullptr;
+        lookaheadPriority_ = priority;
+        if (cam) lookahead_ = *cam;
+    }
     double buildingHeightAt(double lat, double lon) const { return buildingsOn_ ? buildings_.heightAt(lat, lon) : 0.0; }
     bool hasContours() const { return contours_ != nullptr; }
     void setSkyVisible(bool visible) { skyVisible_ = visible; }
@@ -193,6 +198,7 @@ private:
         int imageryZ = -1;
         int sourceZ = -1;
         bool degraded = false;
+        double lineDeg = 0.0;
         bool overlaysOmitted = false;
         bool presentable = false;
     };
@@ -371,6 +377,9 @@ private:
     mutable std::unordered_map<QuadKey, Sphere, QuadKeyHash> spheres_;
     double needScale_ = 1.0;
     bool prefetching_ = false;
+    bool hasLookahead_ = false;
+    Camera lookahead_;
+    double lookaheadPriority_ = 2.5;
     std::vector<Need> prefetch_;
     bool viewComplete_ = false;
     std::unordered_map<QuadKey, std::uint64_t, QuadKeyHash> drawn_;
