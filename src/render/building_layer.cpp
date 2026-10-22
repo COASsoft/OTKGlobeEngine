@@ -288,7 +288,10 @@ void BuildingLayer::update(const Camera& cam, const TileFn& tile, const HeightsF
             t.empty = true;
             continue;
         }
-        if (hasBuildings) upload(t.parts[0], *meshes.buildings);
+        if (hasBuildings) {
+            upload(t.parts[0], *meshes.buildings);
+            t.heights = std::move(meshes.buildings->heights);
+        }
         if (hasCanopy) upload(t.parts[1], *meshes.canopy);
         t.ready = true;
         t.appear = now;
@@ -439,6 +442,19 @@ void BuildingLayer::update(const Camera& cam, const TileFn& tile, const HeightsF
             if ((!p.baked || p.availableMin < p.target - 1) && now - t.appear < 12.0) busy_ = true;
         }
     }
+}
+
+double BuildingLayer::heightAt(double lat, double lon) const {
+    if (tiles_.empty() || fade_ <= 0.0) return 0.0;
+    const double n = std::ldexp(1.0, kZoom);
+    const double r = std::clamp(lat, -85.0, 85.0) * kPi / 180.0;
+    const double fx = (lon + 180.0) / 360.0 * n, fy = (1.0 - std::log(std::tan(r) + 1.0 / std::cos(r)) / kPi) / 2.0 * n;
+    const int x = static_cast<int>(std::floor(fx)), y = static_cast<int>(std::floor(fy));
+    auto it = tiles_.find({x, y});
+    if (it == tiles_.end() || !it->second.ready || it->second.heights.empty()) return 0.0;
+    const int g = kBuildingHeightGrid;
+    const int i = std::clamp(static_cast<int>((fx - x) * g), 0, g - 1), j = std::clamp(static_cast<int>((fy - y) * g), 0, g - 1);
+    return it->second.heights[static_cast<std::size_t>(j) * g + i];
 }
 
 void BuildingLayer::bake(const ImageryFn& imagery, bool flip) {
