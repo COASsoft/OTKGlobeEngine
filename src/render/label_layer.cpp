@@ -157,6 +157,7 @@ TextStyle markStyle(const TileMark& m, double dpi) {
                         : TextStyle{11.5f, 0.0f, blue, dark, 1.0f, 0.0f, 3.0f};
         break;
     case MarkType::Waterway: s = {11.0f, 0.2f, blue, dark, 1.0f, 0.0f, 2.0f}; break;
+    case MarkType::Contour: s = {10.5f, 0.0f, rgba(20, 20, 20, 1.0f), rgba(255, 255, 255, 0.9f), 1.4f, 0.0f, 2.0f}; break;
     }
     return scaled(s, dpi);
 }
@@ -171,6 +172,7 @@ float markZoom(const TileMark& m) {
     case MarkType::Park: return r == 0 ? 6.0f : 14.5f;
     case MarkType::Water: return r == 0 ? 2.5f : r == 1 ? 8.0f : m.zoom <= 10 ? std::max(8.0f, static_cast<float>(m.zoom)) : 12.0f;
     case MarkType::Waterway: return r == 0 ? 12.0f : r == 1 ? 13.5f : 14.5f;
+    case MarkType::Contour: return 0.0f;
     }
     return 20.0f;
 }
@@ -182,6 +184,7 @@ float markBase(const TileMark& m) {
     case MarkType::Water: return 2.4f;
     case MarkType::Park: return 2.6f;
     case MarkType::Waterway: return 3.0f;
+    case MarkType::Contour: return 3.4f;
     default: return 3.2f;
     }
 }
@@ -810,7 +813,7 @@ void LabelLayer::drawSurface(const GeoRect& tile, double unitDeg, double dpi) {
 }
 
 void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dpi, const std::vector<GeoRect>& visible,
-                            const std::vector<const VectorTile*>& overlay, int view) {
+                            const std::vector<const VectorTile*>& overlay, int view, bool places) {
     if (!ready_ || cam.width <= 0 || cam.height <= 0) return;
     Text& T = *text_;
     GlyphCache& glyphs = T.glyphs;
@@ -819,7 +822,7 @@ void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dp
     const float dt = T.last.time_since_epoch().count() == 0 ? 0.0f
                                                              : std::clamp(std::chrono::duration<float>(now - T.last).count(), 0.0f, 0.1f);
     if (primary) T.last = now;
-    const bool bundled = available();
+    const bool bundled = places && available();
     const labels::Dataset* data = bundled ? &labels::Dataset::get() : nullptr;
     if (glyphs.full()) glyphs.reset();
     const double W = cam.width, H = cam.height;
@@ -935,7 +938,7 @@ void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dp
             const double h = height(key, anchor[1], anchor[0]);
             e = geodeticToEcef(anchor[1], anchor[0], h);
             if (!project(e, sx, sy)) continue;
-            const bool line = m.type == MarkType::Road || m.type == MarkType::Waterway || m.type == MarkType::Shield;
+            const bool line = m.type == MarkType::Road || m.type == MarkType::Waterway || m.type == MarkType::Shield || m.type == MarkType::Contour;
             if (!line && (sx < -40 || sy < -20 || sx > W + 40 || sy > H + 20)) continue;
             Candidate c;
             c.mark = &m;
@@ -1006,8 +1009,8 @@ void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dp
         item.key = c.key;
         item.style = s;
 
-        if (m && (m->type == MarkType::Road || m->type == MarkType::Waterway)) {
-            if (repeated(m->text, c.x, c.y, 260.0f * static_cast<float>(dpi))) continue;
+        if (m && (m->type == MarkType::Road || m->type == MarkType::Waterway || m->type == MarkType::Contour)) {
+            if (repeated(m->text, c.x, c.y, (m->type == MarkType::Contour ? 220.0f : 260.0f) * static_cast<float>(dpi))) continue;
             screen.clear();
             bool ok = true;
             for (const auto& p : m->points) {
