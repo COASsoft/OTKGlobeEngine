@@ -281,6 +281,8 @@ public:
     void setLabelsEnabled(bool enabled);
     bool labelsEnabled() const;
     void setLabelsSource(const std::string& urlOrPath);
+    void setBuildingsEnabled(bool enabled);
+    bool buildingsEnabled() const;
     std::string labelsSource() const;
     int labelsLayer() const;
     int downloadLabels(const Region& region, int maxZoom = 14);
