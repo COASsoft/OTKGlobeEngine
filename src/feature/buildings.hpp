@@ -19,7 +19,7 @@ struct BuildingVertex {
     float texcoord[4];
     std::uint32_t tint;
     float base;
-    float roof;
+    float kind;
 };
 
 struct RoofCell {
@@ -36,7 +36,7 @@ struct BuildingMesh {
     int buildings = 0;
 };
 
-enum BuildingLayer : int {
+enum BuildingTexture : int {
     FacadeGlass = 0,
     FacadeGlassFine,
     FacadeOffice,
@@ -49,7 +49,7 @@ enum BuildingLayer : int {
     WallConcrete,
     WallMetal,
     RoofShingles,
-    BuildingLayers
+    BuildingTextures
 };
 
 struct BuildingMaterial {
@@ -58,7 +58,7 @@ struct BuildingMaterial {
     float windows;
 };
 
-const BuildingMaterial& buildingMaterial(int layer);
+const BuildingMaterial& buildingMaterial(int texture);
 std::vector<std::array<double, 2>> buildingSamplePoints(const std::vector<BuildingShape>& shapes, int z, int x, int y);
 BuildingMesh buildBuildingMesh(const std::vector<BuildingShape>& shapes, int z, int x, int y, const std::vector<double>& heights,
                                int maxAtlas);
