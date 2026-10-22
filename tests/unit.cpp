@@ -142,6 +142,44 @@ int main() {
               "short road names");
     }
 
+    {
+        const double tileM = 40075016.686 * std::cos(47.04 * 3.14159265358979323846 / 180.0) / 16384.0;
+        auto rect = [&](double u, double v, double wm, double hm) {
+            const float u0 = static_cast<float>(u), v0 = static_cast<float>(v);
+            const float u1 = static_cast<float>(u + wm / tileM), v1 = static_cast<float>(v + hm / tileM);
+            return std::vector<std::array<float, 2>>{{u0, v0}, {u1, v0}, {u1, v1}, {u0, v1}, {u0, v0}};
+        };
+        BuildingShape house;
+        house.height = 10.0f;
+        house.rings.push_back(rect(0.5, 0.5, 12.0, 8.0));
+        BuildingShape tower;
+        tower.height = 80.0f;
+        tower.rings.push_back(rect(0.3, 0.3, 30.0, 30.0));
+        BuildingShape edge;
+        edge.height = 30.0f;
+        edge.rings.push_back(rect(1.0 - 10.0 / tileM, 0.7, 20.0, 15.0));
+        const std::vector<BuildingShape> shapes{house, tower, edge};
+        const auto points = buildingSamplePoints(shapes, 14, 2598, 5759);
+        const BuildingMesh mesh = buildBuildingMesh(shapes, 14, 2598, 5759, std::vector<double>(points.size(), 100.0), 2048);
+        bool indices = !mesh.indices.empty() && mesh.indices.size() % 3 == 0;
+        for (std::uint32_t i : mesh.indices) indices = indices && i < mesh.vertices.size();
+        bool sloped = false, tall = false, boundaryWall = false;
+        double lowest = 1e9, east = -1e9;
+        for (const BuildingVertex& v : mesh.vertices) {
+            if (v.kind > 0.5 && v.normal[2] < 0.99f) sloped = true;
+            if (v.kind < 0.5 && v.texcoord[3] <= 2.0f && v.texcoord[1] >= 79.0f) tall = true;
+            if (v.kind < 0.5 && v.normal[0] > 0.99f && v.position[0] > tileM * 0.5 - 1.0) boundaryWall = true;
+            if (v.kind < 0.5) lowest = std::min(lowest, static_cast<double>(v.position[2]));
+            east = std::max(east, static_cast<double>(v.position[0]));
+        }
+        check(points.size() == 12 && mesh.buildings == 3 && indices, "building meshes from footprints");
+        check(sloped && tall, "pitched house roofs and tower facades");
+        check(mesh.atlas > 0 && mesh.cells.size() == 3 && mesh.cells[0].west < mesh.cells[0].east && mesh.cells[0].south < mesh.cells[0].north,
+              "roof atlas cells");
+        check(lowest > 97.7 && lowest < 98.2, "buildings stand on the sampled ground");
+        check(east <= tileM * 0.5 + 1.0 && !boundaryWall, "buildings clipped to the tile without walls on the tile edge");
+    }
+
     auto kml = parseFeatures(data("styles.kml"));
     check(kml.size() == 3 && kml[0].name == "Rainier Summit" && kml[0].style.iconColor == 0xFFFF0000, "kml styles");
     auto json = parseFeatures(data("olympia.geojson"));
