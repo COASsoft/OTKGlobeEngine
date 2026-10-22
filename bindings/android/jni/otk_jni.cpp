@@ -312,6 +312,10 @@ JNIEXPORT void JNICALL OTK_FN(nativeSetGrid)(JNIEnv*, jclass, jlong h, jboolean 
 
 JNIEXPORT void JNICALL OTK_FN(nativeSetLabels)(JNIEnv*, jclass, jlong h, jboolean v) { otk_set_labels(E(h), v ? 1 : 0); }
 
+JNIEXPORT void JNICALL OTK_FN(nativeSetContours)(JNIEnv*, jclass, jlong h, jboolean v, jdouble interval, jint unit) {
+    otk_set_contours(E(h), v ? 1 : 0, interval, static_cast<otk_distance_unit>(unit));
+}
+
 JNIEXPORT void JNICALL OTK_FN(nativeSetLabelsSource)(JNIEnv* env, jclass, jlong h, jstring source) {
     otk_set_labels_source(E(h), str(env, source).c_str());
 }
