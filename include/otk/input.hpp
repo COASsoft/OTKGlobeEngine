@@ -105,6 +105,7 @@ private:
     void multiMove();
     void endPointer(int id, bool cancelled);
     double px(double dp) const { return dp * dpi_; }
+    bool claimed(int id) const;
     double seconds(Clock::time_point a, Clock::time_point b) const { return std::chrono::duration<double>(b - a).count(); }
     void centroid(double& x, double& y) const;
 
@@ -135,6 +136,9 @@ private:
     bool updated_ = false;
     TapHandler tapHandler_;
     PressHandler longPressHandler_;
+    friend class Engine;
+    std::function<bool(int phase, int id, double x, double y)> claim_;
+    std::vector<int> claimed_;
 };
 
 }
