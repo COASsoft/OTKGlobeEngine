@@ -322,6 +322,16 @@ public class OTKGlobeView extends GLSurfaceView implements GLSurfaceView.Rendere
     public static final int CONTROL_ATTRIBUTION = 32;
     public static final int CONTROL_ALL = 63;
 
+    public void setBuildings(final boolean enabled) {
+        run(new Runnable() {
+            @Override
+            public void run() {
+                OTKGlobeEngine.nativeSetBuildings(engine, enabled);
+                requestRender();
+            }
+        });
+    }
+
     public void setControls(final int controls) {
         run(new Runnable() {
             @Override
