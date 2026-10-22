@@ -163,7 +163,7 @@ if(MSVC)
     target_compile_definitions(otkglobeengine PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS _SILENCE_CXX20_U8PATH_DEPRECATION_WARNING)
 endif()
 
-otk_add_shaders(otkglobeengine
+set(_otk_shaders
     render/shaders/globe.glsl
     render/shaders/surface.glsl
     render/shaders/sky.glsl
@@ -174,6 +174,12 @@ otk_add_shaders(otkglobeengine
     render/shaders/points.glsl
     render/shaders/snapshot.glsl
     render/shaders/labels.glsl)
+if(OTK_CONTROLS)
+    target_sources(otkglobeengine PRIVATE ui/controls.cpp)
+    target_compile_definitions(otkglobeengine PRIVATE OTK_CONTROLS)
+    list(APPEND _otk_shaders ui/controls.glsl)
+endif()
+otk_add_shaders(otkglobeengine ${_otk_shaders})
 if(OTK_EMBED_BACKDROP)
     otk_embed(otkglobeengine world_backdrop ${PROJECT_SOURCE_DIR}/assets/world/blue-marble-2048.jpg)
     target_compile_definitions(otkglobeengine PRIVATE OTK_EMBED_BACKDROP)
