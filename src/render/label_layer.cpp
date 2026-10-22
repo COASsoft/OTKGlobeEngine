@@ -922,6 +922,7 @@ void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dp
         std::uint64_t key = 0;
         double height = 0.0;
         float x = 0, y = 0, zoom = 0, priority = 0;
+        bool held = false;
     };
     std::vector<Candidate> candidates;
     std::unordered_set<std::string_view> names;
@@ -977,17 +978,35 @@ void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dp
                 c.x = static_cast<float>(sx);
                 c.y = static_cast<float>(sy);
                 c.zoom = static_cast<float>(z);
-                c.priority = base + static_cast<float>(minz) - (held ? 0.6f : 0.0f);
+                c.priority = base + static_cast<float>(minz) - (held ? 1.5f : 0.0f);
+                c.held = held;
                 candidates.push_back(c);
                 names.insert(data->name(p));
             }
         }
     }
 
+    struct Cover {
+        int z;
+        double west, south, east, north;
+    };
+    std::vector<Cover> covers;
+    for (const VectorTile* tile : overlay) {
+        if (!tile->overlay || tile->z <= 0) continue;
+        const double n = std::ldexp(1.0, tile->z);
+        auto latOf = [&](double y) { return std::atan(std::sinh(kPi * (1.0 - 2.0 * y / n))) * 180.0 / kPi; };
+        covers.push_back({tile->z, tile->x / n * 360.0 - 180.0, latOf(tile->y + 1.0), (tile->x + 1.0) / n * 360.0 - 180.0, latOf(tile->y)});
+    }
+    auto finer = [&](const VectorTile* tile, const std::array<double, 2>& p) {
+        for (const Cover& c : covers)
+            if (c.z > tile->z && p[0] >= c.west && p[0] < c.east && p[1] >= c.south && p[1] < c.north) return true;
+        return false;
+    };
     for (const VectorTile* tile : overlay) {
         if (candidates.size() >= kMaxCandidates) break;
         for (const TileMark& m : tile->marks) {
             if (m.points.empty() || m.text.empty()) continue;
+            if (m.type != MarkType::Contour && finer(tile, m.points[m.points.size() / 2])) continue;
             if (m.type == MarkType::Place && m.rank == 1 && names.count(m.text)) continue;
             const auto& anchor = m.points[m.points.size() / 2];
             Vec3 e = geodeticToEcef(anchor[1], anchor[0], 0.0);
@@ -1011,7 +1030,8 @@ void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dp
             c.x = static_cast<float>(sx);
             c.y = static_cast<float>(sy);
             c.zoom = static_cast<float>(z);
-            c.priority = markBase(m) + minz - (held ? 0.6f : 0.0f);
+            c.priority = markBase(m) + minz - (held ? 1.5f : 0.0f);
+            c.held = held;
             candidates.push_back(c);
         }
     }
@@ -1113,13 +1133,13 @@ void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dp
                 at(d0, x0, y0, seg, t);
                 at(d1, x1, y1, seg, t);
                 const double cl = std::hypot(x1 - x0, y1 - y0);
-                if (cl < need * 0.9) continue;
+                if (cl < need * (c.held ? 0.75 : 0.9)) continue;
                 double worst = 0.0;
                 for (const auto& q : screen) {
                     if (q[2] <= d0 || q[2] >= d1) continue;
                     worst = std::max(worst, std::abs((x1 - x0) * (y0 - q[1]) - (x0 - q[0]) * (y1 - y0)) / cl);
                 }
-                if (worst > (m->type == MarkType::Contour ? 4.0 : 3.0) * dpi) continue;
+                if (worst > (m->type == MarkType::Contour ? 4.0 : 3.0) * (c.held ? 2.0 : 1.0) * dpi) continue;
                 cx = (x0 + x1) * 0.5;
                 cy = (y0 + y1) * 0.5;
                 angle = std::atan2(y1 - y0, x1 - x0);
@@ -1243,31 +1263,27 @@ void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dp
     std::vector<std::pair<const Item*, float>> draw;
     std::unordered_set<std::uint64_t> shown;
     if (primary) {
+        std::unordered_set<std::uint64_t> placedKeys;
+        for (const Item& it : placed) placedKeys.insert(it.key);
         for (const Item& it : placed) {
+            auto existing = T.fades.find(it.key);
+            float inherited = 0.0f;
+            if (existing == T.fades.end() || existing->second.placed + 1 < frame_) {
+                for (auto old = T.fades.begin(); old != T.fades.end(); ++old) {
+                    if (placedKeys.count(old->first) || old->second.item.text != it.text || old->second.item.layout != it.layout) continue;
+                    if (length(old->second.item.anchor - it.anchor) > 600.0) continue;
+                    inherited = std::max(inherited, old->second.opacity);
+                    old->second.opacity = 0.0f;
+                }
+            }
             Fade& f = T.fades[it.key];
+            f.opacity = std::max(f.opacity, inherited);
             f.opacity = std::min(1.0f, f.opacity + (dt > 0.0f ? dt / kFadeIn : 1.0f));
             f.placed = frame_;
             f.item = it;
             f.hasHeight = true;
             f.height = ecefToGeodetic(it.anchor).alt;
             shown.insert(it.key);
-        }
-        if (std::getenv("OTK_LABEL_DEBUG")) {
-            static std::unordered_set<std::uint64_t> previous;
-            int born = 0, died = 0, bornMarks = 0, diedMarks = 0;
-            for (std::uint64_t k : shown)
-                if (!previous.count(k)) {
-                    ++born;
-                    if (!(k >> 63)) ++bornMarks;
-                }
-            for (std::uint64_t k : previous)
-                if (!shown.count(k)) {
-                    ++died;
-                    if (!(k >> 63)) ++diedMarks;
-                }
-            std::fprintf(stderr, "[labels] frame %llu candidates %zu overlayTiles %zu placed %zu born %d (%d marks) died %d (%d marks)\n",
-                         static_cast<unsigned long long>(frame_), candidates.size(), overlay.size(), placed.size(), born, bornMarks, died, diedMarks);
-            previous = shown;
         }
         T.animating = false;
         for (auto it = T.fades.begin(); it != T.fades.end();) {
