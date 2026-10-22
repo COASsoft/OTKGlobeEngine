@@ -1994,6 +1994,17 @@ void Engine::setControls(std::uint32_t controls) {
 #endif
 }
 
+void Engine::setControlsPadding(double left, double top, double right, double bottom) {
+#if defined(OTK_CONTROLS)
+    impl_->controls->setPadding(static_cast<float>(left), static_cast<float>(top), static_cast<float>(right), static_cast<float>(bottom));
+#else
+    (void)left;
+    (void)top;
+    (void)right;
+    (void)bottom;
+#endif
+}
+
 std::uint32_t Engine::controls() const {
 #if defined(OTK_CONTROLS)
     return impl_->controls->flags();
