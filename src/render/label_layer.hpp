@@ -93,6 +93,9 @@ private:
     sg_view iconView_{};
     sg_sampler sampler_{};
     std::vector<std::pair<int, int>> scratchKeys_;
+    std::shared_ptr<const ContourSet> contours_;
+    const ContourSet* contoursUploaded_ = nullptr;
+    sg_buffer contourBuffer_{};
     bool ready_ = false;
 };
 
