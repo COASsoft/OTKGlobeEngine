@@ -33,4 +33,4 @@ The libraries and data built into the engine keep their own licenses. Most are p
 
 Build tools that do not end up in the binary (CMake, Ninja, sokol-shdc) are not listed.
 
-The online map services that the demo presets point at (Esri World Imagery, OpenStreetMap, USGS, NASA GIBS, AWS Terrain Tiles) have their own terms of use, for example OpenStreetMap's attribution requirement. Those apply to using the services, not to the engine's code; an airgapped deployment with its own data is not affected.
+The online map services that the demo presets point at (Esri World Imagery and World Topographic Map, OpenStreetMap, NASA GIBS, AWS Terrain Tiles) have their own terms of use, for example OpenStreetMap's attribution requirement. Those apply to using the services, not to the engine's code; an airgapped deployment with its own data is not affected.
