@@ -845,14 +845,7 @@ void event(const sapp_event* e) {
             state->slope = !state->slope;
             eng.setTerrainSlope(state->slope);
         } else if (e->key_code == SAPP_KEYCODE_L) {
-            double gsd = eng.view().gsd;
-            double interval = 10;
-            for (double c : {10.0, 20.0, 50.0, 100.0, 200.0, 500.0, 1000.0})
-                if (c >= gsd * 15) {
-                    interval = c;
-                    break;
-                }
-            eng.addContours(eng.viewRegion(), interval);
+            eng.setContours(!eng.contoursEnabled(), state->contourInterval);
         } else if (e->key_code == SAPP_KEYCODE_B) {
             double lat, lon;
             if (eng.pick(state->mouseX, state->mouseY, lat, lon))
