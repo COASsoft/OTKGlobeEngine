@@ -26,6 +26,7 @@ add_library(otk_kernel STATIC
     raster/mobac.cpp
     raster/pmtiles.cpp
     raster/vector_tile.cpp
+    raster/canopy.cpp
     elevation/elevation.cpp
     elevation/elevation_service.cpp
     elevation/quantized_mesh.cpp
