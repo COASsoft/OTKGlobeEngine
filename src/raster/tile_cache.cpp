@@ -19,6 +19,9 @@ std::int64_t TileCache::now() {
 
 bool TileCache::openAt(const std::string& path) {
     if (!db_.open(path, false)) return false;
+#if defined(__EMSCRIPTEN__)
+    db_.exec("PRAGMA locking_mode=EXCLUSIVE");
+#endif
     if (!db_.exec("PRAGMA journal_mode=WAL")) return false;
     db_.exec("PRAGMA synchronous=NORMAL");
     if (!db_.exec("CREATE TABLE IF NOT EXISTS tiles (source TEXT NOT NULL, z INTEGER NOT NULL, x INTEGER NOT NULL, "
