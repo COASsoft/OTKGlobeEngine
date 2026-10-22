@@ -1,6 +1,7 @@
 #include "otk/navigation.hpp"
 
 #include "otk/mgrs.hpp"
+#include "core/contours.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -9,6 +10,7 @@
 #include <cstdio>
 #include <cstring>
 #include <ctime>
+#include <limits>
 #include <unordered_map>
 
 namespace otk {
@@ -634,10 +636,49 @@ std::vector<Feature> rangeBearingLine(const Coord& from, const Coord& to, NorthR
     return out;
 }
 
-std::vector<Feature> contourLines(const std::vector<float>& h, int cols, int rows, double west, double south, double east, double north,
-                                  double interval, int majorEvery, const ShapeStyle& style, DistanceUnit unit) {
-    std::vector<Feature> out;
-    if (cols < 2 || rows < 2 || h.size() < static_cast<size_t>(cols) * rows || interval <= 0) return out;
+namespace {
+
+void simplifyPath(std::vector<std::array<double, 2>>& pts, double tolerance) {
+    if (pts.size() < 3 || tolerance <= 0) return;
+    std::vector<char> keep(pts.size(), 0);
+    keep.front() = keep.back() = 1;
+    std::vector<std::pair<size_t, size_t>> stack{{0, pts.size() - 1}};
+    const double tol2 = tolerance * tolerance;
+    while (!stack.empty()) {
+        const auto [a, b] = stack.back();
+        stack.pop_back();
+        if (b <= a + 1) continue;
+        const double ax = pts[a][0], ay = pts[a][1], dx = pts[b][0] - ax, dy = pts[b][1] - ay;
+        const double len2 = dx * dx + dy * dy;
+        double worst = -1.0;
+        size_t at = a;
+        for (size_t i = a + 1; i < b; ++i) {
+            const double px = pts[i][0] - ax, py = pts[i][1] - ay;
+            const double c = px * dy - py * dx;
+            const double d2 = len2 > 0 ? c * c / len2 : px * px + py * py;
+            if (d2 > worst) {
+                worst = d2;
+                at = i;
+            }
+        }
+        if (worst > tol2) {
+            keep[at] = 1;
+            stack.push_back({a, at});
+            stack.push_back({at, b});
+        }
+    }
+    size_t n = 0;
+    for (size_t i = 0; i < pts.size(); ++i)
+        if (keep[i]) pts[n++] = pts[i];
+    pts.resize(n);
+}
+
+}
+
+std::vector<ContourPath> traceContours(const std::vector<float>& h, int cols, int rows, double west, double south, double east, double north,
+                                       double step, int majorEvery, long firstIndex, double simplifyCells) {
+    std::vector<ContourPath> out;
+    if (cols < 2 || rows < 2 || h.size() < static_cast<size_t>(cols) * rows || !(step > 0)) return out;
     float lo = 1e30f, hi = -1e30f;
     for (float v : h)
         if (std::isfinite(v)) {
@@ -645,40 +686,38 @@ std::vector<Feature> contourLines(const std::vector<float>& h, int cols, int row
             hi = std::max(hi, v);
         }
     if (lo > hi) return out;
-    double scale = unit == DistanceUnit::Metric ? 1.0 : 0.3048;
-    double step = interval * scale;
-    long first = static_cast<long>(std::ceil(lo / step)), last = static_cast<long>(std::floor(hi / step));
-    if (last - first > 2000) return out;
+    const long first = std::max(static_cast<long>(std::ceil(lo / step)), firstIndex), last = static_cast<long>(std::floor(hi / step));
+    if (last < first || last - first > 2000) return out;
+    struct Seg {
+        long long a = 0, b = 0;
+        std::array<double, 2> pa, pb;
+    };
+    std::vector<std::vector<Seg>> levels(static_cast<size_t>(last - first + 1));
     auto at = [&](int i, int j) { return h[static_cast<size_t>(j) * cols + i]; };
-    auto lonOf = [&](double i) { return west + (east - west) * i / (cols - 1); };
-    auto latOf = [&](double j) { return south + (north - south) * j / (rows - 1); };
-    for (long k = first; k <= last; ++k) {
-        double level = k * step;
-        bool major = majorEvery > 0 && k % majorEvery == 0;
-        struct Seg {
-            long long a = 0, b = 0;
-            Coord pa, pb;
-        };
-        std::vector<Seg> segs;
-        auto edgeKey = [&](int i, int j, int dir) { return (static_cast<long long>(j) * cols + i) * 2 + dir; };
-        auto cross = [&](int i0, int j0, int i1, int j1) {
-            double v0 = at(i0, j0), v1 = at(i1, j1);
-            double t = (level - v0) / (v1 - v0);
-            return Coord{latOf(j0 + (j1 - j0) * t), lonOf(i0 + (i1 - i0) * t), level};
-        };
-        for (int j = 0; j + 1 < rows; ++j)
-            for (int i = 0; i + 1 < cols; ++i) {
-                float v00 = at(i, j), v10 = at(i + 1, j), v01 = at(i, j + 1), v11 = at(i + 1, j + 1);
-                if (!std::isfinite(v00) || !std::isfinite(v10) || !std::isfinite(v01) || !std::isfinite(v11)) continue;
-                int c = (v00 > level ? 1 : 0) | (v10 > level ? 2 : 0) | (v11 > level ? 4 : 0) | (v01 > level ? 8 : 0);
+    auto edgeKey = [&](int i, int j, int dir) { return (static_cast<long long>(j) * cols + i) * 2 + dir; };
+    for (int j = 0; j + 1 < rows; ++j)
+        for (int i = 0; i + 1 < cols; ++i) {
+            const float v00 = at(i, j), v10 = at(i + 1, j), v01 = at(i, j + 1), v11 = at(i + 1, j + 1);
+            if (!std::isfinite(v00) || !std::isfinite(v10) || !std::isfinite(v01) || !std::isfinite(v11)) continue;
+            const float mn = std::min(std::min(v00, v10), std::min(v01, v11)), mx = std::max(std::max(v00, v10), std::max(v01, v11));
+            const long k0 = std::max(first, static_cast<long>(std::ceil(mn / step))), k1 = std::min(last, static_cast<long>(std::floor(mx / step)));
+            for (long k = k0; k <= k1; ++k) {
+                const double level = k * step;
+                const int c = (v00 > level ? 1 : 0) | (v10 > level ? 2 : 0) | (v11 > level ? 4 : 0) | (v01 > level ? 8 : 0);
                 if (c == 0 || c == 15) continue;
-                long long eb = edgeKey(i, j, 0), et = edgeKey(i, j + 1, 0), el = edgeKey(i, j, 1), er = edgeKey(i + 1, j, 1);
+                std::vector<Seg>& segs = levels[static_cast<size_t>(k - first)];
+                auto cross = [&](int i0, int j0, int i1, int j1) {
+                    const double w0 = at(i0, j0), w1 = at(i1, j1);
+                    const double t = (level - w0) / (w1 - w0);
+                    return std::array<double, 2>{i0 + (i1 - i0) * t, j0 + (j1 - j0) * t};
+                };
+                const long long eb = edgeKey(i, j, 0), et = edgeKey(i, j + 1, 0), el = edgeKey(i, j, 1), er = edgeKey(i + 1, j, 1);
                 auto pB = [&] { return cross(i, j, i + 1, j); };
                 auto pT = [&] { return cross(i, j + 1, i + 1, j + 1); };
                 auto pL = [&] { return cross(i, j, i, j + 1); };
                 auto pR = [&] { return cross(i + 1, j, i + 1, j + 1); };
-                auto add = [&](long long a, Coord ca, long long b, Coord cb) { segs.push_back({a, b, ca, cb}); };
-                double center = (v00 + v10 + v01 + v11) / 4.0;
+                auto add = [&](long long a, std::array<double, 2> ca, long long b, std::array<double, 2> cb) { segs.push_back({a, b, ca, cb}); };
+                const double center = (v00 + v10 + v01 + v11) / 4.0;
                 switch (c) {
                 case 1: case 14: add(el, pL(), eb, pB()); break;
                 case 2: case 13: add(eb, pB(), er, pR()); break;
@@ -707,13 +746,21 @@ std::vector<Feature> contourLines(const std::vector<float>& h, int cols, int row
                 default: break;
                 }
             }
+        }
+    const double sx = (east - west) / (cols - 1), sy = (north - south) / (rows - 1);
+    std::unordered_multimap<long long, size_t> byEdge;
+    std::vector<bool> used;
+    for (long k = first; k <= last; ++k) {
+        std::vector<Seg>& segs = levels[static_cast<size_t>(k - first)];
         if (segs.empty()) continue;
-        std::unordered_multimap<long long, size_t> byEdge;
+        const bool major = majorEvery > 0 && k % majorEvery == 0;
+        byEdge.clear();
+        byEdge.reserve(segs.size() * 2);
         for (size_t s = 0; s < segs.size(); ++s) {
             byEdge.emplace(segs[s].a, s);
             byEdge.emplace(segs[s].b, s);
         }
-        std::vector<bool> used(segs.size(), false);
+        used.assign(segs.size(), false);
         auto next = [&](long long edge, size_t from) -> long {
             auto range = byEdge.equal_range(edge);
             for (auto it = range.first; it != range.second; ++it)
@@ -723,37 +770,59 @@ std::vector<Feature> contourLines(const std::vector<float>& h, int cols, int row
         for (size_t s = 0; s < segs.size(); ++s) {
             if (used[s]) continue;
             used[s] = true;
-            std::vector<Coord> chain{segs[s].pa, segs[s].pb};
+            std::vector<std::array<double, 2>> chain{segs[s].pa, segs[s].pb};
             long long tail = segs[s].b, head = segs[s].a;
             for (long n = next(tail, s); n >= 0; n = next(tail, static_cast<size_t>(n))) {
                 used[n] = true;
-                bool forward = segs[n].a == tail;
+                const bool forward = segs[n].a == tail;
                 chain.push_back(forward ? segs[n].pb : segs[n].pa);
                 tail = forward ? segs[n].b : segs[n].a;
             }
-            std::vector<Coord> front;
+            std::vector<std::array<double, 2>> front;
             for (long n = next(head, s); n >= 0; n = next(head, static_cast<size_t>(n))) {
                 used[n] = true;
-                bool forward = segs[n].b == head;
+                const bool forward = segs[n].b == head;
                 front.push_back(forward ? segs[n].pa : segs[n].pb);
                 head = forward ? segs[n].a : segs[n].b;
             }
             if (!front.empty()) chain.insert(chain.begin(), front.rbegin(), front.rend());
             if (chain.size() < 3 && !major) continue;
-            Feature f;
-            f.type = "u-d-f";
-            f.geometries.push_back({GeometryType::LineString, std::move(chain), {}});
-            f.style.strokeColor = style.stroke;
-            f.style.strokeWidth = major ? style.width * 1.6f : style.width * 0.8f;
-            f.style.labelColor = style.label;
-            char buf[32];
-            std::snprintf(buf, sizeof(buf), unit == DistanceUnit::Metric ? "%.0f m" : "%.0f ft", k * interval);
-            f.name = buf;
-            f.style.showLabel = major && style.labels;
-            setAttribute(f, "contour", std::to_string(k * interval));
-            setAttribute(f, "major", major ? "1" : "0");
-            out.push_back(std::move(f));
+            simplifyPath(chain, simplifyCells);
+            ContourPath path;
+            path.index = k;
+            path.major = major;
+            path.points.reserve(chain.size());
+            for (const auto& p : chain) path.points.push_back({west + p[0] * sx, south + p[1] * sy});
+            out.push_back(std::move(path));
         }
+        std::vector<Seg>().swap(segs);
+    }
+    return out;
+}
+
+std::vector<Feature> contourLines(const std::vector<float>& h, int cols, int rows, double west, double south, double east, double north,
+                                  double interval, int majorEvery, const ShapeStyle& style, DistanceUnit unit) {
+    std::vector<Feature> out;
+    if (interval <= 0) return out;
+    const double step = interval * (unit == DistanceUnit::Metric ? 1.0 : 0.3048);
+    for (ContourPath& c : traceContours(h, cols, rows, west, south, east, north, step, majorEvery, std::numeric_limits<long>::min(), 0.33)) {
+        const double level = c.index * step;
+        std::vector<Coord> line;
+        line.reserve(c.points.size());
+        for (const auto& p : c.points) line.push_back({p[1], p[0], level});
+        Feature f;
+        f.type = "u-d-f";
+        f.geometries.push_back({GeometryType::LineString, std::move(line), {}});
+        f.style.strokeColor = style.stroke;
+        f.style.strokeWidth = c.major ? style.width * 1.6f : style.width * 0.8f;
+        f.style.labelColor = style.label;
+        char buf[32];
+        std::snprintf(buf, sizeof(buf), unit == DistanceUnit::Metric ? "%.0f m" : "%.0f ft", c.index * interval);
+        f.name = buf;
+        f.style.showLabel = c.major && style.labels;
+        setAttribute(f, "contour", std::to_string(c.index * interval));
+        setAttribute(f, "major", c.major ? "1" : "0");
+        out.push_back(std::move(f));
     }
     return out;
 }
