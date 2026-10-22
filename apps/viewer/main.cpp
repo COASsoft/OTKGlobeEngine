@@ -62,6 +62,7 @@ struct ViewerState {
     otk::Region download;
     int downloadMin = 0, downloadMax = 0;
     int downloadId = 0;
+    int labelsDownload = 0;
     std::vector<std::string> imports;
     int gridType = 0;
     bool slope = false;
@@ -368,6 +369,8 @@ void checkHoles() {
     }
 }
 
+void showStatus(const std::string& s);
+
 void frame() {
     watchdogBeat();
     if (!state->shotPath.empty()) {
@@ -578,6 +581,20 @@ void frame() {
             state->perfFrames = 0;
             state->perfFrameMs = state->perfFrameMax = state->perfCpuMs = state->perfCpuMax = 0;
             state->perfRenders = state->perfBuilds = state->perfUploads = 0;
+        }
+    }
+    if (state->labelsDownload) {
+        const otk::DownloadStatus d = state->engine.downloadStatus(state->labelsDownload);
+        char msg[160];
+        if (d.finished) {
+            std::snprintf(msg, sizeof(msg), "Roads downloaded: %lld of %lld tiles%s", static_cast<long long>(d.done), static_cast<long long>(d.total),
+                          d.failed ? ", some failed" : "");
+            state->labelsDownload = 0;
+            showStatus(msg);
+        } else if (state->titleTimer > 0.45) {
+            std::snprintf(msg, sizeof(msg), "Downloading roads %lld / %lld", static_cast<long long>(d.done + d.failed), static_cast<long long>(d.total));
+            state->status = msg;
+            state->statusTime = 8.0;
         }
     }
     state->titleTimer += sapp_frame_duration();
@@ -841,6 +858,15 @@ void event(const sapp_event* e) {
         } else if (e->key_code == SAPP_KEYCODE_K) {
             state->slope = !state->slope;
             eng.setTerrainSlope(state->slope);
+        } else if (e->key_code == SAPP_KEYCODE_J) {
+            if (!eng.labelsEnabled()) {
+                showStatus("Labels are off, press I first");
+            } else if (int id = eng.downloadLabels(eng.viewRegion())) {
+                state->labelsDownload = id;
+                showStatus("Downloading roads and street names for this view");
+            } else {
+                showStatus("Roads come from a local file, nothing to download");
+            }
         } else if (e->key_code == SAPP_KEYCODE_L) {
             eng.setContours(!eng.contoursEnabled(), state->contourInterval);
         } else if (e->key_code == SAPP_KEYCODE_B) {
