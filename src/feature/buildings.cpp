@@ -714,4 +714,137 @@ BuildingMesh buildBuildingMesh(const std::vector<BuildingShape>& shapes, const s
     return mesh;
 }
 
+
+std::vector<std::array<double, 2>> canopySamplePoints(int z, int x, int y) {
+    std::vector<std::array<double, 2>> out;
+    out.reserve(kCanopyGround * kCanopyGround);
+    for (int j = 0; j < kCanopyGround; ++j)
+        for (int i = 0; i < kCanopyGround; ++i) {
+            double lat, lon;
+            toGeo(z, x, y, {i / double(kCanopyGround - 1), j / double(kCanopyGround - 1)}, lat, lon);
+            out.push_back({lat, lon});
+        }
+    return out;
+}
+
+BuildingMesh buildCanopyMesh(const std::vector<std::uint8_t>& canopy, int size, int step, int z, int x, int y,
+                             const std::vector<double>& ground, int atlas) {
+    BuildingMesh mesh;
+    if (size <= 1 || step <= 0 || canopy.size() < static_cast<std::size_t>(size) * size) return mesh;
+    toGeo(z, x, y, {0.5, 0.5}, mesh.lat, mesh.lon);
+    Vec3 E, N, U;
+    enuFrame(mesh.lat, mesh.lon, E, N, U);
+    const Vec3 origin = geodeticToEcef(mesh.lat, mesh.lon, 0.0);
+    double fallback = 0.0;
+    for (double g : ground)
+        if (std::isfinite(g)) {
+            fallback = g;
+            break;
+        }
+    auto groundAt = [&](double fx, double fy) {
+        if (ground.size() < static_cast<std::size_t>(kCanopyGround) * kCanopyGround) return fallback;
+        const double gx = std::clamp(fx, 0.0, 1.0) * (kCanopyGround - 1), gy = std::clamp(fy, 0.0, 1.0) * (kCanopyGround - 1);
+        const int ix = std::min(static_cast<int>(gx), kCanopyGround - 2), iy = std::min(static_cast<int>(gy), kCanopyGround - 2);
+        const double tx = gx - ix, ty = gy - iy;
+        auto at = [&](int a, int b) {
+            const double v = ground[static_cast<std::size_t>(b) * kCanopyGround + a];
+            return std::isfinite(v) ? v : fallback;
+        };
+        return (at(ix, iy) * (1 - tx) + at(ix + 1, iy) * tx) * (1 - ty) + (at(ix, iy + 1) * (1 - tx) + at(ix + 1, iy + 1) * tx) * ty;
+    };
+    const int cells = (size - 1) / step;
+    const int points = cells + 1;
+    std::vector<float> grid(static_cast<std::size_t>(points) * points);
+    for (int j = 0; j < points; ++j)
+        for (int i = 0; i < points; ++i) {
+            float m = 0.0f;
+            for (int dj = 0; dj < step; ++dj)
+                for (int di = 0; di < step; ++di) {
+                    const int a = std::min(i * step + di, size - 1), b = std::min(j * step + dj, size - 1);
+                    m = std::max(m, static_cast<float>(canopy[static_cast<std::size_t>(b) * size + a]));
+                }
+            grid[static_cast<std::size_t>(j) * points + i] = m;
+        }
+    for (int pass = 0; pass < 2; ++pass) {
+        std::vector<float> next(grid.size());
+        for (int j = 0; j < points; ++j)
+            for (int i = 0; i < points; ++i) {
+                float sum = 0.0f, weight = 0.0f;
+                for (int dj = -1; dj <= 1; ++dj)
+                    for (int di = -1; di <= 1; ++di) {
+                        const int a = std::clamp(i + di, 0, points - 1), b = std::clamp(j + dj, 0, points - 1);
+                        const float w = (di == 0 ? 2.0f : 1.0f) * (dj == 0 ? 2.0f : 1.0f);
+                        sum += grid[static_cast<std::size_t>(b) * points + a] * w;
+                        weight += w;
+                    }
+                const float c = grid[static_cast<std::size_t>(j) * points + i];
+                next[static_cast<std::size_t>(j) * points + i] = c > 0.0f ? std::max(sum / weight, c * 0.8f) : sum / weight * 0.6f;
+            }
+        grid.swap(next);
+    }
+    auto height = [&](int i, int j) {
+        i = std::clamp(i, 0, points - 1);
+        j = std::clamp(j, 0, points - 1);
+        return static_cast<double>(grid[static_cast<std::size_t>(j) * points + i]);
+    };
+    double latA, lonA, latB, lonB;
+    toGeo(z, x, y, {0.0, 0.5}, latA, lonA);
+    toGeo(z, x, y, {1.0, 0.5}, latB, lonB);
+    const double spacing = length(geodeticToEcef(latA, lonA, 0.0) - geodeticToEcef(latB, lonB, 0.0)) / cells;
+    constexpr double kMin = 2.5;
+    std::vector<std::int32_t> index(static_cast<std::size_t>(points) * points, -1);
+    auto vertex = [&](int i, int j) {
+        std::int32_t& slot = index[static_cast<std::size_t>(j) * points + i];
+        if (slot >= 0) return static_cast<std::uint32_t>(slot);
+        const double fx = static_cast<double>(i) / cells, fy = static_cast<double>(j) / cells;
+        double lat, lon;
+        toGeo(z, x, y, {fx, fy}, lat, lon);
+        const double base = groundAt(fx, fy);
+        const double h = height(i, j);
+        const double top = base + (h >= 1.0 ? h : -0.6);
+        const Vec3 d = geodeticToEcef(lat, lon, top) - origin;
+        const double dEast = (height(i + 1, j) - height(i - 1, j)) / (2.0 * spacing);
+        const double dNorth = (height(i, j - 1) - height(i, j + 1)) / (2.0 * spacing);
+        const Vec3 n = normalize(Vec3{-dEast, -dNorth, 1.0});
+        BuildingVertex v{};
+        v.position[0] = static_cast<float>(dot(d, E));
+        v.position[1] = static_cast<float>(dot(d, N));
+        v.position[2] = static_cast<float>(dot(d, U));
+        v.normal[0] = static_cast<float>(n.x);
+        v.normal[1] = static_cast<float>(n.y);
+        v.normal[2] = static_cast<float>(n.z);
+        v.texcoord[0] = static_cast<float>(fx);
+        v.texcoord[1] = static_cast<float>(fy);
+        v.tint = 0xFFFFFFFFu;
+        v.base = static_cast<float>(dot(geodeticToEcef(lat, lon, base - 0.6) - origin, U));
+        v.kind = 1.0f;
+        mesh.vertices.push_back(v);
+        slot = static_cast<std::int32_t>(mesh.vertices.size() - 1);
+        return static_cast<std::uint32_t>(slot);
+    };
+    for (int j = 0; j < cells; ++j)
+        for (int i = 0; i < cells; ++i) {
+            const double a = height(i, j), b = height(i + 1, j), c = height(i + 1, j + 1), d = height(i, j + 1);
+            if (std::max(std::max(a, b), std::max(c, d)) < kMin) continue;
+            const std::uint32_t va = vertex(i, j), vb = vertex(i + 1, j), vc = vertex(i + 1, j + 1), vd = vertex(i, j + 1);
+            mesh.indices.insert(mesh.indices.end(), {va, vd, vc, va, vc, vb});
+        }
+    if (mesh.indices.empty()) return mesh;
+    constexpr int kSplit = 8;
+    const int span = atlas / kSplit;
+    for (int j = 0; j < kSplit; ++j)
+        for (int i = 0; i < kSplit; ++i) {
+            RoofCell cell;
+            toGeo(z, x, y, {static_cast<double>(i) / kSplit, static_cast<double>(j) / kSplit}, cell.north, cell.west);
+            toGeo(z, x, y, {static_cast<double>(i + 1) / kSplit, static_cast<double>(j + 1) / kSplit}, cell.south, cell.east);
+            cell.x = i * span;
+            cell.y = j * span;
+            cell.w = span;
+            cell.h = span;
+            mesh.cells.push_back(cell);
+        }
+    mesh.atlas = atlas;
+    return mesh;
+}
+
 }
