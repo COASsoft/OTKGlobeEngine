@@ -18,6 +18,14 @@
 - Walls use photographed facades built into the engine (glass curtain walls, office grids, brick and stone with windows for towers and mid-rises; painted siding, stucco, concrete and metal with windows for houses, shops and sheds), picked from the height and footprint, tinted with OpenStreetMap `building:colour` where present, lit by the sun or a fixed light.
 - Buildings stand on the terrain, grow in when they appear and fade out with distance and altitude.
 
+### Web
+- The engine now also builds for web pages (WebAssembly and WebGL 2) as the `otkglobeengine` npm package: `OTKGlobe.create(canvas)` gives the same globe, imagery, terrain, roads, labels, 3D buildings and controls as the native builds, with mouse, touch and keyboard input, `open()` for dropped or fetched files, and TypeScript types. `python scripts/web_build.py` builds it (it installs Emscripten if needed); pages must be served cross-origin isolated. Downloaded roads stay in memory for the session.
+- Releases publish the npm package and the NuGet package when `NPM_TOKEN` and `NUGET_API_KEY` repository secrets are set.
+
+### Loading
+- Phones and tablets get a larger tile memory budget (16% of RAM, was 10%), and prefetching stops when the budget is full instead of evicting tiles the view still needs. A tilted city view on a 4 GB tablet kept reloading tiles and never finished loading roads and buildings.
+- Road names and styling no longer blink while moving a tilted view: labels come from the most detailed road tiles loaded for each area, stay in place for a moment while newer tiles arrive, and keep their fade when a label moves to a different tile.
+
 ### Controls
 - Built-in map controls in the bottom-right corner, plain and on by default: zoom in and out, a compass that shows and resets north, a 2D/3D button, a layers button with the map list and switches for labels, contours and 3D terrain plus a roads download, a scale bar (metric or imperial) and the map credits. They work with mouse, touch and pen and take a press before the map does.
 - `Engine::setControls(mask)` turns them off or keeps only some (`ControlZoom`, `ControlCompass`, `ControlTilt`, `ControlLayers`, `ControlScale`, `ControlAttribution`; `otk_set_controls`, .NET `Controls`, Swift `controls`, Android `setControls`, viewer `--controls`). `-DOTK_CONTROLS=OFF` leaves them out of the build. The code lives in `src/ui`.
