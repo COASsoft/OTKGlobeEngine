@@ -70,7 +70,8 @@ struct ViewerState {
     bool slope = false;
     double contourInterval = 0;
     int controls = -1;
-    bool buildings = true;
+    // bool buildings = true;
+    bool buildings = false;
     bool contours = false;
     std::vector<std::array<double, 3>> bullseyes;
     std::vector<std::array<double, 4>> rings;
