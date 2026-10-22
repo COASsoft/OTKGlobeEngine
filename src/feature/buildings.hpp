@@ -39,7 +39,10 @@ struct BuildingMesh {
     int atlas = 0;
     double lat = 0.0, lon = 0.0;
     int buildings = 0;
+    std::vector<std::uint8_t> heights;
 };
+
+constexpr int kBuildingHeightGrid = 128;
 
 enum BuildingTexture : int {
     FacadeGlass = 0,
