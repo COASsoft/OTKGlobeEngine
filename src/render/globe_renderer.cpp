@@ -669,6 +669,11 @@ void GlobeRenderer::setLayerList(const std::vector<ImageryLayer>& layers) {
             baseLayer_ = l;
             break;
         }
+    const bool photo = baseLayer_ < 0 || layers_[baseLayer_].photo;
+    if (photo != basePhoto_) {
+        basePhoto_ = photo;
+        buildings_.clear();
+    }
     usefulLevel_ = kMaxLevel;
     int best = -1;
     bool vectorOnly = true;
@@ -740,6 +745,7 @@ void GlobeRenderer::setContours(std::shared_ptr<const ContourSet> set) {
 
 BuildingLayer::ImageryFn GlobeRenderer::roofImagery() {
     if (baseLayer_ < 0 || baseLayer_ >= static_cast<int>(matrices_.size())) return {};
+    if (baseLayer_ < static_cast<int>(layers_.size()) && !layers_[baseLayer_].photo) return {};
     const int layer = baseLayer_;
     return [this, layer](double w, double s, double e, double n, int level, bool request, std::vector<BuildingLayer::Piece>& out) {
         out.clear();
