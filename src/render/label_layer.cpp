@@ -503,6 +503,7 @@ struct LabelLayer::Text {
     std::unordered_map<std::uint64_t, Fade> fades;
     std::chrono::steady_clock::time_point last{};
     bool animating = false;
+    std::unordered_map<std::uint64_t, std::pair<std::uint64_t, bool>> hidden;
 };
 
 LabelLayer::LabelLayer() : text_(std::make_unique<Text>()) {}
@@ -893,7 +894,7 @@ void LabelLayer::drawSurface(const GeoRect& tile, double unitDeg, double dpi) {
 }
 
 void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dpi, const std::vector<GeoRect>& visible,
-                            const std::vector<const VectorTile*>& overlay, int view, bool places) {
+                            const std::vector<const VectorTile*>& overlay, int view, bool places, const GroundFn& above) {
     if (!ready_ || cam.width <= 0 || cam.height <= 0) return;
     Text& T = *text_;
     GlyphCache& glyphs = T.glyphs;
@@ -1100,10 +1101,40 @@ void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dp
     std::vector<Item> placed;
     std::vector<std::string_view> lines;
     std::vector<std::array<double, 3>> screen;
+    const bool checkTerrain = cam.firstPerson || cam.tilt > 25.0;
+    int terrainChecks = 0;
+    if (T.hidden.size() > 30000) T.hidden.clear();
+    auto hiddenByTerrain = [&](std::uint64_t key, double lat, double lon, double h) {
+        if (!checkTerrain) return false;
+        auto cached = T.hidden.find(key);
+        if (cached != T.hidden.end() && cached->second.first + 8 > frame_) return cached->second.second;
+        if (++terrainChecks > 200) return cached != T.hidden.end() && cached->second.second;
+        const Vec3 a = geodeticToEcef(lat, lon, h + 2.0);
+        const Vec3 d = a - eye;
+        const double dist = length(d);
+        if (dist < 200.0) return false;
+        const int steps = above ? std::clamp(static_cast<int>(dist / 40.0), 6, 96) : std::clamp(static_cast<int>(dist / 500.0), 6, 16);
+        for (int i = 1; i < steps; ++i) {
+            const double t = static_cast<double>(i) / steps;
+            const GeoPoint g = ecefToGeodetic(eye + d * t);
+            const double top = ground(g.lat, g.lon) + (above && dist * (1.0 - t) > 25.0 ? above(g.lat, g.lon) : 0.0);
+            if (g.alt < top - 3.0) {
+                T.hidden[key] = {frame_ + (key % 8), true};
+                return true;
+            }
+        }
+        T.hidden[key] = {frame_ + (key % 8), false};
+        return false;
+    };
     for (const Candidate& c : candidates) {
         if (static_cast<int>(placed.size()) >= kMaxLabels) break;
         const TileMark* m = c.mark;
         if (m && !glyphs.covers(m->text)) continue;
+        if (c.place && hiddenByTerrain(c.key, c.place->lat, c.place->lon, c.height)) continue;
+        if (m && m->type != MarkType::Contour && !m->points.empty()) {
+            const auto& mid = m->points[m->points.size() / 2];
+            if (hiddenByTerrain(c.key, mid[1], mid[0], c.height)) continue;
+        }
         const TextStyle s = m ? markStyle(*m, dpi) : styleFor(*c.place, c.zoom, dpi);
         const float em = s.size;
         Item item;
