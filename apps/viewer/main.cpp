@@ -70,6 +70,7 @@ struct ViewerState {
     bool slope = false;
     double contourInterval = 0;
     int controls = -1;
+    bool buildings = true;
     bool contours = false;
     std::vector<std::array<double, 3>> bullseyes;
     std::vector<std::array<double, 4>> rings;
@@ -246,6 +247,7 @@ void init() {
     for (const auto& f : state->featureFiles) state->engine.loadFeatures(f);
     state->engine.setGridEnabled(state->grid);
     state->engine.setLabelsEnabled(state->labels);
+    state->engine.setBuildingsEnabled(state->buildings);
     if (state->controls >= 0) state->engine.setControls(static_cast<std::uint32_t>(state->controls));
     else if (!state->shotPath.empty()) state->engine.setControls(0);
     if (state->contours) state->engine.setContours(true, state->contourInterval);
@@ -1069,6 +1071,8 @@ void parseArgs(int argc, char** argv) {
             state->gridType = std::clamp(std::atoi(argv[++i]), 0, 2);
         } else if (a == "--slope") {
             state->slope = std::atoi(argv[++i]) != 0;
+        } else if (a == "--buildings") {
+            state->buildings = std::atoi(argv[++i]) != 0;
         } else if (a == "--controls") {
             state->controls = std::atoi(argv[++i]);
         } else if (a == "--contours") {
