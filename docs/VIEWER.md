@@ -45,6 +45,8 @@ FreeBSD, OpenBSD and NetBSD: `sh scripts/bsd_build.sh` installs the build depend
 
 macOS: `cmake -S . -B build -G Ninja && cmake --build build`. iOS: `cmake -S . -B build -G Xcode -DCMAKE_SYSTEM_NAME=iOS`.
 
+Web (WebAssembly npm package): `python scripts/web_build.py` builds `bindings/web/dist` and installs the Emscripten SDK into `~/emsdk` if it is missing; `--pack` also makes the `.tgz`. `node bindings/web/example/serve.mjs` serves a test page at http://localhost:8080/example/.
+
 Android: `python scripts/android_apk.py --install --run` builds, signs and installs a standalone viewer APK (needs the Android SDK and NDK).
 
 OpenGL on Windows (to check the GL path used on Linux and Android): add `-DOTK_GFX_BACKEND=SOKOL_GLCORE -DOTK_SHDC_LANG=glsl410` to the CMake configure.
