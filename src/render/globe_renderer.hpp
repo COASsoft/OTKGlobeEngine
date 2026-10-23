@@ -633,6 +633,7 @@ private:
     int uniformZ_ = 99;
     double coarsenAt_ = -1.0;
     int pendingMergeZ_ = 99;
+    double stepWait_ = -1.0;
     bool stepWanted_ = false;
     bool stepSnapshot_ = false;
     bool stepInstant_ = false;
