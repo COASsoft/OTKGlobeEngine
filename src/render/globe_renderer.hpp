@@ -224,6 +224,8 @@ private:
         QuadKey key;
         double distance = 0;
         int kind = 0;
+        QuadKey merge{-1, 0, 0};
+        float mergeT = 0.0f;
     };
     struct Need {
         QuadKey key;
@@ -244,7 +246,18 @@ private:
         int fromVersion = -1;
         double start = -1.0;
         std::uint64_t frame = 0;
+        QuadKey merge{-1, 0, 0};
+        int mergeVersion = -1;
+        float mergeT = 0.0f;
+        std::uint64_t mergeFrame = 0;
     };
+    struct Merge {
+        double start = 0.0;
+        std::uint64_t frame = 0;
+    };
+    std::unordered_map<QuadKey, Merge, QuadKeyHash> merges_;
+    int mergeDepth_ = 0;
+    double mergeSeconds_ = 0.35;
     struct SurfaceDraw {
         sg_view texture{};
         float opacity = 1.0f;
