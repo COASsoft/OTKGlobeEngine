@@ -337,6 +337,7 @@ public:
     void frameStereo(const sg_swapchain& swapchain, double eyeSeparation = 0.0);
     void frameStereoOffscreen(const sg_attachments& attachments, int width, int height, double eyeSeparation = 0.0);
     bool needsRedraw() const;
+    double nextFrameDelay() const;
     Stats stats() const;
     void setControls(std::uint32_t controls);
     std::uint32_t controls() const;
