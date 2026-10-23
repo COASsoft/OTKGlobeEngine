@@ -124,6 +124,7 @@ namespace OTKGlobeEngine
         [DllImport(Lib)] public static extern void otk_frame_d3d11(IntPtr e, int width, int height, IntPtr renderView, IntPtr resolveView, IntPtr depthStencilView, float dpi);
         [DllImport(Lib)] public static extern void otk_frame_metal(IntPtr e, int width, int height, IntPtr drawable, IntPtr depth, IntPtr msaa, float dpi);
         [DllImport(Lib)] public static extern int otk_needs_redraw(IntPtr e);
+        [DllImport(Lib)] public static extern double otk_next_frame_delay(IntPtr e);
         [DllImport(Lib)] public static extern void otk_set_cache_directory(IntPtr e, [MarshalAs(UnmanagedType.LPUTF8Str)] string dir);
         [DllImport(Lib)] public static extern void otk_set_offline(IntPtr e, int offline);
         [DllImport(Lib)] public static extern void otk_set_cache_limit(IntPtr e, int megabytes);
@@ -255,6 +256,7 @@ namespace OTKGlobeEngine
         public static Engine CreateOpenGL(bool gles = false, int samples = 1) => new Engine(Native.otk_create_gl(gles ? 1 : 0, samples));
 
         public bool NeedsRedraw => Native.otk_needs_redraw(Handle) != 0;
+        public double NextFrameDelay => Native.otk_next_frame_delay(Handle);
 
         public void FrameD3D11(int width, int height, IntPtr renderView, IntPtr depthStencilView, float dpi = 1f) =>
             Native.otk_frame_d3d11(Handle, width, height, renderView, IntPtr.Zero, depthStencilView, dpi);
