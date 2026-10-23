@@ -113,6 +113,7 @@ struct Stats {
     double fadeArea = 0;
     double coverArea = 0;
     int pops = 0;
+    long long fadeMisses = 0;
 };
 
 struct DownloadStatus {
