@@ -2858,19 +2858,6 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
              os == surface_.end() ? size_t(0) : os->second.missing.size(), ss == surface_.end() ? -1 : ss->second.imageryZ,
              ss == surface_.end() ? -1 : ss->second.sourceZ, failed_.size(), imagery_.size());
     }
-    for (auto& dt : tiles) {
-        auto prev = drawn_.find(dt.key);
-        if (prev == drawn_.end() || prev->second + 1 < frame_) {
-            for (int up = 1; up <= 4 && dt.key.level - up >= 0; ++up) {
-                QuadKey a{dt.key.level - up, dt.key.x >> up, dt.key.y >> up};
-                auto pa = drawn_.find(a);
-                if (pa != drawn_.end() && pa->second + 1 >= frame_) {
-                    fades_[dt.key] = {tnow, a};
-                    break;
-                }
-            }
-        }
-    }
     for (auto& dt : tiles) drawn_[dt.key] = frame_;
     if (snapshotShown_ && snapshotFade_ < 0.0) {
         bool ready = true;
