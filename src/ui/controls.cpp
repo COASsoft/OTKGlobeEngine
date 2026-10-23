@@ -351,17 +351,30 @@ float Controls::measure(std::string_view s, int size) const {
 }
 
 std::string Controls::fit(const std::string& s, float width, int size) const {
-    if (measure(s, size) <= width) return s;
-    const std::string dots = "\xE2\x80\xA6";
-    std::string out = s;
-    while (!out.empty()) {
-        size_t cut = out.size() - 1;
-        while (cut > 0 && (static_cast<unsigned char>(out[cut]) & 0xC0) == 0x80) --cut;
-        out.erase(cut);
-        while (!out.empty() && out.back() == ' ') out.pop_back();
-        if (measure(out + dots, size) <= width) return out + dots;
+    std::string key = std::to_string(size) + ':' + std::to_string(static_cast<int>(std::floor(width))) + ':' + s;
+    auto cached = fits_.find(key);
+    if (cached != fits_.end()) return cached->second;
+    if (fits_.size() > 64) fits_.clear();
+    std::string result;
+    if (measure(s, size) <= width) {
+        result = s;
+    } else {
+        const std::string dots = "\xE2\x80\xA6";
+        std::string out = s;
+        result = dots;
+        while (!out.empty()) {
+            size_t cut = out.size() - 1;
+            while (cut > 0 && (static_cast<unsigned char>(out[cut]) & 0xC0) == 0x80) --cut;
+            out.erase(cut);
+            while (!out.empty() && out.back() == ' ') out.pop_back();
+            if (measure(out + dots, size) <= width) {
+                result = out + dots;
+                break;
+            }
+        }
     }
-    return dots;
+    fits_.emplace(std::move(key), result);
+    return result;
 }
 
 void Controls::button(const Target& t, bool active) {
