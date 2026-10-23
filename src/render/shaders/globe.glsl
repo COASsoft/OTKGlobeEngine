@@ -111,6 +111,7 @@ void main() {
     float edge = (1.0 - smoothstep(0.0, 1.0, lodw)) * sgain;
     vec3 c = own;
     if (edge > 0.0) c = mix(own, textureGrad(sampler2D(tex3, smp), t3, d3x, d3y).rgb, edge);
+    if (heat.w > 0.0) c = mix(c, texture(sampler2D(tex3, smp), t3).rgb, heat.w);
     c = mix(c, ramp((elev - heat.x) * heat.y), heat.z);
     if (slope.x > 0.0) {
         float cs = clamp(light, 0.0001, 1.0);
