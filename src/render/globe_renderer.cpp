@@ -142,6 +142,7 @@ bool GlobeRenderer::init() {
     if (const char* v = std::getenv("OTK_MERGE_FADE")) mergeSeconds_ = std::max(0.0, std::atof(v));
     if (const char* v = std::getenv("OTK_REVEAL_HOLD")) revealHold_ = std::max(0.0, std::atof(v));
     if (const char* v = std::getenv("OTK_REVEAL_GAP")) revealGap_ = std::max(0.0, std::atof(v));
+    if (const char* v = std::getenv("OTK_MOTION_HOLD")) motionHold_ = std::max(0.0, std::atof(v));
     if (const char* v = std::getenv("OTK_MAX_DIVE")) maxDive_ = std::atoi(v);
     if (const char* v = std::getenv("OTK_LOD_MORPH")) lodMorph_ = std::clamp(std::atof(v), 0.0, 1.0);
     if (const char* v = std::getenv("OTK_MARGIN")) marginPrefetch_ = std::max(1.0, std::atof(v));
@@ -3194,8 +3195,21 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         }
         return low;
     };
-    revealOpen_ = revealHold_ <= 0.0 ||
-                  (heldPrev_ > 0 && tnow - lastReveal_ >= revealGap_ && (waitingPrev_ == 0 || tnow - oldestHeldPrev_ >= revealHold_));
+    {
+        const double key[5] = {cam.focus.lat, cam.focus.lon, std::log(std::max(cam.gsd, 1e-6)), cam.azimuth, cam.tilt};
+        const double eps[5] = {1e-9, 1e-9, 1e-6, 1e-4, 1e-4};
+        for (int i = 0; i < 5; ++i)
+            if (std::abs(key[i] - motionKey_[i]) > eps[i]) lastMotion_ = tnow;
+        std::copy(key, key + 5, motionKey_);
+    }
+    {
+        const double still = tnow - lastMotion_;
+        const double heldAge = tnow - oldestHeldPrev_;
+        if (revealHold_ <= 0.0) revealOpen_ = true;
+        else if (heldPrev_ == 0 || tnow - lastReveal_ < revealGap_) revealOpen_ = false;
+        else if (still < 0.15) revealOpen_ = motionHold_ > 0.0 && heldAge >= motionHold_;
+        else revealOpen_ = waitingPrev_ == 0 || std::min(heldAge, still) >= revealHold_;
+    }
     if (revealOpen_ && heldPrev_ > 0) lastReveal_ = tnow;
     int heldNow = 0;
     int waitingNow = refineWaiting_;
