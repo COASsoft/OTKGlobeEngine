@@ -221,6 +221,7 @@ private:
         int lineCount = 0;
         int roadCount = 0;
         int solidRoads = 0;
+        bool drawn = false;
     };
     struct DrawTile {
         QuadKey key;
