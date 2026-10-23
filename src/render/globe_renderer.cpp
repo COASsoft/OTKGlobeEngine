@@ -2833,6 +2833,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             }
         if (!best) return QuadKey{-1, 0, 0};
         best->used = frame_;
+        best->shown = frame_;
         view = best->texture;
         double sc = 1.0 / (1 << bestK);
         QuadKey a{key.level - bestK, key.x >> bestK, key.y >> bestK};
