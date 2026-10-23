@@ -3882,6 +3882,14 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             tr.merge = {-1, 0, 0};
         }
         if ((frozenNow || stepInstant_) && tr.start >= 0.0 && tnow - tr.start < kFadeSeconds) tr.start = tnow - kFadeSeconds;
+        if (zCap < 99 && tr.from.level >= 0 && zOf(tr.from) > zCap) {
+            if (tr.start >= 0.0 && tnow - tr.start < kFadeSeconds) tr.start = tnow - kFadeSeconds;
+            if (tr.held) {
+                tr.held = false;
+                tr.start = tnow - kFadeSeconds;
+                tr.why = 'c';
+            }
+        }
         if (lines3d_ && labelsOn_) lineTiles.push_back({dt.key, tr.held && tr.from.level >= 0 ? tr.from : src});
         if (visualLog_) {
             const QuadKey shownKey = tr.held && tr.from.level >= 0 ? tr.from : src;
