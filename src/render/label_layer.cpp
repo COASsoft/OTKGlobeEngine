@@ -559,6 +559,25 @@ bool LabelLayer::init() {
     lp.sample_count = 1;
     linePipeline_ = sg_make_pipeline(&lp);
 
+    line3dShader_ = sg_make_shader(bline3d_shader_desc(backend));
+    sg_pipeline_desc l3{};
+    l3.shader = line3dShader_;
+    l3.layout.buffers[1].step_func = SG_VERTEXSTEP_PER_INSTANCE;
+    l3.layout.attrs[ATTR_bline3d_corner].buffer_index = 0;
+    l3.layout.attrs[ATTR_bline3d_corner].format = SG_VERTEXFORMAT_FLOAT2;
+    l3.layout.attrs[ATTR_bline3d_pa].buffer_index = 1;
+    l3.layout.attrs[ATTR_bline3d_pa].format = SG_VERTEXFORMAT_FLOAT3;
+    l3.layout.attrs[ATTR_bline3d_pb].buffer_index = 1;
+    l3.layout.attrs[ATTR_bline3d_pb].format = SG_VERTEXFORMAT_FLOAT3;
+    l3.layout.attrs[ATTR_bline3d_geo].buffer_index = 1;
+    l3.layout.attrs[ATTR_bline3d_geo].format = SG_VERTEXFORMAT_FLOAT4;
+    l3.layout.attrs[ATTR_bline3d_info].buffer_index = 1;
+    l3.layout.attrs[ATTR_bline3d_info].format = SG_VERTEXFORMAT_FLOAT2;
+    blend(l3.colors[0]);
+    l3.depth.compare = SG_COMPAREFUNC_LESS_EQUAL;
+    l3.depth.write_enabled = false;
+    line3dPipeline_ = sg_make_pipeline(&l3);
+
     auto overlay = [&](sg_shader shader) {
         sg_pipeline_desc tp{};
         tp.shader = shader;
@@ -621,11 +640,13 @@ bool LabelLayer::init() {
 void LabelLayer::shutdown() {
     if (!ready_) return;
     if (sg_isvalid()) {
-        for (auto& [k, b] : batches_)
+        for (auto& [k, b] : batches_) {
             if (b.buffer.id) sg_destroy_buffer(b.buffer);
+            if (b.buffer3d.id) sg_destroy_buffer(b.buffer3d);
+        }
         if (contourBuffer_.id) sg_destroy_buffer(contourBuffer_);
-        for (sg_pipeline p : {linePipeline_, labelPipeline_, iconPipeline_}) sg_destroy_pipeline(p);
-        for (sg_shader s : {lineShader_, labelShader_, iconShader_}) sg_destroy_shader(s);
+        for (sg_pipeline p : {linePipeline_, line3dPipeline_, labelPipeline_, iconPipeline_}) sg_destroy_pipeline(p);
+        for (sg_shader s : {lineShader_, line3dShader_, labelShader_, iconShader_}) sg_destroy_shader(s);
         sg_destroy_buffer(quad_);
         for (sg_buffer b : labelBuffers_) sg_destroy_buffer(b);
         for (sg_buffer b : iconBuffers_) sg_destroy_buffer(b);
@@ -741,6 +762,7 @@ void LabelLayer::trim() {
             if (oldest == batches_.end() || it->second.used < oldest->second.used) oldest = it;
         if (oldest == batches_.end() || oldest->second.used + 2 >= frame_) break;
         if (oldest->second.buffer.id) sg_destroy_buffer(oldest->second.buffer);
+        if (oldest->second.buffer3d.id) sg_destroy_buffer(oldest->second.buffer3d);
         batches_.erase(oldest);
     }
 }
@@ -813,9 +835,175 @@ LabelLayer::Batch* LabelLayer::batch(int tier, int cell, bool load) {
             bd.data = {inst.data(), inst.size() * sizeof(float)};
             b.buffer = sg_make_buffer(&bd);
             b.count = static_cast<int>(inst.size() / 6);
+            b.inst = std::move(inst);
         }
     }
-    return &(batches_[id] = b);
+    return &(batches_[id] = std::move(b));
+}
+
+void LabelLayer::buildLines3D(const std::vector<float>& inst, double originLat, double originLon, const GroundFn& ground, std::vector<float>& out) {
+    out.clear();
+    if (inst.size() < 6) return;
+    const Vec3 origin = geodeticToEcef(originLat, originLon, 0.0);
+    std::unordered_map<std::uint64_t, Vec3> seen;
+    seen.reserve(inst.size() / 3);
+    auto point = [&](float x, float y) {
+        std::uint32_t bx, by;
+        std::memcpy(&bx, &x, 4);
+        std::memcpy(&by, &y, 4);
+        const std::uint64_t key = (static_cast<std::uint64_t>(bx) << 32) | by;
+        auto it = seen.find(key);
+        if (it != seen.end()) return it->second;
+        const double lat = originLat + y, lon = originLon + x;
+        double h = ground ? ground(lat, lon) : 0.0;
+        if (!std::isfinite(h)) h = 0.0;
+        const Vec3 p = geodeticToEcef(lat, lon, h) - origin;
+        seen.emplace(key, p);
+        return p;
+    };
+    out.reserve(inst.size() / 6 * 12);
+    for (size_t i = 0; i + 5 < inst.size(); i += 6) {
+        const Vec3 a = point(inst[i], inst[i + 1]);
+        const Vec3 c = point(inst[i + 2], inst[i + 3]);
+        out.insert(out.end(), {static_cast<float>(a.x), static_cast<float>(a.y), static_cast<float>(a.z), static_cast<float>(c.x),
+                               static_cast<float>(c.y), static_cast<float>(c.z), inst[i], inst[i + 1], inst[i + 2], inst[i + 3],
+                               static_cast<float>(inst[i + 4] * 111320.0), inst[i + 5]});
+    }
+}
+
+void LabelLayer::drawBorders3D(const Camera& cam, const GroundFn& ground, double dpi, const std::vector<GeoRect>& visible, int version) {
+    if (!available() || visible.empty() || cam.width <= 0 || cam.height <= 0) return;
+    const double unitDeg = std::max(cam.gsd, 1e-3) / 111320.0;
+    std::vector<std::pair<int, int>> cells;
+    for (const GeoRect& r : visible) {
+        keys(r, unitDeg, scratchKeys_);
+        cells.insert(cells.end(), scratchKeys_.begin(), scratchKeys_.end());
+    }
+    std::sort(cells.begin(), cells.end());
+    cells.erase(std::unique(cells.begin(), cells.end()), cells.end());
+    if (cells.empty()) return;
+    const double meters = unitDeg * 111320.0;
+    bline3d_params_t p{};
+    p.view[0] = static_cast<float>(cam.width);
+    p.view[1] = static_cast<float>(cam.height);
+    p.view[2] = static_cast<float>(dpi);
+    p.view[3] = 2.0f;
+    std::memcpy(p.shade, kShade, sizeof(p.shade));
+    p.clip[0] = 1.0f;
+    p.clip[2] = -1.0f;
+    p.dashk[0] = static_cast<float>(1.0 / std::max(cam.gsd, 1e-3));
+    for (int l = 0; l < 4; ++l) {
+        const BorderStyle& s = kBorders[l];
+        const bool hidden = (l == 3 && meters > kCountyMeters) || (l == 2 && meters > kStateMeters);
+        p.styles[l][0] = hidden ? 0.0f : s.width;
+        p.styles[l][1] = s.casing;
+        p.styles[l][2] = s.on;
+        p.styles[l][3] = s.off;
+        std::memcpy(p.colors[l], s.color, sizeof(p.colors[l]));
+    }
+    const auto start = std::chrono::steady_clock::now();
+    const Vec3 eye = cam.eye();
+    bool applied = false;
+    bool forced = false;
+    for (const auto& [tier, cell] : cells) {
+        Batch* b = batch(tier, cell, true);
+        if (!b || b->count <= 0) continue;
+        const auto now = std::chrono::steady_clock::now();
+        const bool due = b->version3d != version && (!b->buffer3d.id || now - b->built3d > std::chrono::seconds(1));
+        const bool allowed = now - start < std::chrono::milliseconds(2) || (!b->buffer3d.id && !forced);
+        if (due && allowed) {
+            if (!b->buffer3d.id) forced = true;
+            b->built3d = now;
+            std::vector<float> out;
+            buildLines3D(b->inst, b->south, b->west, ground, out);
+            if (b->buffer3d.id) sg_destroy_buffer(b->buffer3d);
+            b->buffer3d = {};
+            b->count3d = 0;
+            b->version3d = version;
+            if (!out.empty()) {
+                sg_buffer_desc bd{};
+                bd.usage.vertex_buffer = true;
+                bd.data = {out.data(), out.size() * sizeof(float)};
+                b->buffer3d = sg_make_buffer(&bd);
+                b->count3d = static_cast<int>(out.size() / 12);
+            }
+        }
+        if (!b->buffer3d.id || b->count3d <= 0 || sg_query_buffer_state(b->buffer3d) != SG_RESOURCESTATE_VALID) continue;
+        if (!applied) {
+            sg_apply_pipeline(line3dPipeline_);
+            applied = true;
+        }
+        const Vec3 origin = geodeticToEcef(b->south, b->west, 0.0);
+        toFloat(cam.viewProjRel() * translation(origin - eye), p.mvp);
+        const Vec3 local = eye - origin;
+        p.lift[0] = static_cast<float>(local.x);
+        p.lift[1] = static_cast<float>(local.y);
+        p.lift[2] = static_cast<float>(local.z);
+        p.lift[3] = 0.003f;
+        sg_bindings bind{};
+        bind.vertex_buffers[0] = quad_;
+        bind.vertex_buffers[1] = b->buffer3d;
+        sg_apply_bindings(&bind);
+        sg_apply_uniforms(UB_bline3d_params, SG_RANGE(p));
+        sg_draw(0, 6, b->count3d);
+    }
+    road3dPass_ = -1;
+}
+
+void LabelLayer::beginRoads3D(const Camera& cam, double dpi) {
+    road3dAny_ = false;
+    road3dPass_ = -1;
+    if (!ready_ || cam.width <= 0 || cam.height <= 0) return;
+    const double lat = cam.focus.lat;
+    const double zoom = std::log2(156543.034 * std::max(std::cos(lat * kDegToRad), 1e-3) / std::max(cam.gsd * dpi, 1e-6));
+    std::memset(road3dStyles_, 0, sizeof(road3dStyles_));
+    std::memset(road3dColors_, 0, sizeof(road3dColors_));
+    for (int i = 0; i < 12; ++i) {
+        const RoadStyle& s = kRoads[i];
+        const float w = stop(s.zoom, s.width, zoom);
+        const float appear = std::clamp(static_cast<float>((zoom - s.zoom[0]) / 0.75), 0.0f, 1.0f);
+        road3dAny_ = road3dAny_ || w > 0.0f;
+        road3dStyles_[4 + i][0] = w;
+        road3dStyles_[4 + i][1] = w > 0.0f ? s.casing : 0.0f;
+        road3dStyles_[4 + i][2] = s.on;
+        road3dStyles_[4 + i][3] = s.off;
+        std::memcpy(road3dColors_[4 + i], s.color, sizeof(road3dColors_[4 + i]));
+        road3dColors_[4 + i][3] *= 0.35f + 0.65f * appear;
+    }
+    road3dView_[0] = static_cast<float>(cam.width);
+    road3dView_[1] = static_cast<float>(cam.height);
+    road3dView_[2] = static_cast<float>(dpi);
+    road3dDash_ = static_cast<float>(1.0 / std::max(cam.gsd, 1e-3));
+    road3dViewProj_ = cam.viewProjRel();
+    road3dEye_ = cam.eye();
+}
+
+void LabelLayer::drawRoads3D(sg_buffer buffer, int count, const Vec3& origin, const float clip[4], int pass) {
+    if (!road3dAny_ || count <= 0 || !buffer.id || sg_query_buffer_state(buffer) != SG_RESOURCESTATE_VALID) return;
+    if (road3dPass_ != pass) {
+        sg_apply_pipeline(line3dPipeline_);
+        road3dPass_ = pass;
+    }
+    bline3d_params_t p{};
+    toFloat(road3dViewProj_ * translation(origin - road3dEye_), p.mvp);
+    std::memcpy(p.view, road3dView_, sizeof(p.view));
+    p.view[3] = static_cast<float>(pass);
+    std::memcpy(p.shade, kRoadShade, sizeof(p.shade));
+    const Vec3 local = road3dEye_ - origin;
+    p.lift[0] = static_cast<float>(local.x);
+    p.lift[1] = static_cast<float>(local.y);
+    p.lift[2] = static_cast<float>(local.z);
+    p.lift[3] = 0.003f;
+    std::memcpy(p.clip, clip, sizeof(p.clip));
+    p.dashk[0] = road3dDash_;
+    std::memcpy(p.styles, road3dStyles_, sizeof(p.styles));
+    std::memcpy(p.colors, road3dColors_, sizeof(p.colors));
+    sg_bindings bind{};
+    bind.vertex_buffers[0] = quad_;
+    bind.vertex_buffers[1] = buffer;
+    sg_apply_bindings(&bind);
+    sg_apply_uniforms(UB_bline3d_params, SG_RANGE(p));
+    sg_draw(0, 6, count);
 }
 
 bool LabelLayer::prepare(const GeoRect& tile, double unitDeg) {
