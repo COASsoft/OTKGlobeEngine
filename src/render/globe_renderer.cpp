@@ -1697,6 +1697,12 @@ int GlobeRenderer::surfaceZ(const QuadKey& q) const {
     return st->second.complete ? std::max(st->second.sourceZ, st->second.imageryZ) : st->second.sourceZ;
 }
 
+int GlobeRenderer::surfaceZMax(const QuadKey& q) const {
+    auto st = q.level >= 0 ? surface_.find(q) : surface_.end();
+    if (st == surface_.end()) return -1;
+    return std::max(st->second.sourceZ, st->second.imageryZ);
+}
+
 bool GlobeRenderer::retrying(const QuadKey& k) const {
     auto s = surface_.find(k);
     if (s == surface_.end() || s->second.complete) return false;
@@ -1866,7 +1872,7 @@ void GlobeRenderer::traverse(const Camera& cam, const QuadKey& k, std::vector<Dr
                 pendingMergeZ_ = std::min(pendingMergeZ_, zk);
                 m.start = t;
             }
-            if (zk > uniformZ_) {
+            if (surfaceZMax(k) > uniformZ_) {
                 m.start = t;
                 capped = true;
             }
@@ -2548,7 +2554,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     ++frame_;
     labels_.beginFrame();
     settleFrozen_ = snapshotShown_ && settleSnapshot_ && snapshotFade_ < 0.0;
-    stepInstant_ = snapshotShown_ && stepSnapshot_;
+    stepInstant_ = snapshotShown_ && (stepSnapshot_ || (settleSnapshot_ && snapshotFade_ >= 0.0));
     const bool switchCapture = snapshotWanted_ && !views && lastIncompleteFraction_ < 0.3 && ensureSnapshotTarget(width, height);
     bool settleCapture = false;
     if (!switchCapture && (settleWanted_ || stepWanted_) && !views && !snapshotShown_) {
@@ -3585,14 +3591,14 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 sg_view v{};
                 float u[4];
                 const QuadKey s = source(d.key, 0, v, u);
-                const int sz = s.level >= 0 ? zOf(s) : -1;
+                const int sz = s.level >= 0 ? surfaceZMax(s) : -1;
                 if (sz <= target) continue;
                 int found = -1;
                 for (int up = d.key.level - s.level + 1; up <= d.key.level && found < 0; ++up) {
                     const QuadKey a{d.key.level - up, d.key.x >> up, d.key.y >> up};
                     auto st = surface_.find(a);
                     if (st == surface_.end() || st->second.version < 0 || !(st->second.complete || st->second.presentable)) continue;
-                    const int az = zOf(a);
+                    const int az = surfaceZMax(a);
                     if (az >= 0 && az <= target) found = az;
                 }
                 if (found >= target - 1) continue;
@@ -3682,13 +3688,13 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                      loader_.pending());
             }
         }
-        if (zCap < 99 && src.level >= 0 && zOf(src) > zCap) {
+        if (zCap < 99 && src.level >= 0 && surfaceZMax(src) > zCap) {
             for (int up = dt.key.level - src.level + 1; up <= dt.key.level; ++up) {
                 sg_view cv{};
                 float cu[4];
                 const QuadKey c = source(dt.key, up, cv, cu);
                 if (c.level < 0) break;
-                if (zOf(c) > zCap) continue;
+                if (surfaceZMax(c) > zCap) continue;
                 src = c;
                 view = cv;
                 std::memcpy(uvx, cu, sizeof(cu));
@@ -3803,7 +3809,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         if (continuing) {
             if (!(tr.src == src) || tr.version != shownVersion) {
                 const QuadKey showing = tr.held && tr.from.level >= 0 ? tr.from : tr.src;
-                if (zCap < 99 && showing.level >= 0 && zOf(showing) > zOf(src)) {
+                if (zCap < 99 && showing.level >= 0 && surfaceZMax(showing) > zCap && surfaceZMax(showing) > surfaceZMax(src)) {
                     if (!tr.held) {
                         tr.from = tr.src;
                         tr.fromVersion = tr.version;
@@ -3882,7 +3888,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             tr.merge = {-1, 0, 0};
         }
         if ((frozenNow || stepInstant_) && tr.start >= 0.0 && tnow - tr.start < kFadeSeconds) tr.start = tnow - kFadeSeconds * 1.01;
-        if (zCap < 99 && tr.from.level >= 0 && zOf(tr.from) > zCap) {
+        if (zCap < 99 && tr.from.level >= 0 && surfaceZMax(tr.from) > zCap) {
             if (tr.start >= 0.0 && tnow - tr.start < kFadeSeconds) tr.start = tnow - kFadeSeconds * 1.01;
             if (tr.held) {
                 tr.held = false;
@@ -3946,10 +3952,10 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             }
         }
         if (visualLog_ && zCap < 99 && src.level >= 0) {
-            const int zs = zOf(src);
+            const int zs = surfaceZMax(src);
             int reason = zs > zCap ? 0 : -1;
-            if (reason < 0 && fadingFrom && tr.from.level >= 0 && zOf(tr.from) > zCap) reason = tr.held ? 1 : 2;
-            if (reason < 0 && mergeMix > 0.0f && zOf(dt.merge) > zCap) reason = 3;
+            if (reason < 0 && fadingFrom && tr.from.level >= 0 && surfaceZMax(tr.from) > zCap) reason = tr.held ? 1 : 2;
+            if (reason < 0 && mergeMix > 0.0f && surfaceZMax(dt.merge) > zCap) reason = 3;
             if (reason >= 0) {
                 ++capFail[reason];
                 if (capExample.level < 0) {
