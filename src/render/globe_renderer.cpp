@@ -2908,6 +2908,10 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     std::unordered_map<QuadKey, const TerrainTile*, QuadKeyHash> drawnNow;
     drawnNow.reserve(tiles.size() * 2);
     for (auto& dt : tiles) drawnNow[dt.key] = &terrain(dt.key);
+    double visPop = 0, visMerge = 0, visTerrain = 0, visBlur = 0, visBlur2 = 0, visDepth = 0, visFade = 0;
+    int visPops = 0;
+    if (visualStats_ && shown_.size() > 20000)
+        for (auto it = shown_.begin(); it != shown_.end();) it = it->second.frame + 2 < frame_ ? shown_.erase(it) : std::next(it);
     for (auto& dt : tiles) {
         TerrainTile& tt = terrain(dt.key);
         tt.used = frame_;
