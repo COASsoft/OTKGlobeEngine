@@ -8,9 +8,11 @@
   - It waits at most 3 s (`OTK_SETTLE_WAIT`). Labels and live features stay live above the held picture.
   - If you start moving again during the hold or the dissolve, the held picture moves with the map and fades out, so there is no jump.
   - `OTK_SETTLE=0` turns this off.
-- A flat or slightly tilted view uses one detail level for the whole screen, like a 2D map:
+- A flat or slightly tilted view uses one detail level for the whole screen, like a 2D map, at every scale from the whole globe down to street level:
   - Tiles at the edges no longer use a coarser level than tiles in the middle. With Esri imagery that mix showed as a patchwork of dark and pale squares, because Esri switches photo sources between zoom 11 and 12.
-  - While the map moves, the whole view shows the same imagery level. If new ground only has coarser imagery yet, the whole view steps down together, at most 2 levels, and sharpens again when you stop.
+  - While the map moves, the whole view shows the same imagery level. If new ground only has coarser imagery yet, the whole view steps down together, at most 3 levels, and sharpens again when you stop. It never steps back up while you are still moving.
+  - A step happens in one frame for the whole screen, under a short fade of the previous picture, and only once every tile has a coarser image ready. Before, some tiles stepped late and stayed bright for up to a second, which showed as pale squares and rings while zooming out.
+  - Zooming out no longer merges parts of the view into finer imagery than the rest of the screen.
   - `OTK_UNIFORM_LOD=0` turns this off. Views tilted more than 25 degrees keep the distance-based detail they need.
 - Startup loads the same way: one fade from the empty globe to the full map, instead of tiles appearing one by one.
 - When zooming out:
