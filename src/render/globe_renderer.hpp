@@ -167,7 +167,10 @@ public:
                 const std::vector<RenderView>* views = nullptr);
     bool busy() const { return busy_; }
     Stats stats() const { return stats_; }
-    void setCpuMs(double ms) { stats_.cpuMs = ms; }
+    void setCpuMs(double ms, double threadMs = 0) {
+        stats_.cpuMs = ms;
+        stats_.cpuThreadMs = threadMs;
+    }
 
 private:
     struct Bounds {
