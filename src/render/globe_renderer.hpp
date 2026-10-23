@@ -250,6 +250,10 @@ private:
         int mergeVersion = -1;
         float mergeT = 0.0f;
         std::uint64_t mergeFrame = 0;
+        int depth = 0;
+        float edge[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        int edgeUp = 0;
+        double edgeTime = -1.0;
     };
     struct Merge {
         double start = 0.0;
