@@ -1936,12 +1936,21 @@ void Engine::updateLookahead() {
         I.globe.setLookahead(nullptr);
     } else {
         Camera ahead = c;
+        bool flingAhead = false;
         if (I.flying) {
             ahead.focus.lat = I.flyTo.lat;
             ahead.focus.lon = I.flyTo.lon;
             ahead.gsd = I.flyTo.gsd;
             ahead.azimuth = I.flyTo.azimuth;
             ahead.tilt = I.flyTo.tilt;
+        } else if (double fx = 0, fy = 0; I.input->flingRest(fx, fy)) {
+            flingAhead = true;
+            const double a = c.azimuth * kDegToRad;
+            const double sx = -fx * c.gsd, sy = fy * c.gsd;
+            const double east = sx * std::cos(a) + sy * std::sin(a);
+            const double north = -sx * std::sin(a) + sy * std::cos(a);
+            ahead.focus.lat = std::clamp(c.focus.lat + north / 110574.0, -89.9, 89.9);
+            ahead.focus.lon = std::remainder(c.focus.lon + east / (111320.0 * std::max(std::cos(c.focus.lat * kDegToRad), 0.05)), 360.0);
         } else {
             constexpr double kFrames = 15.0;
             double dAz = pose[3] - I.lastPose[3];
@@ -1957,7 +1966,7 @@ void Engine::updateLookahead() {
             ahead.tilt = std::clamp(pose[4] + (pose[4] - I.lastPose[4]) * kFrames, 0.0, c.maxTilt);
         }
         ahead.update();
-        I.globe.setLookahead(&ahead, I.flying ? 0.9 : 2.5);
+        I.globe.setLookahead(&ahead, I.flying ? 0.9 : flingAhead ? 1.2 : 2.5);
     }
     I.lastPose = pose;
     I.havePose = true;
