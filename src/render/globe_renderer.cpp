@@ -3509,6 +3509,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         }
     }
     const bool frozenNow = snapshotShown_ && settleSnapshot_ && snapshotFade_ < 0.0;
+    if (snapshotShown_ && settleSnapshot_ && snapshotFade_ >= 0.0) stepInstant_ = true;
     const bool settleStill = settleFreeze_ && !settleBroken_ && !views && terrainAlpha_ >= 0.999f && tnow - lastMotion_ >= 0.15;
     bool gateOpen = !settleStill && revealGate(tnow);
     const bool stepping = settleFreeze_ && !settleBroken_ && !views && uniformMix_ >= 0.5 && tnow - lastMotion_ < 0.15;
