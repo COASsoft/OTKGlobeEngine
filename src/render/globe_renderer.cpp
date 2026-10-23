@@ -3304,6 +3304,14 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     stats_.incompleteTiles = incomplete;
     lastIncompleteFraction_ = tiles.empty() ? 1.0 : static_cast<double>(incomplete) / static_cast<double>(tiles.size());
     stats_.blankTiles = blank;
+    stats_.popArea = visPop;
+    stats_.mergeArea = visMerge;
+    stats_.terrainPopArea = visTerrain;
+    stats_.blurArea = visBlur;
+    stats_.blurArea2 = visBlur2;
+    stats_.blurDepth = visDepth;
+    stats_.fadeArea = visFade;
+    stats_.pops = visPops;
     stats_.coarseTiles = coarse;
     stats_.coverageOnlyTiles = coverageOnly;
     stats_.retainedTiles = retained;
