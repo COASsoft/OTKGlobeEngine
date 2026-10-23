@@ -2123,8 +2123,8 @@ void GlobeRenderer::profileMark(int section) {
         if (FILE* f = std::fopen(profilePath_.c_str(), "a")) {
             const char* names[8] = {"traverse", "overview+admit", "terrain", "work", "surface", "main", "overview-only", "pre-traverse"};
             for (int i = 0; i < 8; ++i) std::fprintf(f, "%s %.3f ", names[i], profileAcc_[i] / profileFrames_);
-            const char* subs[4] = {"main.globe", "main.labels", "main.overlay", "main.end"};
-            for (int i = 0; i < 4; ++i) std::fprintf(f, "%s %.3f/%.3f ", subs[i], profileSub_[i] / profileFrames_, profileSubCpu_[i] / profileFrames_);
+            const char* subs[8] = {"main.globe", "main.labels", "main.overlay", "main.end", "pre.uploads", "pre.elevation", "pre.evict", "surface.mips"};
+            for (int i = 0; i < 8; ++i) std::fprintf(f, "%s %.3f/%.3f ", subs[i], profileSub_[i] / profileFrames_, profileSubCpu_[i] / profileFrames_);
             std::fputc(10, f);
             std::fclose(f);
         }
@@ -2214,8 +2214,11 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     for (const auto& [bk, bp] : blendParents_) need(bk, bp);
     blendParents_.clear();
     elevation_.beginFrame();
+    profileSub(-1);
     processLoads();
+    profileSub(4);
     bool elevationChanged = elevation_.processResults(32);
+    profileSub(5);
     {
         std::vector<GeoRect> regions;
         if (features_.takeDirty(regions)) {
@@ -2231,7 +2234,9 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             }
         }
     }
+    profileSub(-1);
     evict();
+    profileSub(6);
     requestBase();
 
     cam.width = std::max(width, 1);
@@ -2767,7 +2772,9 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         s->renderedAt = now();
     }
 
+    profileSub(-1);
     if (!mipQueue.empty()) generateMips(mipQueue);
+    profileSub(7);
     if (buildingsOn_) buildings_.bake(roofImagery(), flipSurface_);
 
     profileMark(5);
