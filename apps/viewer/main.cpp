@@ -401,8 +401,8 @@ void writeSummary() {
                       T.incomplete, T.jank25, T.jank50, T.worst);
         text += line;
     }
-    std::snprintf(line, sizeof(line), "settled_after_input=%.2f\n",
-                  state->settledAt >= 0 && state->inputEnd >= 0 ? state->settledAt - state->inputEnd : -1.0);
+    std::snprintf(line, sizeof(line), "settled_after_input=%.2f fade_misses=%lld\n",
+                  state->settledAt >= 0 && state->inputEnd >= 0 ? state->settledAt - state->inputEnd : -1.0, state->engine.stats().fadeMisses);
     text += line;
     if (FILE* f = std::fopen((state->framesPath + ".txt").c_str(), "w")) {
         std::fputs(text.c_str(), f);
