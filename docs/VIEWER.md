@@ -14,6 +14,7 @@ otk_viewer [file or folder ...] [--view lat,lon,gsd,tilt,azimuth] [--preset 0..3
            [--first-person heading,pitch[,height]] [--download w,s,e,n,minz,maxz]
            [--shot out.png] [--shot-timeout s] [--script file] [--film dir] [--film-every s]
            [--zoom-test lat,lon,gsd,tilt,az,seconds] [--zoom-start s] [--diag 1]
+           [--frames file.csv] [--exit-after s] [--clear-cache 1] [--env NAME=VALUE]
 ```
 
 - Drop files or folders on the window, or pass them as arguments, to open them: KML/KMZ (with overlays and models), GeoJSON, GPX, Shapefile, CoT, CSV, GML, TAK data packages, ATAK iconsets, MBTiles, PMTiles, GeoPackage, osmdroid/RMaps/OsmAnd archives, MOBAC sources, DTED/HGT files or folders, Cesium terrain folders, 3D Tiles, LAS, glTF/OBJ/COLLADA models (placed at the view centre) and, with GDAL, GeoTIFF imagery and DEMs. The view flies to what was loaded and the title bar reports what was added.
