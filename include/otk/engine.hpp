@@ -122,6 +122,13 @@ struct Stats {
     double revealArea = 0;
     int loading = 0;
     long long renderedFrames = 0;
+    int ungated = 0;
+    double ungatedArea = 0;
+    int fadeDown = 0;
+    int fadeRefade = 0;
+    int fadeLost = 0;
+    int mergeStarts = 0;
+    double mergeStartArea = 0;
 };
 
 struct DownloadStatus {
