@@ -681,11 +681,13 @@ void frame() {
                 }
                 std::fclose(f);
             }
+            if (!state->quitting) writeSummary();
+            state->quitting = true;
             sapp_quit();
         }
         return;
     }
-    if (!state->script.empty()) {
+    if (!state->script.empty() || state->framesFile) {
         state->shotElapsed += sapp_frame_duration();
         runScript();
     }
@@ -693,6 +695,7 @@ void frame() {
     if (state->stereo >= 0) state->engine.frameStereo(sglue_swapchain(), state->stereo);
     else state->engine.frame(sglue_swapchain());
     sg_commit();
+    logFrame(sapp_frame_duration());
     {
         otk::Stats ps = state->engine.stats();
         double ft = sapp_frame_duration() * 1000.0;
