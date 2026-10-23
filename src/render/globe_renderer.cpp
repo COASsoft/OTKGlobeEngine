@@ -140,6 +140,9 @@ bool GlobeRenderer::init() {
     if (const char* v = std::getenv("OTK_VISUAL_LOG")) visualLog_ = std::fopen(v, "w");
     if (const char* v = std::getenv("OTK_RERENDER_GAP")) rerenderGap_ = std::max(0.0, std::atof(v));
     if (const char* v = std::getenv("OTK_MERGE_FADE")) mergeSeconds_ = std::max(0.0, std::atof(v));
+    if (const char* v = std::getenv("OTK_MERGE_GAP")) mergeGap_ = std::max(0.0, std::atof(v));
+    if (const char* v = std::getenv("OTK_REVEAL_HOLD_LONG")) revealHoldLong_ = std::max(0.0, std::atof(v));
+    if (const char* v = std::getenv("OTK_REVEAL_SHARE")) revealShare_ = std::clamp(std::atof(v), 0.0, 1.0);
     if (const char* v = std::getenv("OTK_REVEAL_HOLD")) revealHold_ = std::max(0.0, std::atof(v));
     if (const char* v = std::getenv("OTK_REVEAL_GAP")) revealGap_ = std::max(0.0, std::atof(v));
     if (const char* v = std::getenv("OTK_MOTION_HOLD")) motionHold_ = std::max(0.0, std::atof(v));
@@ -646,6 +649,9 @@ void GlobeRenderer::setLayerList(const std::vector<ImageryLayer>& layers) {
             }
         same = same && from[i] == static_cast<int>(i);
     }
+    if (visualLog_)
+        std::fprintf(visualLog_, "layers frame %llu t %.3f same %d count %zu -> %zu labels %d buildings %d\n", static_cast<unsigned long long>(frame_), now(),
+                     same ? 1 : 0, layers_.size(), layers.size(), labelsOn_ ? 1 : 0, buildingsOn_ ? 1 : 0);
     layers_ = layers;
     std::vector<float> opacity(layers.size(), -1.0f);
     for (size_t i = 0; i < layers.size(); ++i)
@@ -1233,7 +1239,10 @@ bool GlobeRenderer::revealGate(double t) const {
     const double still = t - lastMotion_;
     const double heldAge = t - oldestHeldPrev_;
     if (still < 0.15) return motionHold_ > 0.0 && heldAge >= motionHold_;
-    return waitingPrev_ == 0 || std::min(heldAge, still) >= revealHold_;
+    const double share = tilesPrev_ > 0 ? static_cast<double>(waitingPrev_) / tilesPrev_ : 0.0;
+    if (waitingPrev_ == 0 || share <= revealShare_) return true;
+    const double hold = share > 0.1 ? std::max(revealHold_, revealHoldLong_) : revealHold_;
+    return std::min(heldAge, still) >= hold;
 }
 
 bool GlobeRenderer::wakeDue() const {
@@ -1661,14 +1670,17 @@ void GlobeRenderer::traverse(const Camera& cam, const QuadKey& k, std::vector<Dr
         wasRefined(k) && presentable(k)) {
         Merge& m = merges_[k];
         const double t = now();
-        if (m.frame + 1 != frame_) m.start = t;
+        const bool moving = t - lastMotion_ < 0.15;
+        const double tick = mergeGap_ > 0.0 && moving ? std::ceil(t / mergeGap_) * mergeGap_ : t;
+        if (m.frame + 1 != frame_) m.start = tick;
+        else if (!moving && m.start > t) m.start = t;
         m.frame = frame_;
         for (int i = 0; i < 4; ++i) {
             auto kt = transitions_.find(kids[i]);
             if (kt != transitions_.end() && kt->second.frame + 1 >= frame_ && kt->second.start >= 0.0 && t - kt->second.start < kFadeSeconds)
-                m.start = t;
+                m.start = tick;
         }
-        const double p = (t - m.start) / (mergeSeconds_ / std::max(1.0, zoomRate_));
+        const double p = std::max(0.0, (t - m.start) / (mergeSeconds_ / std::max(1.0, zoomRate_)));
         if (p < 1.0) {
             mergeActive_ = true;
             bool drawable = true;
@@ -3338,10 +3350,12 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             return from.level < src.level || (from == src && fromVer != shownVersion);
         };
         auto hold = [&]() {
-            if (revealHold_ <= 0.0 || revealOpen_ || !improving(tr.from, tr.fromVersion)) {
+            const bool better = improving(tr.from, tr.fromVersion);
+            const bool switched = tr.fromVersion >= 0 && tr.fromVersion < switchVersion_ && shownVersion >= switchVersion_;
+            if (revealHold_ <= 0.0 || revealOpen_ || switched || (!better && tr.from.level < 0)) {
                 tr.held = false;
                 tr.start = tnow;
-                tr.why = !improving(tr.from, tr.fromVersion) ? 'd' : revealOpen_ ? 'g' : 'o';
+                tr.why = revealOpen_ ? 'g' : !better ? 'd' : 'o';
                 return;
             }
             if (!tr.held) tr.heldSince = tnow;
@@ -3350,10 +3364,11 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         };
         if (continuing) {
             if (!(tr.src == src) || tr.version != shownVersion) {
-                const bool early = !tr.held && tr.start >= 0.0 && (tnow - tr.start) / kFadeSeconds < 0.5 && tr.from.level != -1 &&
-                                   fadeTexture(dt.key, tr.from, tr.fromVersion, fv, fu, (tnow - tr.start) / kFadeSeconds);
-                if (!early && !tr.held) {
-                    const bool settledBefore = tr.start < 0.0;
+                if (!tr.held && tr.start >= 0.0 && tnow - tr.start < kFadeSeconds && tr.src.level >= 0) {
+                    tr.finishing = true;
+                } else if (!tr.held) {
+                    tr.finishing = false;
+                    const bool settledBefore = tr.start < 0.0 || tnow - tr.start >= kFadeSeconds;
                     tr.from = tr.src.level >= 0 ? tr.src : QuadKey{-2, 0, 0};
                     tr.fromVersion = tr.version;
                     if (settledBefore) {
@@ -3363,8 +3378,11 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                         tr.why = 'f';
                     }
                 }
+            } else {
+                tr.finishing = false;
             }
         } else {
+            tr.finishing = false;
             tr.from = {-1, 0, 0};
             tr.start = -1.0;
             tr.held = false;
@@ -3398,8 +3416,11 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 tr.why = 'l';
             }
         }
-        tr.src = src;
-        tr.version = shownVersion;
+        if (tr.finishing && !fadeTexture(dt.key, tr.src, tr.version, view, uvx, (tnow - tr.start) / kFadeSeconds)) tr.finishing = false;
+        if (!tr.finishing) {
+            tr.src = src;
+            tr.version = shownVersion;
+        }
         tr.frame = frame_;
         tr.depth = shownDepth;
         if (dt.merge.level < 0 && tr.merge.level >= 0) {
@@ -3446,6 +3467,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         sg_view mergeView{};
         float mergeUv[4] = {1.0f, 1.0f, 0.0f, 0.0f};
         const bool mergeContinuing = tr.mergeFrame + 1 == frame_;
+        const float mergeBefore = mergeContinuing ? tr.mergeT : 0.0f;
         if (dt.merge.level >= 0 && src.level >= 0) {
             auto target = surface_.find(dt.merge);
             if (target != surface_.end() && target->second.version >= 0 &&
@@ -3531,7 +3553,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                                  static_cast<unsigned long long>(frame_), tnow, dt.key.level, dt.key.x, dt.key.y, tr.why ? tr.why : '?', tr.from.level,
                                  tr.fromVersion, src.level, shownVersion, shownDepth, area);
             }
-            if (dt.merge.level >= 0 && !mergeContinuing) {
+            if (dt.merge.level >= 0 && dt.mergeT > 0.0f && mergeBefore <= 0.0f) {
                 visMergeStart += area;
                 ++visMergeStarts;
                 if (visualLog_)
@@ -3863,6 +3885,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     heldPrev_ = heldNow;
     oldestHeldPrev_ = oldestHeld;
     waitingPrev_ = waitingNow;
+    tilesPrev_ = static_cast<int>(tiles.size());
     stats_.heldTiles = heldNow;
     stats_.reveals = visReveals;
     stats_.revealArea = visReveal;
@@ -3922,7 +3945,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         pollGap_ = std::min(pollGap_ * 2.0, 4.0);
         if (heldNow > 0) {
             if (revealGate(tnow)) wake = tnow;
-            for (double d : {lastReveal_ + revealGap_, lastMotion_ + 0.15, std::max(oldestHeld, lastMotion_) + revealHold_, oldestHeld + motionHold_})
+            for (double d : {lastReveal_ + revealGap_, lastMotion_ + 0.15, std::max(oldestHeld, lastMotion_) + revealHold_,
+                             std::max(oldestHeld, lastMotion_) + revealHoldLong_, oldestHeld + motionHold_})
                 if (d > tnow) wake = std::min(wake, d);
         }
         wakeAt_ = wake;
