@@ -255,6 +255,8 @@ private:
         float edge[4] = {0.0f, 0.0f, 0.0f, 0.0f};
         int edgeUp = 0;
         double edgeTime = -1.0;
+        bool held = false;
+        double heldSince = -1.0;
     };
     struct Merge {
         double start = 0.0;
@@ -263,6 +265,12 @@ private:
     std::unordered_map<QuadKey, Merge, QuadKeyHash> merges_;
     int mergeDepth_ = 0;
     bool mergeActive_ = false;
+    double revealHold_ = 0.6;
+    bool revealOpen_ = true;
+    int heldPrev_ = 0;
+    double oldestHeldPrev_ = 0.0;
+    int waitingPrev_ = 0;
+    int refineWaiting_ = 0;
     double mergeSeconds_ = 0.35;
     struct SurfaceDraw {
         sg_view texture{};
