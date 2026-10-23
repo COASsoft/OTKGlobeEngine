@@ -402,6 +402,14 @@ private:
     std::chrono::steady_clock::time_point profileStart_;
     double profileLast_ = 0;
     double profileAcc_[8] = {};
+    double profileSub_[4] = {};
+    double profileSubLast_ = 0;
+    void profileSub(int i) {
+        if (!profiling_) return;
+        const double t = elapsedMs();
+        if (i >= 0) profileSub_[i] += t - profileSubLast_;
+        profileSubLast_ = t;
+    }
     int profileFrames_ = 0;
     bool glMips_ = false;
     bool softwareRaster_ = false;
