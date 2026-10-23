@@ -47,10 +47,10 @@ void main() {
     light = shade;
     elev = height;
     float w = 1.0;
-    if (edges.x > 0.5) w = min(w, texcoord0.y * 2.0);
-    if (edges.y > 0.5) w = min(w, (1.0 - texcoord0.y) * 2.0);
-    if (edges.z > 0.5) w = min(w, texcoord0.x * 2.0);
-    if (edges.w > 0.5) w = min(w, (1.0 - texcoord0.x) * 2.0);
+    w = min(w, 1.0 - edges.x * (1.0 - clamp(texcoord0.y * 2.0, 0.0, 1.0)));
+    w = min(w, 1.0 - edges.y * (1.0 - clamp((1.0 - texcoord0.y) * 2.0, 0.0, 1.0)));
+    w = min(w, 1.0 - edges.z * (1.0 - clamp(texcoord0.x * 2.0, 0.0, 1.0)));
+    w = min(w, 1.0 - edges.w * (1.0 - clamp((1.0 - texcoord0.x) * 2.0, 0.0, 1.0)));
     lodw = clamp(w, 0.0, 1.0);
 }
 @end
