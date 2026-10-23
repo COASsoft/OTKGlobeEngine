@@ -3148,7 +3148,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         vsp.center[2] = static_cast<float>(tt.center.z);
         if (spatial) {
             auto& since = morphSince_[dt.key];
-            if (since.second + 1 < frame_) since.first = fades_.count(dt.key) ? tnow - 1.0 : tnow;
+            if (since.second + 1 < frame_) since.first = fadingFrom ? tnow - 1.0 : tnow;
             since.second = frame_;
             const double t = (tnow - since.first) / 0.3;
             vsp.morph[3] = t >= 1.0 ? 1.0f : static_cast<float>(t * t * (3 - 2 * t));
