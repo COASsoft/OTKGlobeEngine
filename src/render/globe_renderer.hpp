@@ -406,12 +406,20 @@ private:
     double profileLast_ = 0;
     double profileAcc_[8] = {};
     double profileSub_[4] = {};
+    double profileSubCpu_[4] = {};
     double profileSubLast_ = 0;
+    double profileSubCpuLast_ = 0;
+    static double threadMs();
     void profileSub(int i) {
         if (!profiling_) return;
         const double t = elapsedMs();
-        if (i >= 0) profileSub_[i] += t - profileSubLast_;
+        const double c = threadMs();
+        if (i >= 0) {
+            profileSub_[i] += t - profileSubLast_;
+            profileSubCpu_[i] += c - profileSubCpuLast_;
+        }
         profileSubLast_ = t;
+        profileSubCpuLast_ = c;
     }
     int profileFrames_ = 0;
     bool glMips_ = false;
