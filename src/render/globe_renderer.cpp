@@ -2444,7 +2444,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             if (it->second.complete && it->second.overlaysOmitted && !standIn(cam, needs_[i].key)) it->second.complete = false;
             if (it->second.complete && (labelsOn_ || contours_) && it->second.lineDeg > 0.0 && lineDegFor(needs_[i].key) * 2.0 < it->second.lineDeg)
                 it->second.complete = false;
-            if (!it->second.complete && progressed(it->second)) work.push_back({needs_[i].priority * 1.5, i, true, pf});
+            const bool settled = it->second.version < 0 || it->second.renderedAt < 0.0 || renderClock - it->second.renderedAt >= kFadeSeconds;
+            if (!it->second.complete && settled && progressed(it->second)) work.push_back({needs_[i].priority * 1.5, i, true, pf});
             else if (!it->second.complete) work.push_back({needs_[i].priority, i, false, pf});
         }
     }
