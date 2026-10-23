@@ -209,6 +209,7 @@ private:
         bool degraded = false;
         double lineDeg = 0.0;
         bool overlaysOmitted = false;
+        std::vector<TileId> roadTiles;
         bool presentable = false;
         std::uint64_t shown = 0;
         double renderedAt = -1.0;
@@ -226,6 +227,13 @@ private:
         int roadCount = 0;
         int solidRoads = 0;
         bool drawn = false;
+        sg_buffer roads3d{};
+        int roads3dCount = 0;
+        int roads3dVersion = -1;
+        double roads3dBuilt = -1.0e9;
+        Vec3 roadsOrigin{};
+        std::array<int, 33> roadChunk{};
+        std::array<GeoRect, 32> roadBox{};
     };
     struct DrawTile {
         QuadKey key;
@@ -301,6 +309,7 @@ private:
     struct VectorDraw {
         const ImageryTexture* tile = nullptr;
         float xform[4] = {};
+        TileId id{};
     };
     struct SurfaceJob {
         QuadKey key;
@@ -323,6 +332,7 @@ private:
     static Bounds bounds(const QuadKey& k);
     NodeInfo info(const Camera& cam, const QuadKey& k) const;
     void setUniform(const Camera& c);
+    void buildRoads3D(ImageryTexture& t, int version);
     double seamSkirt(const QuadKey& k, const TerrainTile& t, const std::unordered_map<QuadKey, const TerrainTile*, QuadKeyHash>& drawn,
                      int coarser[4]) const;
     bool ready(const QuadKey& k) const;
@@ -611,6 +621,7 @@ private:
     double settleMoveFade_ = 0.25;
     bool settleFreeze_ = true;
     bool uniformLod_ = true;
+    bool lines3d_ = true;
     double uniformDist_ = 0.0;
     double uniformMix_ = 0.0;
     int uniformZ_ = 99;
