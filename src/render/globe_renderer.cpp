@@ -558,18 +558,51 @@ sg_view GlobeRenderer::backdrop() {
     int w = 0, h = 0, n = 0;
     unsigned char* px = stbi_load_from_memory(embedded::world_backdrop, static_cast<int>(embedded::world_backdrop_size), &w, &h, &n, 4);
     if (!px) return backdropView_;
+    std::vector<std::vector<std::uint8_t>> mips;
+    mips.emplace_back(px, px + static_cast<size_t>(w) * h * 4);
+    stbi_image_free(px);
+    int mw = w, mh = h;
+    while ((mw > 1 || mh > 1) && static_cast<int>(mips.size()) < SG_MAX_MIPMAPS) {
+        const int nw = std::max(1, mw / 2), nh = std::max(1, mh / 2);
+        const std::vector<std::uint8_t>& src = mips.back();
+        std::vector<std::uint8_t> dst(static_cast<size_t>(nw) * nh * 4);
+        for (int y = 0; y < nh; ++y)
+            for (int x = 0; x < nw; ++x)
+                for (int c = 0; c < 4; ++c) {
+                    const int x0 = std::min(x * 2, mw - 1), x1 = std::min(x * 2 + 1, mw - 1);
+                    const int y0 = std::min(y * 2, mh - 1), y1 = std::min(y * 2 + 1, mh - 1);
+                    const int sum = src[(static_cast<size_t>(y0) * mw + x0) * 4 + c] + src[(static_cast<size_t>(y0) * mw + x1) * 4 + c] +
+                                    src[(static_cast<size_t>(y1) * mw + x0) * 4 + c] + src[(static_cast<size_t>(y1) * mw + x1) * 4 + c];
+                    dst[(static_cast<size_t>(y) * nw + x) * 4 + c] = static_cast<std::uint8_t>((sum + 2) / 4);
+                }
+        mips.push_back(std::move(dst));
+        mw = nw;
+        mh = nh;
+    }
     sg_image_desc d{};
     d.width = w;
     d.height = h;
     d.pixel_format = SG_PIXELFORMAT_RGBA8;
-    d.data.mip_levels[0] = {px, static_cast<size_t>(w) * h * 4};
+    d.num_mipmaps = static_cast<int>(mips.size());
+    for (size_t i = 0; i < mips.size(); ++i) d.data.mip_levels[i] = {mips[i].data(), mips[i].size()};
     backdropImage_ = sg_make_image(&d);
-    stbi_image_free(px);
     sg_view_desc v{};
     v.texture.image = backdropImage_;
     backdropView_ = sg_make_view(&v);
 #endif
     return backdropView_;
+}
+
+bool GlobeRenderer::backdropUv(const QuadKey& key, sg_view& view, float uv[4]) {
+    if (!backdropEnabled_ || !backdrop().id || sg_query_view_state(backdropView_) != SG_RESOURCESTATE_VALID) return false;
+    const Bounds b = bounds(key);
+    const double span = b.north - b.south;
+    view = backdropView_;
+    uv[0] = static_cast<float>(span / 360.0);
+    uv[1] = static_cast<float>(flipSurface_ ? span / 180.0 : -span / 180.0);
+    uv[2] = static_cast<float>((b.west + 180.0) / 360.0);
+    uv[3] = static_cast<float>(flipSurface_ ? (90.0 + b.south) / 180.0 : (90.0 - b.south) / 180.0);
+    return true;
 }
 
 void GlobeRenderer::retryUnavailable() {
@@ -3655,6 +3688,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         sg_view view = fallbackView_;
         float uvx[4] = {1, 1, 0, 0};
         QuadKey src = source(dt.key, 0, view, uvx);
+        if (src.level < 0) backdropUv(dt.key, view, uvx);
         int shownDepth = 0;
         if (src.level < 0) ++blank;
         else {
@@ -3756,6 +3790,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             uv[2] = uv[3] = 0.0f;
             if (f.level == -2) {
                 out = fallbackView_;
+                backdropUv(tile, out, uv);
                 return true;
             }
             const int k = tile.level - f.level;
