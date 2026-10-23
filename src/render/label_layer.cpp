@@ -1346,7 +1346,32 @@ void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dp
     std::vector<std::pair<const Item*, float>> draw;
     std::unordered_set<std::uint64_t> shown;
     if (primary) {
+        std::unordered_set<std::uint64_t> placedKeys;
+        placedKeys.reserve(placed.size() * 2);
+        for (const Item& it : placed) placedKeys.insert(it.key);
+        std::unordered_multimap<std::string_view, std::uint64_t> orphans;
+        for (const auto& [k, f] : T.fades)
+            if (!placedKeys.count(k) && f.opacity > 0.0f) orphans.emplace(f.item.text, k);
         for (const Item& it : placed) {
+            if (!orphans.empty() && T.fades.find(it.key) == T.fades.end()) {
+                double nx0, ny0;
+                if (project(it.anchor, nx0, ny0)) {
+                    const double reach = (it.layout == Layout::Along ? 40.0 : 24.0) * dpi;
+                    auto range = orphans.equal_range(std::string_view(it.text));
+                    for (auto o = range.first; o != range.second; ++o) {
+                        auto old = T.fades.find(o->second);
+                        double ox0, oy0;
+                        if (old == T.fades.end() || old->second.item.layout != it.layout || !project(old->second.item.anchor, ox0, oy0) ||
+                            std::hypot(ox0 - nx0, oy0 - ny0) > reach)
+                            continue;
+                        const float inherited = old->second.opacity;
+                        orphans.erase(o);
+                        T.fades.erase(old);
+                        T.fades[it.key].opacity = inherited;
+                        break;
+                    }
+                }
+            }
             Fade& f = T.fades[it.key];
             f.opacity = std::min(1.0f, f.opacity + (dt > 0.0f ? dt / kFadeIn : 1.0f));
             f.placed = frame_;
