@@ -15,7 +15,7 @@
   - Zooming out no longer merges parts of the view into finer imagery than the rest of the screen.
   - `OTK_UNIFORM_LOD=0` turns this off. Views tilted more than 25 degrees keep the distance-based detail they need.
 - Startup loads the same way: one fade from the empty globe to the full map, instead of tiles appearing one by one.
-- Wherever no imagery has arrived yet, the globe shows the built-in NASA Blue Marble world image instead of a flat dark blue. The first frame after opening already looks like Earth, and a cold start zoomed in shows land and sea colours while the map loads. `GlobeRenderer::setBackdrop(false)` keeps the old dark blue.
+- Wherever no imagery has arrived yet, the globe shows the built-in NASA Blue Marble world image instead of a flat dark blue. The first frame after opening already looks like Earth, and a cold start zoomed in shows land and sea colours while the map loads. `Engine::setOfflineBackdrop(false)` (`otk_set_offline_backdrop`) turns the world image off everywhere and keeps the old dark blue.
 - When zooming out:
   - Areas fade into the coarser view before switching to it, instead of switching in one frame.
   - These switches happen in batches instead of tile by tile.
