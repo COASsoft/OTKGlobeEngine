@@ -145,6 +145,7 @@ bool GlobeRenderer::init() {
     if (const char* v = std::getenv("OTK_REVEAL_HOLD")) revealHold_ = std::max(0.0, std::atof(v));
     if (const char* v = std::getenv("OTK_SETTLE")) settleFreeze_ = std::atoi(v) != 0;
     if (const char* v = std::getenv("OTK_SETTLE_WAIT")) settleWait_ = std::max(0.0, std::atof(v));
+    if (const char* v = std::getenv("OTK_UNIFORM_LOD")) uniformLod_ = std::atoi(v) != 0;
     if (const char* v = std::getenv("OTK_REVEAL_GAP")) revealGap_ = std::max(0.0, std::atof(v));
     if (const char* v = std::getenv("OTK_MOTION_HOLD")) motionHold_ = std::max(0.0, std::atof(v));
     if (const char* v = std::getenv("OTK_MOTION_SPEED")) motionSpeed_ = std::max(0.0, std::atof(v));
@@ -1373,9 +1374,11 @@ GlobeRenderer::NodeInfo GlobeRenderer::info(const Camera& cam, const QuadKey& k)
         }
     }
     double d = std::max(dist - r, 1.0);
+    if (uniformMix_ > 0.0) d = std::exp(uniformMix_ * std::log(uniformDist_) + (1.0 - uniformMix_) * std::log(d));
     double texel = spanDeg(k.level) * kDegToRad * kWgs84A / kSurfaceSize;
     if (dist > r) {
         double facing = std::abs(dot(rel * (1.0 / dist), normalize(c)));
+        facing += (1.0 - facing) * uniformMix_;
         texel *= std::max(facing, 0.35);
     }
     double threshold = std::max(1.0, dpiScale_ * 0.6) / std::max(imageryScale_, 0.1);
@@ -1386,6 +1389,15 @@ GlobeRenderer::NodeInfo GlobeRenderer::info(const Camera& cam, const QuadKey& k)
     ni.nearRefine = k.level < top && ratio > 0.7;
     ni.ratio = ratio;
     return ni;
+}
+
+void GlobeRenderer::setUniform(const Camera& c) {
+    uniformDist_ = 0.0;
+    uniformMix_ = 0.0;
+    if (!uniformLod_ || c.firstPerson || c.hasPose() || c.range() > 1.5e6) return;
+    uniformMix_ = std::clamp((25.0 - c.tilt) / 10.0, 0.0, 1.0);
+    if (uniformMix_ > 0.0) uniformDist_ = std::max(c.range(), 1.0);
+    else uniformMix_ = 0.0;
 }
 
 void GlobeRenderer::explain(const Camera& cam, double lat, double lon, const char* tag) const {
@@ -2458,6 +2470,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     profileMark(0);
     mergeActive_ = false;
     refineWaiting_ = 0;
+    setUniform(cam);
     traverse(cam, {0, 0, 0}, tiles);
     traverse(cam, {0, 1, 0}, tiles);
     profileMark(1);
@@ -2490,8 +2503,12 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         prefetching_ = true;
         int savedVisits = visits_;
         visits_ = 0;
+        const double savedDist = uniformDist_, savedMix = uniformMix_;
+        setUniform(wide);
         traverse(wide, {0, 0, 0}, ignored);
         traverse(wide, {0, 1, 0}, ignored);
+        uniformDist_ = savedDist;
+        uniformMix_ = savedMix;
         visits_ = savedVisits;
         needScale_ = 1.0;
         prefetching_ = false;
@@ -3319,10 +3336,45 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         double acc = 0.0;
         while (counted > 0 && capDepth < 16 && acc + hist[capDepth] < need) acc += hist[capDepth++];
     }
+    auto zOf = [&](const QuadKey& q) {
+        auto st = q.level >= 0 ? surface_.find(q) : surface_.end();
+        if (st == surface_.end()) return -1;
+        return st->second.complete ? std::max(st->second.sourceZ, st->second.imageryZ) : st->second.sourceZ;
+    };
+    int zCap = 99;
+    if (uniformMix_ >= 1.0 && uniformShare_ > 0.0) {
+        for (const DrawTile& d : tiles) {
+            int z = idealImageryZ(d.key);
+            if (expecting(d.key)) {
+                sg_view v{};
+                float u[4];
+                const QuadKey s = source(d.key, 0, v, u);
+                if (s.level < 0) continue;
+                z = zOf(s);
+            }
+            if (z >= 0) zCap = std::min(zCap, z);
+        }
+        if (visualLog_ && zCap != uniformZ_)
+            std::fprintf(visualLog_, "zcap frame %llu t %.3f z %d -> %d tiles %zu\n", static_cast<unsigned long long>(frame_), tnow, uniformZ_, zCap,
+                         tiles.size());
+    }
+    uniformZ_ = zCap;
     if (visualLog_ && capDepth != uniformDepth_)
         std::fprintf(visualLog_, "cap frame %llu t %.3f depth %d -> %d tiles %zu\n", static_cast<unsigned long long>(frame_), tnow, uniformDepth_, capDepth,
                      tiles.size());
     uniformDepth_ = capDepth;
+    std::unordered_map<int, int> levelMix;
+    auto levelMixText = [&]() {
+        std::vector<std::pair<int, int>> v(levelMix.begin(), levelMix.end());
+        std::sort(v.begin(), v.end());
+        std::string out;
+        char buf[40];
+        for (const auto& [k, n] : v) {
+            std::snprintf(buf, sizeof(buf), " L%dz%d:%d", k / 100, k % 100 - 1, n);
+            out += buf;
+        }
+        return out;
+    };
     for (auto& dt : tiles) {
         TerrainTile& tt = terrain(dt.key);
         tt.used = frame_;
@@ -3364,7 +3416,20 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                      loader_.pending());
             }
         }
-        if (capDepth > 0 && src.level >= 0 && shownDepth < capDepth) {
+        if (zCap < 99 && src.level >= 0 && zOf(src) > zCap) {
+            for (int up = dt.key.level - src.level + 1; up <= dt.key.level; ++up) {
+                sg_view cv{};
+                float cu[4];
+                const QuadKey c = source(dt.key, up, cv, cu);
+                if (c.level < 0) break;
+                if (zOf(c) > zCap) continue;
+                src = c;
+                view = cv;
+                std::memcpy(uvx, cu, sizeof(cu));
+                shownDepth = depthOf(dt.key, src);
+                break;
+            }
+        } else if (zCap == 99 && capDepth > 0 && src.level >= 0 && shownDepth < capDepth) {
             int prev = 0;
             auto pt = transitions_.find(dt.key);
             if (pt != transitions_.end() && pt->second.frame + 1 == frame_) {
@@ -3458,10 +3523,11 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         auto hold = [&]() {
             const bool better = improving(tr.from, tr.fromVersion);
             const bool switched = tr.fromVersion >= 0 && tr.fromVersion < switchVersion_ && shownVersion >= switchVersion_;
-            if (revealHold_ <= 0.0 || revealOpen_ || switched || (!better && tr.from.level < 0)) {
+            const bool coarsen = !better && zCap < 99 && tr.from.level >= 0;
+            if (revealHold_ <= 0.0 || revealOpen_ || switched || coarsen || (!better && tr.from.level < 0)) {
                 tr.held = false;
                 tr.start = tnow;
-                tr.why = revealOpen_ ? 'g' : !better ? 'd' : 'o';
+                tr.why = revealOpen_ ? 'g' : coarsen ? 'c' : !better ? 'd' : 'o';
                 return;
             }
             if (!tr.held) tr.heldSince = tnow;
@@ -3470,7 +3536,12 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         };
         if (continuing) {
             if (!(tr.src == src) || tr.version != shownVersion) {
-                if (!tr.held && tr.start >= 0.0 && tnow - tr.start < kFadeSeconds && tr.src.level >= 0) {
+                if (tr.held && zCap < 99 && tr.from.level >= 0 && zOf(tr.from) > zOf(src)) {
+                    tr.held = false;
+                    tr.finishing = false;
+                    tr.start = tnow;
+                    tr.why = 'c';
+                } else if (!tr.held && tr.start >= 0.0 && tnow - tr.start < kFadeSeconds && tr.src.level >= 0) {
                     tr.finishing = true;
                 } else if (!tr.held) {
                     tr.finishing = false;
@@ -3540,6 +3611,12 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             tr.merge = {-1, 0, 0};
         }
         if (frozenNow && tr.start >= 0.0 && tnow - tr.start < kFadeSeconds) tr.start = tnow - kFadeSeconds;
+        if (visualLog_) {
+            const QuadKey shownKey = tr.held && tr.from.level >= 0 ? tr.from : src;
+            auto ss = shownKey.level >= 0 ? surface_.find(shownKey) : surface_.end();
+            const int z = ss == surface_.end() ? -1 : ss->second.complete ? std::max(ss->second.sourceZ, ss->second.imageryZ) : ss->second.sourceZ;
+            ++levelMix[dt.key.level * 100 + std::clamp(z, -1, 98) + 1];
+        }
         if (tr.held) {
             view2 = fv;
             std::memcpy(uvx2, fu, sizeof(fu));
@@ -3776,7 +3853,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             vsp.eyerel[1] = static_cast<float>(rel.y);
             vsp.eyerel[2] = static_cast<float>(rel.z);
             auto sphere = spheres_.find(dt.key);
-            vsp.eyerel[3] = sphere != spheres_.end() ? static_cast<float>(sphere->second.radius) : 0.0f;
+            vsp.eyerel[3] = uniformMix_ >= 1.0 ? static_cast<float>(-uniformDist_)
+                            : sphere != spheres_.end() ? static_cast<float>(sphere->second.radius) : 0.0f;
             const double texel = spanDeg(dt.key.level) * kDegToRad * kWgs84A / kSurfaceSize;
             const double threshold = std::max(1.0, dpiScale_ * 0.6) / std::max(imageryScale_, 0.1);
             vsp.morph[0] = static_cast<float>(texel / (cam.pixelSizeAt(1.0) * threshold));
@@ -3909,8 +3987,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         snapshotStart_ = tnow;
         snapshotFade_ = -1.0;
         if (visualLog_ && settleCapture)
-            std::fprintf(visualLog_, "settle frame %llu t %.3f capture held %d waiting %d\n", static_cast<unsigned long long>(frame_), tnow,
-                         heldPrev_, waitingPrev_);
+            std::fprintf(visualLog_, "settle frame %llu t %.3f capture held %d waiting %d tiles%s\n", static_cast<unsigned long long>(frame_), tnow,
+                         heldPrev_, waitingPrev_, levelMixText().c_str());
         snapshotEye_ = cam.eye();
         snapshotAzimuth_ = cam.azimuth;
         snapshotTilt_ = cam.tilt;
@@ -4057,9 +4135,9 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             snapshotFade_ = tnow;
             snapshotFadeLength_ = settleFade_;
             if (visualLog_)
-                std::fprintf(visualLog_, "settle frame %llu t %.3f dissolve after %.3f quiet %d waiting %d renders %d deferred %d\n",
+                std::fprintf(visualLog_, "settle frame %llu t %.3f dissolve after %.3f quiet %d waiting %d renders %d deferred %d tiles%s\n",
                              static_cast<unsigned long long>(frame_), tnow, tnow - snapshotStart_, settleQuiet_, waitingNow, visibleRenders,
-                             visibleDeferred);
+                             visibleDeferred, levelMixText().c_str());
         }
     } else if (settleFreeze_ && !settleBroken_ && !views && !snapshotShown_ && terrainAlpha_ >= 0.999f && tnow - lastMotion_ >= 0.15 &&
                (heldNow > 0 || mergeActive_ || fading)) {
