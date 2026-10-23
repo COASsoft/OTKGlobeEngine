@@ -99,3 +99,7 @@ bool saveImagePng(sg_image image, int width, int height, const void* device, con
 bool writePng(const char* path, int width, int height, const std::vector<unsigned char>& rgba) {
     return stbi_write_png(path, width, height, 4, rgba.data(), width * 4) != 0;
 }
+
+bool writeBmp(const char* path, int width, int height, const std::vector<unsigned char>& rgba) {
+    return stbi_write_bmp(path, width, height, 4, rgba.data()) != 0;
+}
