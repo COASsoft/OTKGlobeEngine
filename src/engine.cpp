@@ -1978,6 +1978,7 @@ void Engine::frame(const sg_swapchain& swapchain) {
     impl_->updateContours();
     updateAutoDownload();
     impl_->updateDownloads();
+    if (!needsRedraw() && impl_->globe.presentIdle(impl_->camera, swapchain)) return;
     impl_->globe.render(impl_->camera, &swapchain, nullptr, swapchain.width, swapchain.height);
     impl_->sanity();
     impl_->dirty = false;
