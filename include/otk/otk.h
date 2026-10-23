@@ -51,6 +51,7 @@ OTK_API void otk_frame_d3d11(otk_engine* e, int width, int height, void* render_
 OTK_API void otk_frame_metal(otk_engine* e, int width, int height, void* current_drawable, void* depth_stencil_texture,
                              void* msaa_color_texture, float dpi_scale);
 OTK_API int otk_needs_redraw(const otk_engine* e);
+OTK_API double otk_next_frame_delay(const otk_engine* e);
 
 typedef struct otk_xr_view {
     double position[3];
