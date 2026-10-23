@@ -277,6 +277,8 @@ private:
     double revealGap_ = 0.3;
     double lastReveal_ = -1.0e9;
     double motionHold_ = 2.0;
+    double uniformShare_ = 0.9;
+    int uniformDepth_ = 0;
     double lastMotion_ = -1.0e9;
     double motionKey_[5] = {};
     double motionTime_ = 0.0;
