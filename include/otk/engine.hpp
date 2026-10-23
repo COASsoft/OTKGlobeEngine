@@ -114,6 +114,7 @@ struct Stats {
     double coverArea = 0;
     int pops = 0;
     long long fadeMisses = 0;
+    int heldTiles = 0;
 };
 
 struct DownloadStatus {
