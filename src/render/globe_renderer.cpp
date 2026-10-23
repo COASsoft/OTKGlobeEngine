@@ -76,6 +76,7 @@ constexpr double budgetMs = 8.0;
 constexpr double prefetchBudgetMs = 3.0;
 #endif
 constexpr int kGrid = 32;
+constexpr int kMaxUniformDrop = 2;
 constexpr int kPosts = kGrid + 1;
 constexpr int kVertexCount = kPosts * kPosts + 4 * kPosts;
 constexpr int kStride = 7;

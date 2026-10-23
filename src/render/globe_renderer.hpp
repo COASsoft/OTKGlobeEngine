@@ -281,6 +281,7 @@ private:
     int uniformDepth_ = 0;
     double lastMotion_ = -1.0e9;
     double motionKey_[5] = {};
+    double snapshotKey_[5] = {};
     double motionTime_ = 0.0;
     double motionSpeed_ = 60.0;
     bool revealOpen_ = true;
@@ -350,7 +351,8 @@ private:
     bool ensureIdleTarget(int width, int height);
     void dropIdleTarget();
     void dropSnapshotTarget();
-    void drawSnapshot(float alpha);
+    void drawSnapshot(float alpha, const float* warp = nullptr);
+    bool snapshotWarp(const Camera& cam, float out[12]) const;
     static void dropSurface(SurfaceTile& s);
     int processLoads();
     void evict();
@@ -605,11 +607,14 @@ private:
     Vec3 snapshotEye_{};
     double snapshotAzimuth_ = 0.0;
     double snapshotTilt_ = 0.0;
+    Camera snapshotCam_{};
+    double settleMoveFade_ = 0.25;
     bool settleFreeze_ = true;
     bool uniformLod_ = true;
     double uniformDist_ = 0.0;
     double uniformMix_ = 0.0;
     int uniformZ_ = 99;
+    double coarsenAt_ = -1.0;
     double settleWait_ = 3.0;
     double settleFade_ = 0.35;
     bool settleSnapshot_ = false;
