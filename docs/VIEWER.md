@@ -38,7 +38,7 @@ otk_viewer [file or folder ...] [--view lat,lon,gsd,tilt,azimuth] [--preset 0..3
 - `--frames file.csv` writes one row per frame: timing, view, tiles, loads, and the share of the screen that switched without a fade, merged without a fade, faded, or showed imagery one or more levels coarser than wanted. It also writes `file.csv.txt` with totals for the input and settle periods: frames actually drawn (`drawn_frames`), how often new detail appeared (`reveal_frames`, `tile_reveals`), seconds until loading finished (`settled_after_input`), data downloaded (`net_mb`, `net_requests`), and tiles loaded and dropped unseen (`imagery_loads`, `imagery_wasted`).
 - `--exit-after s` quits that many seconds after the script's input ends.
 - `--clear-cache 1` empties the cache folder first.
-- `--idle-fps n` slows the viewer to about `n` frames per second once nothing has changed for half a second (20 by default, 0 off). Any input brings back full speed at once.
+- `--idle-fps n`: when nothing changes, the viewer draws about `n` frames per second (0 turns this off). On Android and Windows the default is 5, and input or arriving tiles wake it at once. Elsewhere the default is 20, after half a second without changes.
 - `--fps n` asks an Android screen for `n` frames per second (60 by default, 0 leaves the system's choice). This keeps 90 and 120 Hz phones from drawing the map more often than needed.
 - `--env NAME=VALUE` sets one of the `OTK_` settings below. This is the way to set them on Android.
 - `--diag 1` logs subtree collapses and deep-fallback tiles.
