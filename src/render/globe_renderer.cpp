@@ -344,8 +344,10 @@ void GlobeRenderer::shutdown() {
         for (auto& [k, t] : terrain_) sg_destroy_buffer(t.vbuf);
         for (auto& [k, s] : surface_) dropSurface(s);
         for (auto& s : freeSurfaces_) dropSurface(s);
-        for (auto& [k, r] : retiring_) dropSurface(r.first);
+        for (auto& [k, list] : retiring_)
+            for (auto& r : list) dropSurface(r.surface);
         retiring_.clear();
+        retiredCount_ = 0;
         for (auto& [k, t] : imagery_) dropImagery(t);
         sg_destroy_pipeline(globePipeline_);
         sg_destroy_pipeline(globeBlendPipeline_);
@@ -2591,12 +2593,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             if (s->shown + 1 >= frame_) {
                 SurfaceTile fresh = freshSurface();
                 if (sg_query_view_state(fresh.texture) == SG_RESOURCESTATE_VALID) {
-                    auto old = retiring_.find(job.key);
-                    if (old != retiring_.end()) {
-                        recycleSurface(old->second.first);
-                        retiring_.erase(old);
-                    }
-                    retiring_.emplace(job.key, std::make_pair(*s, now()));
+                    retiring_[job.key].push_back({*s, frame_});
+                    ++retiredCount_;
                     s->image = fresh.image;
                     s->attachment = fresh.attachment;
                     s->texture = fresh.texture;
@@ -2891,13 +2889,37 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             snapshotFadeLength_ = 0.4;
         }
     }
-    for (auto it = retiring_.begin(); it != retiring_.end();) {
-        if (tnow - it->second.second > 0.4) {
-            recycleSurface(it->second.first);
-            it = retiring_.erase(it);
-        } else {
-            ++it;
+    {
+        std::sort(fadeRefs_.begin(), fadeRefs_.end(), [](const auto& a, const auto& b) {
+            if (a.first.level != b.first.level) return a.first.level < b.first.level;
+            if (a.first.x != b.first.x) return a.first.x < b.first.x;
+            if (a.first.y != b.first.y) return a.first.y < b.first.y;
+            return a.second < b.second;
+        });
+        auto referenced = [&](const QuadKey& k, int version) {
+            return std::binary_search(fadeRefs_.begin(), fadeRefs_.end(), std::make_pair(k, version), [](const auto& a, const auto& b) {
+                if (a.first.level != b.first.level) return a.first.level < b.first.level;
+                if (a.first.x != b.first.x) return a.first.x < b.first.x;
+                if (a.first.y != b.first.y) return a.first.y < b.first.y;
+                return a.second < b.second;
+            });
+        };
+        const size_t cap = std::max<size_t>(32, freeSurfacePool_ * 2);
+        for (auto it = retiring_.begin(); it != retiring_.end();) {
+            auto& list = it->second;
+            for (size_t i = 0; i < list.size();) {
+                const bool keep = list[i].frame == frame_ || (referenced(it->first, list[i].surface.version) && retiredCount_ <= cap);
+                if (keep) {
+                    ++i;
+                    continue;
+                }
+                recycleSurface(list[i].surface);
+                list.erase(list.begin() + static_cast<std::ptrdiff_t>(i));
+                --retiredCount_;
+            }
+            it = list.empty() ? retiring_.erase(it) : std::next(it);
         }
+        fadeRefs_.clear();
     }
     if (drawn_.size() > 20000)
         for (auto it = drawn_.begin(); it != drawn_.end();) it = it->second + 2 < frame_ ? drawn_.erase(it) : std::next(it);
@@ -2977,7 +2999,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         }
         bool fadingFrom = false;
         int fromVersion = -1;
-        auto fadeTexture = [&](const QuadKey& tile, const QuadKey& f, int version, double remaining, sg_view& out, float uv[4]) {
+        auto fadeTexture = [&](const QuadKey& tile, const QuadKey& f, int version, sg_view& out, float uv[4]) {
             uv[0] = uv[1] = 1.0f;
             uv[2] = uv[3] = 0.0f;
             if (f.level == -2) {
@@ -2994,9 +3016,11 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 fs->second.shown = frame_;
             } else {
                 auto rs = retiring_.find(f);
-                if (rs == retiring_.end() || rs->second.first.version != version) return false;
-                out = rs->second.first.texture;
-                rs->second.second = std::max(rs->second.second, tnow - 0.4 + remaining + 0.05);
+                if (rs == retiring_.end()) return false;
+                for (const Retired& r : rs->second)
+                    if (r.surface.version == version) out = r.surface.texture;
+                if (!out.id) return false;
+                fadeRefs_.push_back({f, version});
             }
             if (!out.id || sg_query_view_state(out) != SG_RESOURCESTATE_VALID) return false;
             const double sc = 1.0 / static_cast<double>(1 << k);
@@ -3013,12 +3037,12 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         if (tr.frame + 1 == frame_) {
             if (!(tr.src == src) || tr.version != shownVersion) {
                 const bool early = tr.start >= 0.0 && (tnow - tr.start) / kFadeSeconds < 0.5 && tr.from.level != -1 &&
-                                   fadeTexture(dt.key, tr.from, tr.fromVersion, kFadeSeconds, fv, fu);
+                                   fadeTexture(dt.key, tr.from, tr.fromVersion, fv, fu);
                 if (!early) {
                     tr.from = tr.src.level >= 0 ? tr.src : QuadKey{-2, 0, 0};
                     tr.fromVersion = tr.version;
+                    tr.start = tnow;
                 }
-                tr.start = tnow;
             }
         } else {
             tr.from = {-1, 0, 0};
@@ -3039,7 +3063,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         tr.frame = frame_;
         if (tr.start >= 0.0) {
             const double t = (tnow - tr.start) / kFadeSeconds;
-            if (t < 1.0 && src.level >= 0 && fadeTexture(dt.key, tr.from, tr.fromVersion, kFadeSeconds * (1.0 - t), fv, fu)) {
+            if (t < 1.0 && src.level >= 0 && fadeTexture(dt.key, tr.from, tr.fromVersion, fv, fu)) {
                 view2 = fv;
                 std::memcpy(uvx2, fu, sizeof(fu));
                 blend = static_cast<float>(t * t * (3 - 2 * t));
