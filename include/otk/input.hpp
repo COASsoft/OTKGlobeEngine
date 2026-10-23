@@ -78,6 +78,7 @@ public:
 
     void update();
     bool active() const;
+    bool flingRest(double& dx, double& dy) const;
 
     void onTap(TapHandler handler) { tapHandler_ = std::move(handler); }
     void onLongPress(PressHandler handler) { longPressHandler_ = std::move(handler); }
