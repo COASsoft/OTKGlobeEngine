@@ -321,6 +321,7 @@ private:
 
     static Bounds bounds(const QuadKey& k);
     NodeInfo info(const Camera& cam, const QuadKey& k) const;
+    void setUniform(const Camera& c);
     double seamSkirt(const QuadKey& k, const TerrainTile& t, const std::unordered_map<QuadKey, const TerrainTile*, QuadKeyHash>& drawn,
                      int coarser[4]) const;
     bool ready(const QuadKey& k) const;
@@ -604,6 +605,18 @@ private:
     Vec3 snapshotEye_{};
     double snapshotAzimuth_ = 0.0;
     double snapshotTilt_ = 0.0;
+    bool settleFreeze_ = true;
+    bool uniformLod_ = true;
+    double uniformDist_ = 0.0;
+    double uniformMix_ = 0.0;
+    int uniformZ_ = 99;
+    double settleWait_ = 3.0;
+    double settleFade_ = 0.35;
+    bool settleSnapshot_ = false;
+    bool settleWanted_ = false;
+    bool settleFrozen_ = false;
+    bool settleBroken_ = false;
+    int settleQuiet_ = 0;
     double dpiScale_ = 1.0;
     double exaggeration_ = 1.0;
     bool terrainEnabled_ = true;
