@@ -25,7 +25,21 @@ otk_viewer [file or folder ...] [--view lat,lon,gsd,tilt,azimuth] [--preset 0..3
   - Keys: arrows or `W`/`A`/`S`/`D` pan (walk in first person), `+`/`-` zoom, `Q`/`E` rotate, `PageUp`/`PageDown` tilt, `N` north up, `T` level the camera.
   - Panning keeps the current heading; only explicit rotation changes it. The poles are reachable at any zoom without the view spinning.
 - Viewer keys: `1`-`4` imagery presets (satellite, Esri topographic, OpenStreetMap, vector tiles), `R` reset north and tilt, `I` labels (borders, place names and downloaded roads), `J` download roads and street names for the view, `Y` terrain, `O` exaggeration, `U` depth shading, `H` heat map, `G` grid (MGRS, lat/lon, GARS, off), `K` terrain slope, `L` contours on or off (auto interval; `--contours N` starts them with a fixed one), `B` bullseye at the cursor, `C` range and bearing (press at both ends), `V` viewshed at the cursor, `F` fly to Mount Rainier, `M` 2D/3D, `P` first person, `X` terrain x-ray.
-- `--shot` renders offscreen until everything has loaded, writes the PNG plus a `.txt` with statistics, and exits. `--zoom-test` flies to a view and reports incomplete, coarse (two or more levels of fallback) and blank frames; `--zoom-start s` starts it after a fixed delay. `--script` plays timed input from a file (`seconds wheel x y notches`, `seconds drag x0 y0 x1 y1 duration`, `seconds view lat lon gsd tilt azimuth`, `seconds fly lat lon gsd tilt azimuth duration`) during a `--shot`, and `--film` saves half-size frames every `--film-every` seconds with a `film.csv` of pending loads. `--diag 1` logs subtree collapses and deep-fallback tiles.
+- `--shot` renders offscreen until everything has loaded, writes the PNG plus a `.txt` with statistics, and exits. `--zoom-test` flies to a view and reports incomplete, coarse (two or more levels of fallback) and blank frames; `--zoom-start s` starts it after a fixed delay. `--script` plays timed input from a file, during a `--shot` or in the open window:
+  - `seconds wheel x y notches`
+  - `seconds drag x0 y0 x1 y1 duration` (mouse)
+  - `seconds swipe x0 y0 x1 y1 duration` (one finger, flings on release)
+  - `seconds pinch cx cy startDistance endDistance duration [angle]`
+  - `seconds twist cx cy distance startAngle endAngle duration`
+  - `seconds tilt cx cy dy duration` (two fingers)
+  - `seconds view lat lon gsd tilt azimuth`
+  - `seconds fly lat lon gsd tilt azimuth duration`
+- `--film` saves half-size frames every `--film-every` seconds with a `film.csv` of pending loads.
+- `--frames file.csv` writes one row per frame: timing, view, tiles, loads, and the share of the screen that switched without a fade, merged without a fade, faded, or showed imagery one or more levels coarser than wanted. It also writes `file.csv.txt` with totals for the input and settle periods.
+- `--exit-after s` quits that many seconds after the script's input ends.
+- `--clear-cache 1` empties the cache folder first.
+- `--env NAME=VALUE` sets one of the `OTK_` settings below. This is the way to set them on Android.
+- `--diag 1` logs subtree collapses and deep-fallback tiles.
 - On Android the viewer also reads arguments from `Android/data/com.otkglobeengine.viewer/files/args.txt` and logs statistics under the logcat tag `OTKGlobeEngine`.
 - Environment: `OTK_LOD_MORPH=0..1` level-of-detail colour blend (1 by default, 0 off; always off on software rasterizers such as llvmpipe), `OTK_TRACE=file` per-frame trace, `OTK_WATCHDOG=file` main-thread stack dump on a 3 s stall, `OTK_LOG=file` sokol validation messages, `OTK_PROFILE=file` per-section CPU times, `OTK_PERF=file` frame and cache statistics, `OTK_NET_DELAY_MS` / `OTK_NET_JITTER_MS` / `OTK_NET_FAIL_RATE` / `OTK_NET_TIMEOUT_RATE` / `OTK_NET_CORRUPT_RATE` / `OTK_NET_404_RATE` / `OTK_NET_UNREACHABLE` network fault injection.
 
