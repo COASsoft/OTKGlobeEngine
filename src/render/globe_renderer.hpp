@@ -263,6 +263,7 @@ private:
         double edgeTime = -1.0;
         bool held = false;
         double heldSince = -1.0;
+        char why = 0;
     };
     struct Merge {
         double start = 0.0;
