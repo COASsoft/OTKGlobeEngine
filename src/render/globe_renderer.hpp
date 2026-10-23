@@ -233,6 +233,7 @@ private:
         double roads3dBuilt = -1.0e9;
         Vec3 roadsOrigin{};
         std::array<int, 33> roadChunk{};
+        std::array<std::array<int, 13>, 32> roadRanks{};
         std::array<GeoRect, 32> roadBox{};
     };
     struct DrawTile {
@@ -339,6 +340,8 @@ private:
     bool presentable(const QuadKey& k) const;
     bool finished(const QuadKey& k) const;
     bool retrying(const QuadKey& k) const;
+    int surfaceZ(const QuadKey& q) const;
+    bool roadsReady(const std::vector<TileId>& roads) const;
     int readyGap(const QuadKey& k) const;
     bool sparseLayer(int l) const;
     bool progressed(const SurfaceTile& s) const;
@@ -623,10 +626,16 @@ private:
     bool settleFreeze_ = true;
     bool uniformLod_ = true;
     bool lines3d_ = true;
+    bool bordersReady_ = true;
+    std::unordered_set<TileId, TileIdHash> roadBuildQueue_;
     double uniformDist_ = 0.0;
     double uniformMix_ = 0.0;
     int uniformZ_ = 99;
     double coarsenAt_ = -1.0;
+    int pendingMergeZ_ = 99;
+    bool stepWanted_ = false;
+    bool stepSnapshot_ = false;
+    bool stepInstant_ = false;
     double settleWait_ = 3.0;
     double settleFade_ = 0.35;
     bool settleSnapshot_ = false;
