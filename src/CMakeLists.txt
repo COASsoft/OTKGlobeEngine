@@ -6,6 +6,7 @@ add_library(otk_kernel STATIC
     core/prj.cpp
     core/navigation.cpp
     core/astro.cpp
+    core/thread_name.cpp
     core/wmm.cpp
     core/geoid.cpp
     net/http_faults.cpp
