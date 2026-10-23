@@ -3781,6 +3781,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     stats_.imageryPending = loader_.pending();
     stats_.staleTiles = loader_.staleServed();
     stats_.unreachableHosts = net::hostsDown();
+    stats_.networkBytes = static_cast<long long>(net::bytesReceived());
+    stats_.networkRequests = static_cast<long long>(net::requestsMade());
     stats_.elevationPending = elevation_.pending();
     stats_.pendingRequests = stats_.imageryPending + stats_.elevationPending;
     stats_.maxLevel = maxLevel;
