@@ -56,6 +56,7 @@ struct ViewerState {
     sg_view shotColorView{};
     sg_view shotDepthView{};
     std::string cacheDir;
+    bool clearCache = false;
     bool offline = false;
     std::vector<otk::ImageryLayer> customLayers;
     bool hasDownload = false;
