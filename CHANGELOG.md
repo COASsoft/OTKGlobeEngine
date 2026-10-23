@@ -24,6 +24,9 @@
   - They are sharp and keep the same width at every zoom, and they change width smoothly while zooming.
   - They no longer turn into thick, glowing bands when coarser tiles are stretched while loading, and they no longer jump in width when tiles switch level.
   - Tiles are no longer redrawn just to keep painted lines thin, which saves work while zooming.
+  - Borders for a new area appear all at once, together with the imagery, instead of in pieces.
+  - Long border segments follow the terrain, so county and state lines no longer cut through hills and disappear under them.
+  - Roads keep showing when you zoom out past the level where road data was downloaded, using the coarser data that is there.
   - `OTK_LINES3D=0` goes back to painted lines.
 - Where a sharp tile meets one that is still loading, the edge between them is blended, so loading areas no longer show as hard-edged rectangles.
 - Place and street names keep their position and fade state when more detailed map data replaces less detailed data, instead of fading out and back in.
