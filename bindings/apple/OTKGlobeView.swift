@@ -184,7 +184,9 @@ public final class OTKGlobeView: OTEPlatformView, MTKViewDelegate {
         get { otk_controls(engine) }
         set { otk_set_controls(engine, newValue) }
     }
+    private var autoPadding = true
     public func setControlsPadding(left: Double, top: Double, right: Double, bottom: Double) {
+        autoPadding = false
         otk_set_controls_padding(engine, left, top, right, bottom)
     }
     public var basemap: Int32 {
