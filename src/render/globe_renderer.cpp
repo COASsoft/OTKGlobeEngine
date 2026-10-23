@@ -3118,6 +3118,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         if (dt.kind == 2) ++retained;
     }
     bool fading = false;
+    int fadeKinds[3] = {0, 0, 0};
     double tnow = now();
     auto source = [&](const QuadKey& key, int minUp, sg_view& view, float uvx[4]) {
         int bestK = -1;
@@ -3607,10 +3608,15 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         };
         if (continuing) {
             if (!(tr.src == src) || tr.version != shownVersion) {
-                if (tr.held && zCap < 99 && tr.from.level >= 0 && zOf(tr.from) > zOf(src)) {
+                const QuadKey showing = tr.held && tr.from.level >= 0 ? tr.from : tr.src;
+                if (zCap < 99 && showing.level >= 0 && zOf(showing) > zOf(src)) {
+                    if (!tr.held) {
+                        tr.from = tr.src;
+                        tr.fromVersion = tr.version;
+                    }
                     tr.held = false;
                     tr.finishing = false;
-                    tr.start = tnow;
+                    tr.start = coarsenAt_;
                     tr.why = 'c';
                 } else if (!tr.held && tr.start >= 0.0 && tnow - tr.start < kFadeSeconds && tr.src.level >= 0) {
                     tr.finishing = true;
@@ -3701,6 +3707,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 std::memcpy(uvx2, fu, sizeof(fu));
                 blend = static_cast<float>(t * t * (3 - 2 * t));
                 fading = true;
+                ++fadeKinds[0];
                 fadingFrom = true;
                 fromVersion = tr.fromVersion;
             } else {
@@ -3870,7 +3877,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             view2 = view;
         }
         {
-            const double step = continuing && tr.edgeTime >= 0.0 ? std::clamp(tnow - tr.edgeTime, 0.0, 0.1) / kFadeSeconds : 1.0;
+            const double step = continuing && tr.edgeTime >= 0.0 && !frozenNow ? std::clamp(tnow - tr.edgeTime, 0.0, 0.1) / kFadeSeconds : 1.0;
             tr.edgeTime = tnow;
             bool any = false;
             for (int e = 0; e < 4; ++e) {
@@ -3879,7 +3886,10 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                                                  : std::max(target, tr.edge[e] - static_cast<float>(step));
                 lodEdges[e] = tr.edge[e];
                 any = any || tr.edge[e] > 0.0f;
-                if (tr.edge[e] != target) fading = true;
+                if (tr.edge[e] != target) {
+                    fading = true;
+                    ++fadeKinds[1];
+                }
             }
             if (!any && !morphing) spatial = false;
         }
@@ -3913,10 +3923,14 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         if (spatial) {
             auto& since = morphSince_[dt.key];
             if (since.second + 1 < frame_) since.first = fadingFrom ? tnow - 1.0 : tnow;
+            if (frozenNow) since.first = std::min(since.first, tnow - 1.0);
             since.second = frame_;
             const double t = (tnow - since.first) / 0.3;
             vsp.morph[3] = t >= 1.0 ? 1.0f : static_cast<float>(t * t * (3 - 2 * t));
-            if (t < 1.0) fading = true;
+            if (t < 1.0) {
+                fading = true;
+                ++fadeKinds[2];
+            }
         }
         if (morphing) {
             const Vec3 rel = tt.center - eye_;
@@ -3960,9 +3974,9 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     if (!xray) drawObjects();
     if (!capture && snapshotShown_ && settleSnapshot_) {
         float warp[12];
-        double drift = length(dc.eye() - snapshotCam_.eye());
-        for (int i = 0; i < 16; ++i) drift = std::max(drift, std::abs(dc.viewProjRel().m[i] - snapshotCam_.viewProjRel().m[i]) * 1.0e6);
-        if (drift < 1.0e-3) drawSnapshot(snapshotAlpha());
+        bool steered = false;
+        for (int i = 0; i < 5; ++i) steered = steered || std::abs(motionKey_[i] - snapshotKey_[i]) > 1.0e-9;
+        if (!steered) drawSnapshot(snapshotAlpha());
         else if (snapshotWarp(dc, warp)) drawSnapshot(snapshotAlpha(), warp);
         else snapshotShown_ = false;
     }
@@ -4071,6 +4085,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         snapshotAzimuth_ = cam.azimuth;
         snapshotTilt_ = cam.tilt;
         snapshotCam_ = cam;
+        std::copy(motionKey_, motionKey_ + 5, snapshotKey_);
     }
     if (views)
         for (size_t vi = 1; vi < views->size(); ++vi) {
@@ -4221,6 +4236,9 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     } else if (settleFreeze_ && !settleBroken_ && !views && !snapshotShown_ && terrainAlpha_ >= 0.999f && tnow - lastMotion_ >= 0.15 &&
                (heldNow > 0 || mergeActive_ || fading)) {
         settleWanted_ = true;
+        if (visualLog_)
+            std::fprintf(visualLog_, "settle frame %llu t %.3f want held %d merging %d fades %d edges %d morphs %d\n", static_cast<unsigned long long>(frame_),
+                         tnow, heldNow, mergeActive_ ? 1 : 0, fadeKinds[0], fadeKinds[1], fadeKinds[2]);
     }
     busy_ = settleWanted_ || fading || mergeActive_ || snapshotShown_ || tilesBusy || renders > 0 || builds > 0 || deferred > 0 || loadsTaken > 0 || elevationChanged ||
             ((labelsOn_ || contours_) && labels_.animating()) || (buildingsOn_ && buildings_.busy());
