@@ -3627,6 +3627,9 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     uniformDepth_ = capDepth;
     std::unordered_map<int, int> levelMix;
     std::vector<std::pair<QuadKey, QuadKey>> lineTiles;
+    int capFail[4] = {0, 0, 0, 0};
+    QuadKey capExample{-1, 0, 0};
+    int capExampleZ = -1;
     auto levelMixText = [&]() {
         std::vector<std::pair<int, int>> v(levelMix.begin(), levelMix.end());
         std::sort(v.begin(), v.end());
