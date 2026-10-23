@@ -1805,6 +1805,7 @@ void GlobeRenderer::evict() {
         std::sort(c.begin(), c.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
         for (size_t i = 0; i < c.size() && imagery_.size() > imageryCap; ++i) {
             auto it = imagery_.find(c[i].second);
+            if (!it->second.drawn) ++stats_.imageryWasted;
             dropImagery(it->second);
             imagery_.erase(it);
             ++stats_.imageryEvictions;
@@ -2012,6 +2013,7 @@ bool GlobeRenderer::buildSurfaceJob(const QuadKey& k, double priority, SurfaceJo
                 if (job && !missing && src.z < id.z) job->degraded = true;
                 tex->used = frame_;
                 if (!job) continue;
+                tex->drawn = true;
                 if (l == baseLayer_) {
                     job->imageryZ = z;
                     job->sourceZ = std::min(job->sourceZ, src.z);
