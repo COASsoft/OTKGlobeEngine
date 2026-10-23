@@ -2908,7 +2908,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     std::unordered_map<QuadKey, const TerrainTile*, QuadKeyHash> drawnNow;
     drawnNow.reserve(tiles.size() * 2);
     for (auto& dt : tiles) drawnNow[dt.key] = &terrain(dt.key);
-    double visPop = 0, visMerge = 0, visTerrain = 0, visBlur = 0, visBlur2 = 0, visDepth = 0, visFade = 0;
+    double visPop = 0, visMerge = 0, visTerrain = 0, visBlur = 0, visBlur2 = 0, visDepth = 0, visFade = 0, visCover = 0;
     int visPops = 0;
     if (visualStats_ && shown_.size() > 20000)
         for (auto it = shown_.begin(); it != shown_.end();) it = it->second.frame + 2 < frame_ ? shown_.erase(it) : std::next(it);
@@ -3029,6 +3029,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         }
         if (visualStats_) {
             const double area = screenFraction(cam, dt.key, tt);
+            visCover += area;
             if (shownDepth >= 1) visBlur += area;
             if (shownDepth >= 2) visBlur2 += area;
             visDepth += area * shownDepth;
@@ -3311,6 +3312,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     stats_.blurArea2 = visBlur2;
     stats_.blurDepth = visDepth;
     stats_.fadeArea = visFade;
+    stats_.coverArea = visCover;
     stats_.pops = visPops;
     stats_.coarseTiles = coarse;
     stats_.coverageOnlyTiles = coverageOnly;
