@@ -2267,7 +2267,7 @@ bool GlobeRenderer::buildSurfaceJob(const QuadKey& k, double priority, SurfaceJo
                         job->presentable = false;
                 }
                 if (!tex) {
-                    if (!missing) unavailable = true;
+                    if (!missing && l == baseLayer_) unavailable = true;
                     else if (job && l == baseLayer_ && !layers_[l].polarFill)
                         ++job->hollow;
                     continue;
