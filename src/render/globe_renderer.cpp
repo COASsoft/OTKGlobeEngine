@@ -53,6 +53,9 @@
 #include <cstring>
 #include <limits>
 #include <unordered_set>
+#if !defined(_WIN32)
+#include <time.h>
+#endif
 
 #if defined(OTK_EMBED_BACKDROP)
 namespace otk::embedded {
@@ -2058,6 +2061,16 @@ void GlobeRenderer::explainCollapse(const Camera& cam, const std::vector<DrawTil
          static_cast<unsigned long long>(frame_), tiles.size(), prevMaxLevel_, a, kid[0], kid[1], kid[2], kid[3], cam.gsd, prevGsd_);
 }
 
+double GlobeRenderer::threadMs() {
+#if defined(_WIN32)
+    return 0.0;
+#else
+    timespec ts{};
+    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts);
+    return static_cast<double>(ts.tv_sec) * 1000.0 + static_cast<double>(ts.tv_nsec) / 1.0e6;
+#endif
+}
+
 void GlobeRenderer::profileMark(int section) {
     if (!profiling_) return;
     double t = elapsedMs();
@@ -2069,12 +2082,13 @@ void GlobeRenderer::profileMark(int section) {
             const char* names[8] = {"traverse", "overview+admit", "terrain", "work", "surface", "main", "overview-only", "pre-traverse"};
             for (int i = 0; i < 8; ++i) std::fprintf(f, "%s %.3f ", names[i], profileAcc_[i] / profileFrames_);
             const char* subs[4] = {"main.globe", "main.labels", "main.overlay", "main.end"};
-            for (int i = 0; i < 4; ++i) std::fprintf(f, "%s %.3f ", subs[i], profileSub_[i] / profileFrames_);
+            for (int i = 0; i < 4; ++i) std::fprintf(f, "%s %.3f/%.3f ", subs[i], profileSub_[i] / profileFrames_, profileSubCpu_[i] / profileFrames_);
             std::fputc(10, f);
             std::fclose(f);
         }
         for (double& a : profileAcc_) a = 0;
         for (double& a : profileSub_) a = 0;
+        for (double& a : profileSubCpu_) a = 0;
         profileFrames_ = 0;
     }
 }
