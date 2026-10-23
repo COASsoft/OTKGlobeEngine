@@ -376,7 +376,7 @@ private:
 #else
     size_t surfaceCapacity_ = 800, imageryCapacity_ = 488, terrainCapacity_ = 3000, freeSurfacePool_ = 50;
 #endif
-    std::unordered_map<QuadKey, Fade, QuadKeyHash> fades_;
+    std::unordered_map<QuadKey, Transition, QuadKeyHash> transitions_;
     struct Sphere {
         Vec3 center;
         double radius = 0;
