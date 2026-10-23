@@ -1461,9 +1461,40 @@ void GlobeRenderer::buildRoads3D(ImageryTexture& t, int version) {
     t.roads3dCount = 0;
     t.roads3dVersion = version;
     if (!t.vector || t.vector->roads.empty()) return;
+    const VectorTile& vt = *t.vector;
+    const double n = std::ldexp(1.0, vt.z);
+    auto latOf = [&](double yy) { return std::atan(std::sinh(3.14159265358979323846 * (1.0 - 2.0 * yy / n))) * kRadToDeg; };
+    const double west = vt.x / n * 360.0 - 180.0, east = (vt.x + 1.0) / n * 360.0 - 180.0;
+    const double south = latOf(vt.y + 1.0), north = latOf(vt.y);
+    const size_t total = vt.roads.size() / 6;
+    const size_t solid = std::min(total, vt.solidRoads);
+    std::vector<int> chunkOf(total);
+    for (size_t i = 0; i < total; ++i) {
+        const float* v = &vt.roads[i * 6];
+        const double mx = vt.originLon + 0.5 * (v[0] + v[2]) - west, my = vt.originLat + 0.5 * (v[1] + v[3]) - south;
+        const int cx = std::clamp(static_cast<int>(std::floor(mx / std::max(east - west, 1e-12) * 4.0)), 0, 3);
+        const int cy = std::clamp(static_cast<int>(std::floor(my / std::max(north - south, 1e-12) * 4.0)), 0, 3);
+        chunkOf[i] = (i < solid ? 0 : 16) + cy * 4 + cx;
+    }
+    std::array<int, 33> start{};
+    for (size_t i = 0; i < total; ++i) ++start[chunkOf[i] + 1];
+    for (int c = 0; c < 32; ++c) start[c + 1] += start[c];
+    for (GeoRect& box : t.roadBox) box = GeoRect{1e9, 1e9, -1e9, -1e9};
+    std::vector<float> sorted(total * 6);
+    std::array<int, 32> fill{};
+    for (size_t i = 0; i < total; ++i) {
+        const int c = chunkOf[i];
+        const float* v = &vt.roads[i * 6];
+        std::copy(v, v + 6, sorted.begin() + static_cast<std::ptrdiff_t>(start[c] + fill[c]++) * 6);
+        GeoRect& box = t.roadBox[c];
+        box.west = std::min({box.west, vt.originLon + v[0], vt.originLon + v[2]});
+        box.east = std::max({box.east, vt.originLon + v[0], vt.originLon + v[2]});
+        box.south = std::min({box.south, vt.originLat + v[1], vt.originLat + v[3]});
+        box.north = std::max({box.north, vt.originLat + v[1], vt.originLat + v[3]});
+    }
+    t.roadChunk = start;
     std::vector<float> out;
-    LabelLayer::buildLines3D(t.vector->roads, t.vector->originLat, t.vector->originLon, [this](double lat, double lon) { return elevationAt(lat, lon); },
-                             out);
+    LabelLayer::buildLines3D(sorted, vt.originLat, vt.originLon, [this](double lat, double lon) { return elevationAt(lat, lon); }, out);
     if (out.empty()) return;
     t.roadsOrigin = geodeticToEcef(t.vector->originLat, t.vector->originLon, 0.0);
     sg_buffer_desc bd{};
@@ -4023,6 +4054,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             const Bounds b = bounds(lt.first);
             rects.push_back({b.west, b.south, b.east, b.north});
         }
+        labels_.warmLines3D();
         labels_.drawBorders3D(dc, ground, dpiScale_, rects, lineVersion);
         std::unordered_map<TileId, std::vector<size_t>, TileIdHash> users;
         for (size_t i = 0; i < lineTiles.size(); ++i) {
@@ -4033,11 +4065,43 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         struct RoadDraw {
             const ImageryTexture* tex;
             Vec3 origin;
+            int first;
             int count;
             float clip[4];
         };
+        GeoRect seen{1e9, 1e9, -1e9, -1e9};
+        for (const GeoRect& r : rects) {
+            seen.west = std::min(seen.west, r.west);
+            seen.south = std::min(seen.south, r.south);
+            seen.east = std::max(seen.east, r.east);
+            seen.north = std::max(seen.north, r.north);
+        }
+        auto addChunks = [&](std::vector<RoadDraw>& outDraws, const ImageryTexture& t, const GeoRect& cull, const float clip[4], bool solidOnly) {
+            int runFirst = -1, runEnd = -1;
+            auto flush = [&]() {
+                if (runFirst >= 0 && runEnd > runFirst) {
+                    RoadDraw d{&t, t.roadsOrigin, runFirst, runEnd - runFirst, {clip[0], clip[1], clip[2], clip[3]}};
+                    outDraws.push_back(d);
+                }
+                runFirst = runEnd = -1;
+            };
+            for (int c = 0; c < 32; ++c) {
+                const int a = t.roadChunk[c], e = t.roadChunk[c + 1];
+                const GeoRect& bx = t.roadBox[c];
+                const bool visible = e > a && !(solidOnly && c >= 16) && bx.west <= cull.east && cull.west <= bx.east && bx.south <= cull.north &&
+                                     cull.south <= bx.north;
+                if (!visible) {
+                    flush();
+                    continue;
+                }
+                if (runFirst < 0) runFirst = a;
+                runEnd = e;
+            }
+            flush();
+        };
         std::vector<RoadDraw> roadDraws;
         const auto buildStart = std::chrono::steady_clock::now();
+        bool forcedBuild = false;
         auto overlaps = [](const GeoRect& a, const GeoRect& b) {
             const double eps = 1e-9;
             return a.west < b.east - eps && b.west < a.east - eps && a.south < b.north - eps && b.south < a.north - eps;
@@ -4047,9 +4111,13 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             if (it == imagery_.end() || !it->second.vector) continue;
             ImageryTexture& t = it->second;
             t.used = frame_;
-            if (t.roads3dVersion != lineVersion &&
-                (!t.roads3d.id || std::chrono::steady_clock::now() - buildStart < std::chrono::milliseconds(2)))
+            const bool due = t.roads3dVersion != lineVersion && (!t.roads3d.id || tnow - t.roads3dBuilt > 1.0);
+            const bool allowed = std::chrono::steady_clock::now() - buildStart < std::chrono::milliseconds(2) || (!t.roads3d.id && !forcedBuild);
+            if (due && allowed) {
+                if (!t.roads3d.id) forcedBuild = true;
+                t.roads3dBuilt = tnow;
                 buildRoads3D(t, lineVersion);
+            }
             if (!t.roads3d.id || t.roads3dCount <= 0) continue;
             const VectorTile& vt = *t.vector;
             const double n = std::ldexp(1.0, vt.z);
@@ -4060,16 +4128,17 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             bool shared = false;
             for (size_t j = 0; j < lineTiles.size() && !shared; ++j)
                 if (!mine[j] && overlaps(rects[j], area)) shared = true;
-            const int count = buildingsOn_ && cam.gsd < 6.0 ? std::min(t.solidRoads, t.roads3dCount) : t.roads3dCount;
+            const bool solidOnly = buildingsOn_ && cam.gsd < 6.0;
             if (!shared) {
-                roadDraws.push_back({&t, t.roadsOrigin, count, {1.0f, 0.0f, -1.0f, 0.0f}});
+                const float none[4] = {1.0f, 0.0f, -1.0f, 0.0f};
+                addChunks(roadDraws, t, seen, none, solidOnly);
                 continue;
             }
             for (size_t i : list) {
                 const GeoRect& r = rects[i];
-                roadDraws.push_back({&t, t.roadsOrigin, count,
-                                     {static_cast<float>(r.west - vt.originLon), static_cast<float>(r.south - vt.originLat),
-                                      static_cast<float>(r.east - vt.originLon), static_cast<float>(r.north - vt.originLat)}});
+                const float clip[4] = {static_cast<float>(r.west - vt.originLon), static_cast<float>(r.south - vt.originLat),
+                                       static_cast<float>(r.east - vt.originLon), static_cast<float>(r.north - vt.originLat)};
+                addChunks(roadDraws, t, r, clip, solidOnly);
             }
         }
         if (visualLog_ && frame_ % 30 == 0) {
@@ -4083,7 +4152,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         }
         labels_.beginRoads3D(dc, dpiScale_);
         for (int pass = 0; pass < 2; ++pass)
-            for (const RoadDraw& d : roadDraws) labels_.drawRoads3D(d.tex->roads3d, d.count, d.origin, d.clip, pass);
+            for (const RoadDraw& d : roadDraws) labels_.drawRoads3D(d.tex->roads3d, d.first, d.count, d.origin, d.clip, pass);
     }
     auto snapshotAlpha = [&]() {
         float alpha = 1.0f;
