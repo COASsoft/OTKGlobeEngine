@@ -425,7 +425,7 @@ void logFrame(double dt) {
                  "%.4f,%.2f,%.2f,%.6f,%.6f,%.4f,%.1f,%.1f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%.5f,%d,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.4f,%d,%d\n", t,
                  dt * 1000.0, s.cpuMs, v.lat, v.lon, v.gsd, v.tilt, v.azimuth, s.terrainTiles, s.maxLevel, s.incompleteTiles, s.coarseTiles,
                  s.maxFallbackDepth, s.blankTiles, s.surfaceRenders, s.uploads, s.terrainBuilds, s.pendingRequests, s.popArea, s.pops, s.mergeArea,
-                 s.terrainPopArea, s.blurArea, s.blurArea2, s.blurDepth, s.fadeArea, busy ? 1 : 0, input ? 1 : 0);
+                 s.terrainPopArea, s.blurArea, s.blurArea2, s.blurDepth, s.fadeArea, s.coverArea, busy ? 1 : 0, input ? 1 : 0);
     if (state->scriptNext == 0) return;
     if (input) {
         state->inputEnd = -1.0;
