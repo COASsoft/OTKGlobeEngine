@@ -2426,6 +2426,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     };
     double visibleDone = -1;
     std::vector<Work> work;
+    const double renderClock = now();
     auto lineDegFor = [&](const QuadKey& key) {
         Bounds jb = bounds(key);
         Vec3 jc = geodeticToEcef(0.5 * (jb.south + jb.north), 0.5 * (jb.west + jb.east), 0.0);
