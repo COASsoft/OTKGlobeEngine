@@ -360,6 +360,7 @@ void GlobeRenderer::shutdown() {
         sg_destroy_pipeline(snapshotPipeline_);
         sg_destroy_shader(snapshotShader_);
         dropSnapshotTarget();
+        dropIdleTarget();
         sg_destroy_pipeline(vfillPipeline_);
         sg_destroy_pipeline(vlinePipeline_);
         sg_destroy_shader(vfillShader_);
@@ -1148,6 +1149,112 @@ bool GlobeRenderer::ensureSnapshotTarget(int width, int height) {
                     (depth == SG_PIXELFORMAT_NONE || sg_query_view_state(snapshotDepthView_) == SG_RESOURCESTATE_VALID);
     if (!ok) dropSnapshotTarget();
     return ok;
+}
+
+bool GlobeRenderer::ensureIdleTarget(int width, int height) {
+    if (width <= 0 || height <= 0) return false;
+    if (idleWidth_ == width && idleHeight_ == height && idleTexture_.id) return true;
+    dropIdleTarget();
+    const sg_desc desc = sg_query_desc();
+    const sg_pixel_format color = desc.environment.defaults.color_format;
+    const sg_pixel_format depth = desc.environment.defaults.depth_format;
+    const int samples = std::max(1, desc.environment.defaults.sample_count);
+    sg_image_desc id{};
+    id.width = width;
+    id.height = height;
+    id.pixel_format = color;
+    id.sample_count = 1;
+    if (samples > 1) id.usage.resolve_attachment = true;
+    else id.usage.color_attachment = true;
+    idleImage_ = sg_make_image(&id);
+    if (samples > 1) {
+        sg_image_desc md{};
+        md.usage.color_attachment = true;
+        md.width = width;
+        md.height = height;
+        md.pixel_format = color;
+        md.sample_count = samples;
+        idleMsaa_ = sg_make_image(&md);
+        sg_view_desc cv{};
+        cv.color_attachment.image = idleMsaa_;
+        idleColor_ = sg_make_view(&cv);
+        sg_view_desc rv{};
+        rv.resolve_attachment.image = idleImage_;
+        idleResolve_ = sg_make_view(&rv);
+    } else {
+        sg_view_desc cv{};
+        cv.color_attachment.image = idleImage_;
+        idleColor_ = sg_make_view(&cv);
+    }
+    if (depth != SG_PIXELFORMAT_NONE) {
+        sg_image_desc dd{};
+        dd.usage.depth_stencil_attachment = true;
+        dd.width = width;
+        dd.height = height;
+        dd.pixel_format = depth;
+        dd.sample_count = samples;
+        idleDepth_ = sg_make_image(&dd);
+        sg_view_desc dv{};
+        dv.depth_stencil_attachment.image = idleDepth_;
+        idleDepthView_ = sg_make_view(&dv);
+    }
+    sg_view_desc tv{};
+    tv.texture.image = idleImage_;
+    idleTexture_ = sg_make_view(&tv);
+    idleWidth_ = width;
+    idleHeight_ = height;
+    const bool ok = sg_query_view_state(idleTexture_) == SG_RESOURCESTATE_VALID && sg_query_view_state(idleColor_) == SG_RESOURCESTATE_VALID &&
+                    (samples == 1 || sg_query_view_state(idleResolve_) == SG_RESOURCESTATE_VALID) &&
+                    (depth == SG_PIXELFORMAT_NONE || sg_query_view_state(idleDepthView_) == SG_RESOURCESTATE_VALID);
+    if (!ok) dropIdleTarget();
+    return ok;
+}
+
+void GlobeRenderer::dropIdleTarget() {
+    for (sg_view* v : {&idleColor_, &idleResolve_, &idleDepthView_, &idleTexture_}) {
+        if (v->id) sg_destroy_view(*v);
+        *v = sg_view{};
+    }
+    for (sg_image* i : {&idleImage_, &idleMsaa_, &idleDepth_}) {
+        if (i->id) sg_destroy_image(*i);
+        *i = sg_image{};
+    }
+    idleWidth_ = 0;
+    idleHeight_ = 0;
+    idleValid_ = false;
+}
+
+bool GlobeRenderer::presentIdle(Camera& cam, const sg_swapchain& swapchain) {
+    if (!ready_ || swapchain.width <= 0 || swapchain.height <= 0 || snapshotShown_) return false;
+    if (!idleValid_ || idleWidth_ != swapchain.width || idleHeight_ != swapchain.height) {
+        if (!ensureIdleTarget(swapchain.width, swapchain.height)) return false;
+        sg_attachments att{};
+        att.colors[0] = idleColor_;
+        if (idleResolve_.id) att.resolves[0] = idleResolve_;
+        if (idleDepthView_.id) att.depth_stencil = idleDepthView_;
+        renderingIdle_ = true;
+        render(cam, nullptr, &att, swapchain.width, swapchain.height);
+        renderingIdle_ = false;
+        idleValid_ = !busy_;
+    }
+    sg_pass pass{};
+    pass.action.colors[0].load_action = SG_LOADACTION_DONTCARE;
+    pass.action.depth.load_action = SG_LOADACTION_DONTCARE;
+    pass.swapchain = swapchain;
+    sg_begin_pass(&pass);
+    sg_apply_pipeline(snapshotPipeline_);
+    sg_bindings b{};
+    b.vertex_buffers[0] = skyBuffer_;
+    b.views[VIEW_tex] = idleTexture_;
+    b.samplers[SMP_smp] = imagerySampler_;
+    sg_apply_bindings(&b);
+    snapshot_params_t p{};
+    p.params[0] = 1.0f;
+    p.params[1] = flipSurface_ ? 1.0f : 0.0f;
+    sg_apply_uniforms(UB_snapshot_params, SG_RANGE(p));
+    sg_draw(0, 3, 1);
+    sg_end_pass();
+    return true;
 }
 
 void GlobeRenderer::dropSnapshotTarget() {
@@ -2203,6 +2310,7 @@ double GlobeRenderer::screenFraction(const Camera& cam, const QuadKey& k, const 
 void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_attachments* attachments, int width,
                            int height, const std::vector<RenderView>* views) {
     if (!ready_) return;
+    if (!renderingIdle_) idleValid_ = false;
     lastFrameStart_ = frameStart_;
     frameStart_ = std::chrono::steady_clock::now();
     profileStart_ = frameStart_;
