@@ -447,6 +447,13 @@ void InputController::update() {
     if (t != 0 && settings_.tilt) engine_.tiltBy(t * settings_.keyTiltDegreesPerSecond * dt);
 }
 
+bool InputController::flingRest(double& dx, double& dy) const {
+    if (!flinging_ || settings_.inertiaDecay <= 0.0) return false;
+    dx = velX_ / settings_.inertiaDecay;
+    dy = velY_ / settings_.inertiaDecay;
+    return true;
+}
+
 bool InputController::active() const {
     for (bool k : keys_)
         if (k) return true;
