@@ -64,6 +64,7 @@ JNIEXPORT void JNICALL OTK_FN(nativeFrame)(JNIEnv*, jclass, jlong h, jint w, jin
 }
 
 JNIEXPORT jboolean JNICALL OTK_FN(nativeNeedsRedraw)(JNIEnv*, jclass, jlong h) { return otk_needs_redraw(E(h)) != 0; }
+JNIEXPORT jdouble JNICALL OTK_FN(nativeNextFrameDelay)(JNIEnv*, jclass, jlong h) { return otk_next_frame_delay(E(h)); }
 
 JNIEXPORT void JNICALL OTK_FN(nativeSetCacheDirectory)(JNIEnv* env, jclass, jlong h, jstring dir) {
     otk_set_cache_directory(E(h), str(env, dir).c_str());
