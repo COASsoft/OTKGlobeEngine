@@ -3,13 +3,22 @@
 ## Unreleased
 
 ### Loading
-- Map detail no longer switches in abruptly, and it no longer sharpens one tile at a time:
-  - While the map moves, new detail waits until it stops (at most 2 s).
-  - Then everything that is ready fades in together over about a third of a second.
-  - A slow tile holds the rest back for at most 0.6 s.
-  - This covers a tile swapping a blurry stand-in for its own imagery, detail arriving for an area already on screen, and a tile being redrawn with newer data.
+- The view sharpens as a whole instead of one tile at a time:
+  - New detail waits until the map stops moving (at most 2 s while it moves).
+  - It then appears in one crossfade for the whole view.
+  - While some tiles are still loading, the view sharpens in even steps: no tile is shown sharper than the slowest part of the view allows. Tiles whose data cannot arrive (missing or offline) do not hold the rest back.
+  - A slow area holds the rest back for at most 3 s.
+  - Startup and arriving from a fly-to load the same way, so they no longer show rectangles of detail over a blurry map.
+  - A tile that gets newer detail while it is still fading in finishes that fade before the next change.
   - Before, each tile snapped or faded in on its own as soon as it arrived. During pans and zooms that looked like tiles flickering in and out.
-- When zooming out, areas fade into the coarser view before switching to it, instead of switching in one frame.
+- Colours stay the same when the map changes zoom level:
+  - Some imagery services switch source between zoom levels. Esri World Imagery jumps by up to 44 colour levels between zooms 11 and 12, from dark brown-green to bright green.
+  - The engine now learns the colour difference between levels while it runs, and tints the coarser imagery to match.
+- When zooming out:
+  - Areas fade into the coarser view before switching to it, instead of switching in one frame.
+  - These switches happen in batches instead of tile by tile.
+  - They only happen once the coarser image is complete, so an area no longer goes blurry and then sharp again.
+- During a fling, the engine starts loading the place where the fling will stop.
 - Where a sharp tile meets one that is still loading, the edge between them is blended, so loading areas no longer show as hard-edged rectangles.
 - Place and street names keep their position and fade state when more detailed map data replaces less detailed data, instead of fading out and back in.
 - Labels are placed ten times a second while the map moves instead of every frame, and right away when the map turns or tilts or new data arrives.
