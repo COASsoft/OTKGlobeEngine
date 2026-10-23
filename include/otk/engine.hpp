@@ -120,6 +120,8 @@ struct Stats {
     int heldTiles = 0;
     int reveals = 0;
     double revealArea = 0;
+    int loading = 0;
+    long long renderedFrames = 0;
 };
 
 struct DownloadStatus {
