@@ -92,6 +92,7 @@ constexpr double kRetrySeconds = 30.0;
 constexpr int kBaseZoom = 3;
 constexpr double kSkirtMax = 20000.0;
 constexpr double kUnknownMaxHeight = 4500.0;
+constexpr double kFadeSeconds = 0.35;
 
 double spanDeg(int level) { return 180.0 / static_cast<double>(1 << level); }
 
