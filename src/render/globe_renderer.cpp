@@ -2075,6 +2075,62 @@ void GlobeRenderer::profileMark(int section) {
     }
 }
 
+double GlobeRenderer::screenFraction(const Camera& cam, const QuadKey& k, const TerrainTile& t) const {
+    constexpr int kCells = 4;
+    const Bounds b = bounds(k);
+    const double h = 0.5 * (static_cast<double>(t.minH) + static_cast<double>(t.maxH));
+    const Mat4& m = cam.viewProjRel();
+    const Vec3 eye = cam.eye();
+    std::array<std::array<double, 4>, (kCells + 1) * (kCells + 1)> clip{};
+    for (int j = 0; j <= kCells; ++j)
+        for (int i = 0; i <= kCells; ++i) {
+            const Vec3 p = geodeticToEcef(b.south + (b.north - b.south) * j / kCells, b.west + (b.east - b.west) * i / kCells, h) - eye;
+            auto& c = clip[static_cast<size_t>(j) * (kCells + 1) + i];
+            for (int r = 0; r < 4; ++r) c[r] = m.at(r, 0) * p.x + m.at(r, 1) * p.y + m.at(r, 2) * p.z + m.at(r, 3);
+        }
+    double total = 0;
+    std::vector<std::array<double, 4>> poly, next;
+    for (int j = 0; j < kCells; ++j)
+        for (int i = 0; i < kCells; ++i) {
+            poly = {clip[static_cast<size_t>(j) * (kCells + 1) + i], clip[static_cast<size_t>(j) * (kCells + 1) + i + 1],
+                    clip[static_cast<size_t>(j + 1) * (kCells + 1) + i + 1], clip[static_cast<size_t>(j + 1) * (kCells + 1) + i]};
+            for (int plane = 0; plane < 5 && poly.size() >= 3; ++plane) {
+                auto dist = [plane](const std::array<double, 4>& v) {
+                    switch (plane) {
+                    case 0: return v[3] - 1e-6;
+                    case 1: return v[3] - v[0];
+                    case 2: return v[3] + v[0];
+                    case 3: return v[3] - v[1];
+                    default: return v[3] + v[1];
+                    }
+                };
+                next.clear();
+                for (size_t a = 0; a < poly.size(); ++a) {
+                    const auto& p0 = poly[a];
+                    const auto& p1 = poly[(a + 1) % poly.size()];
+                    const double d0 = dist(p0), d1 = dist(p1);
+                    if (d0 >= 0) next.push_back(p0);
+                    if ((d0 >= 0) != (d1 >= 0)) {
+                        const double s = d0 / (d0 - d1);
+                        std::array<double, 4> q{};
+                        for (int r = 0; r < 4; ++r) q[r] = p0[r] + (p1[r] - p0[r]) * s;
+                        next.push_back(q);
+                    }
+                }
+                poly.swap(next);
+            }
+            if (poly.size() < 3) continue;
+            double area = 0;
+            for (size_t a = 0; a < poly.size(); ++a) {
+                const auto& p0 = poly[a];
+                const auto& p1 = poly[(a + 1) % poly.size()];
+                area += (p0[0] / p0[3]) * (p1[1] / p1[3]) - (p1[0] / p1[3]) * (p0[1] / p0[3]);
+            }
+            total += std::abs(area) * 0.125;
+        }
+    return total;
+}
+
 void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_attachments* attachments, int width,
                            int height, const std::vector<RenderView>* views) {
     if (!ready_) return;
