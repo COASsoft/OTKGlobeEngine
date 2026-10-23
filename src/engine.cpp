@@ -426,6 +426,7 @@ struct Engine::Impl {
     std::unordered_set<std::uint64_t> autoTiles;
     std::int64_t labelDone = -1;
     std::chrono::steady_clock::time_point labelRetry;
+    std::chrono::steady_clock::time_point labelChecked;
     bool downloadDue = false;
 
     bool controlsDirty() const {
@@ -443,6 +444,7 @@ struct Engine::Impl {
         }
         std::int64_t done = 0;
         bool finished = false;
+        labelChecked = std::chrono::steady_clock::now();
         for (auto it = labelDownloads.begin(); it != labelDownloads.end();) {
             const DownloadStatus s = globe.loader().downloadStatus(*it);
             done += s.done;
@@ -457,7 +459,7 @@ struct Engine::Impl {
         if (finished || (done != labelDone && now - labelRetry > std::chrono::milliseconds(1500))) {
             labelDone = done;
             labelRetry = now;
-            globe.retryUnavailable();
+            globe.retryLayer(globe.labelsLayer());
             dirty = true;
         }
         downloadDue = !labelDownloads.empty();
@@ -2105,7 +2107,8 @@ void Engine::frameOffscreen(const sg_attachments& attachments, int width, int he
 }
 
 bool Engine::needsRedraw() const {
-    return impl_->dirty || impl_->flying || impl_->globe.busy() || impl_->input->active() || impl_->globe.reachabilityChanged() || impl_->contourDue || impl_->downloadDue ||
+    return impl_->dirty || impl_->flying || impl_->globe.busy() || impl_->input->active() || impl_->globe.reachabilityChanged() || impl_->contourDue ||
+           (impl_->downloadDue && std::chrono::steady_clock::now() - impl_->labelChecked >= std::chrono::milliseconds(500)) ||
            impl_->controlsDirty();
 }
 
