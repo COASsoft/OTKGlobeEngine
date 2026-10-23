@@ -270,7 +270,7 @@ bool GlobeRenderer::init() {
     sg_pipeline_desc kp{};
     kp.shader = skyShader_;
     kp.layout.attrs[ATTR_sky_position].format = SG_VERTEXFORMAT_FLOAT2;
-    kp.depth.compare = SG_COMPAREFUNC_ALWAYS;
+    kp.depth.compare = SG_COMPAREFUNC_LESS_EQUAL;
     kp.depth.write_enabled = false;
     skyPipeline_ = sg_make_pipeline(&kp);
 
@@ -2774,9 +2774,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         sg_apply_uniforms(UB_sky_fs_params, SG_RANGE(sky));
         sg_draw(0, 3, 1);
     };
-    if (skyVisible_) drawSky(dc);
-
     bool xray = terrainAlpha_ < 0.999f;
+    if (skyVisible_ && xray) drawSky(dc);
     bool tilesBusy = false;
     stats_.tilesetTiles = 0;
     stats_.tilesetFailed = 0;
@@ -3192,6 +3191,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         sg_apply_uniforms(UB_globe_vs_params, SG_RANGE(vsp));
         sg_draw(0, xray ? kGrid * kGrid * 6 : kIndexCount, 1);
     }
+    if (skyVisible_ && !xray) drawSky(dc);
     if (!xray) drawObjects();
     profileSub(0);
     std::vector<FeatureLayer::ExternalLabel> vectorLabels;
@@ -3310,7 +3310,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             if (v.attachments) pass.attachments = *v.attachments;
             sg_begin_pass(&pass);
             if (v.width > 0) sg_apply_viewport(v.x, v.y, v.width, v.height, true);
-            if (skyVisible_) drawSky(vc);
+            if (skyVisible_ && xray) drawSky(vc);
             auto objects = [&]() {
                 if (buildingsOn_) buildings_.draw(vc, sunDir_, sunOn_);
                 models_.draw(vc, ground, true);
@@ -3335,6 +3335,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 sg_apply_uniforms(UB_globe_vs_params, SG_RANGE(vsp));
                 sg_draw(0, xray ? kGrid * kGrid * 6 : kIndexCount, 1);
             }
+            if (skyVisible_ && !xray) drawSky(vc);
             if (!xray) objects();
             if (labelsOn_ || contours_)
                 labels_.drawLabels(vc, ground, dpiScale_, visibleRects, overlayTiles, static_cast<int>(vi), labelsOn_,
