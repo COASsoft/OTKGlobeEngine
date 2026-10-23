@@ -573,6 +573,13 @@ void GlobeRenderer::retryUnavailable() {
     busy_ = true;
 }
 
+void GlobeRenderer::retryLayer(int layer) {
+    buildings_.retry();
+    for (auto it = failed_.begin(); it != failed_.end();) it = it->first.layer == layer ? failed_.erase(it) : std::next(it);
+    for (auto it = failCount_.begin(); it != failCount_.end();) it = it->first.layer == layer ? failCount_.erase(it) : std::next(it);
+    busy_ = true;
+}
+
 void GlobeRenderer::setLayers(const std::vector<ImageryLayer>& layers) {
     userLayers_ = layers;
     applyLayers();
