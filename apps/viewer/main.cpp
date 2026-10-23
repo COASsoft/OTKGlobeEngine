@@ -3,7 +3,9 @@
 #include <android/log.h>
 #include <android/native_activity.h>
 #include <android/native_window.h>
+#include <EGL/egl.h>
 #include <dlfcn.h>
+#include <pthread.h>
 #endif
 #if defined(_WIN32)
 #define NOMINMAX
@@ -241,6 +243,7 @@ void init() {
                 __android_log_print(ANDROID_LOG_INFO, "OTKGlobeEngine", "args %zu from %s", tokens.size() - 1, path.c_str());
             }
         }
+        pthread_setname_np(pthread_self(), "otk-app");
     }
 #endif
     sg_setup(&desc);
@@ -777,6 +780,18 @@ void frame() {
     else state->engine.frame(sglue_swapchain());
     sg_commit();
     logFrame(sapp_frame_duration());
+#if defined(__ANDROID__)
+    {
+        static double idleFor = 0.0;
+        static int interval = 1;
+        idleFor = state->engine.needsRedraw() ? 0.0 : idleFor + sapp_frame_duration();
+        const int want = idleFor > 0.5 ? 3 : 1;
+        if (want != interval && eglGetCurrentDisplay() != EGL_NO_DISPLAY) {
+            interval = want;
+            eglSwapInterval(eglGetCurrentDisplay(), interval);
+        }
+    }
+#endif
     {
         otk::Stats ps = state->engine.stats();
         double ft = sapp_frame_duration() * 1000.0;
