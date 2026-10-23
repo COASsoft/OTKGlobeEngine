@@ -363,10 +363,29 @@ public class OTKGlobeView extends GLSurfaceView implements GLSurfaceView.Rendere
             int[] at = new int[2];
             getLocationInWindow(at);
             View root = getRootView();
-            float left = Math.max(0, insets.getSystemWindowInsetLeft() - at[0]);
-            float top = Math.max(0, insets.getSystemWindowInsetTop() - at[1]);
-            float right = Math.max(0, insets.getSystemWindowInsetRight() - (root.getWidth() - at[0] - getWidth()));
-            float bottom = Math.max(0, insets.getSystemWindowInsetBottom() - (root.getHeight() - at[1] - getHeight()));
+            int[] edge = {insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetTop(), insets.getSystemWindowInsetRight(),
+                          insets.getSystemWindowInsetBottom()};
+            if (Build.VERSION.SDK_INT >= 28 && insets.getDisplayCutout() != null) {
+                android.view.DisplayCutout cutout = insets.getDisplayCutout();
+                edge[0] = Math.max(edge[0], cutout.getSafeInsetLeft());
+                edge[1] = Math.max(edge[1], cutout.getSafeInsetTop());
+                edge[2] = Math.max(edge[2], cutout.getSafeInsetRight());
+                edge[3] = Math.max(edge[3], cutout.getSafeInsetBottom());
+            }
+            if (Build.VERSION.SDK_INT >= 31) {
+                for (int position = 0; position < 4; ++position) {
+                    android.view.RoundedCorner corner = insets.getRoundedCorner(position);
+                    if (corner == null) continue;
+                    int inset = (int) Math.ceil(corner.getRadius() * 0.3);
+                    boolean leftSide = position == 0 || position == 3, topSide = position == 0 || position == 1;
+                    edge[leftSide ? 0 : 2] = Math.max(edge[leftSide ? 0 : 2], inset);
+                    edge[topSide ? 1 : 3] = Math.max(edge[topSide ? 1 : 3], inset);
+                }
+            }
+            float left = Math.max(0, edge[0] - at[0]);
+            float top = Math.max(0, edge[1] - at[1]);
+            float right = Math.max(0, edge[2] - (root.getWidth() - at[0] - getWidth()));
+            float bottom = Math.max(0, edge[3] - (root.getHeight() - at[1] - getHeight()));
             applyControlsPadding(left / density, top / density, right / density, bottom / density);
         }
         return super.onApplyWindowInsets(insets);
