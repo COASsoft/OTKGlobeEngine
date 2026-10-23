@@ -3377,6 +3377,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     stats_.fadeArea = visFade;
     stats_.coverArea = visCover;
     stats_.pops = visPops;
+    stats_.fadeMisses = fadeMisses_;
     stats_.coarseTiles = coarse;
     stats_.coverageOnlyTiles = coverageOnly;
     stats_.retainedTiles = retained;
