@@ -474,6 +474,15 @@ private:
     double imageryScale_ = 1.0;
     double lodMorph_ = 1.0;
     std::unordered_map<QuadKey, std::pair<double, std::uint64_t>, QuadKeyHash> morphSince_;
+    bool visualStats_ = false;
+    struct Shown {
+        QuadKey src{-1, 0, 0};
+        int version = -1;
+        int terrain = -1;
+        std::uint64_t frame = 0;
+    };
+    std::unordered_map<QuadKey, Shown, QuadKeyHash> shown_;
+    double screenFraction(const Camera& cam, const QuadKey& k, const TerrainTile& t) const;
     int switchVersion_ = 0;
     sg_shader snapshotShader_{};
     sg_pipeline snapshotPipeline_{};
