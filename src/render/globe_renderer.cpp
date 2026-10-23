@@ -3007,6 +3007,64 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     std::unordered_map<QuadKey, const TerrainTile*, QuadKeyHash> drawnNow;
     drawnNow.reserve(tiles.size() * 2);
     for (auto& dt : tiles) drawnNow[dt.key] = &terrain(dt.key);
+    auto displayLevel = [&](const Transition& r) {
+        if (r.src.level < 0) return -1.0f;
+        double level = static_cast<double>(r.src.level);
+        if (r.start >= 0.0) {
+            const double t = (tnow - r.start) / kFadeSeconds;
+            if (t < 1.0 && r.from.level >= 0 && r.from.level < r.src.level)
+                level = r.from.level + t * t * (3.0 - 2.0 * t) * (r.src.level - r.from.level);
+        }
+        if (r.merge.level >= 0 && r.mergeFrame + 1 >= frame_) {
+            const double m = std::clamp(static_cast<double>(r.mergeT), 0.0, 1.0);
+            level -= m * m * (3.0 - 2.0 * m) * (level - r.merge.level);
+        }
+        return static_cast<float>(std::max(0.0, level - r.depth));
+    };
+    auto neighbourLevel = [&](const QuadKey& k, int dir) {
+        const int nx = 2 << k.level, ny = 1 << k.level;
+        QuadKey nk = k;
+        if (dir == 0) {
+            if (k.y + 1 >= ny) return -1.0f;
+            nk.y = k.y + 1;
+        } else if (dir == 1) {
+            if (k.y == 0) return -1.0f;
+            nk.y = k.y - 1;
+        } else if (dir == 2) {
+            nk.x = (k.x + nx - 1) % nx;
+        } else {
+            nk.x = (k.x + 1) % nx;
+        }
+        auto levelOf = [&](const QuadKey& q) {
+            auto r = transitions_.find(q);
+            return r == transitions_.end() || r->second.frame + 1 < frame_ ? -1.0f : displayLevel(r->second);
+        };
+        for (int up = 0; up <= nk.level; ++up) {
+            const QuadKey a{nk.level - up, nk.x >> up, nk.y >> up};
+            if (drawnNow.count(a)) return levelOf(a);
+        }
+        float low = -1.0f;
+        std::vector<QuadKey> frontier{nk};
+        for (int depth = 0; depth < 4 && !frontier.empty(); ++depth) {
+            std::vector<QuadKey> next;
+            for (const QuadKey& f : frontier)
+                for (int c = 0; c < 2; ++c) {
+                    QuadKey kid{f.level + 1, f.x * 2, f.y * 2};
+                    if (dir == 0) kid = {f.level + 1, f.x * 2 + c, f.y * 2};
+                    else if (dir == 1) kid = {f.level + 1, f.x * 2 + c, f.y * 2 + 1};
+                    else if (dir == 2) kid = {f.level + 1, f.x * 2 + 1, f.y * 2 + c};
+                    else kid = {f.level + 1, f.x * 2, f.y * 2 + c};
+                    if (drawnNow.count(kid)) {
+                        const float v = levelOf(kid);
+                        if (v >= 0.0f) low = low < 0.0f ? v : std::min(low, v);
+                    } else {
+                        next.push_back(kid);
+                    }
+                }
+            frontier.swap(next);
+        }
+        return low;
+    };
     double visPop = 0, visMerge = 0, visTerrain = 0, visBlur = 0, visBlur2 = 0, visDepth = 0, visFade = 0, visCover = 0;
     int visPops = 0;
     if (visualStats_ && shown_.size() > 20000)
@@ -3097,9 +3155,10 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             return true;
         };
         Transition& tr = transitions_[dt.key];
+        const bool continuing = tr.frame + 1 == frame_;
         sg_view fv{};
         float fu[4] = {1.0f, 1.0f, 0.0f, 0.0f};
-        if (tr.frame + 1 == frame_) {
+        if (continuing) {
             if (!(tr.src == src) || tr.version != shownVersion) {
                 const bool early = tr.start >= 0.0 && (tnow - tr.start) / kFadeSeconds < 0.5 && tr.from.level != -1 &&
                                    fadeTexture(dt.key, tr.from, tr.fromVersion, fv, fu, (tnow - tr.start) / kFadeSeconds);
@@ -3126,6 +3185,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         tr.src = src;
         tr.version = shownVersion;
         tr.frame = frame_;
+        tr.depth = shownDepth;
         if (dt.merge.level < 0 && tr.merge.level >= 0) {
             if (tr.mergeFrame + 1 == frame_) {
                 tr.from = tr.merge;
@@ -3175,18 +3235,31 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         }
         int coarser[4];
         double skirtLen = seamSkirt(dt.key, tt, drawnNow, coarser);
-        int lodUp = 0;
-        for (int e = 0; e < 4; ++e)
-            if (coarser[e] > 0) lodUp = lodUp == 0 ? coarser[e] : std::min(lodUp, coarser[e]);
+        float deficit[4] = {0, 0, 0, 0};
+        float mine = static_cast<float>(dt.key.level);
+        float lowest = mine;
+        if (lodBlend_ && src.level == dt.key.level && dt.merge.level < 0) {
+            mine = displayLevel(tr);
+            lowest = mine;
+            for (int e = 0; e < 4; ++e) {
+                const float n = neighbourLevel(dt.key, e);
+                if (n >= 0.0f && n < mine - 0.05f) {
+                    deficit[e] = mine - n;
+                    lowest = std::min(lowest, n);
+                }
+            }
+        }
+        const int lodUp = lowest < mine ? std::clamp(dt.key.level - static_cast<int>(std::floor(lowest)), 1, dt.key.level) : 0;
         float lodEdges[4] = {0, 0, 0, 0};
+        float edgeTarget[4] = {0, 0, 0, 0};
         sg_view view3 = view;
         float uvx3[4] = {uvx[0], uvx[1], uvx[2], uvx[3]};
         bool morphing = false;
         bool spatial = false;
-        const bool edgeBlend = lodBlend_ && lodUp > 0;
+        const bool edgeBlend = lodUp > 0 || tr.edge[0] > 0.0f || tr.edge[1] > 0.0f || tr.edge[2] > 0.0f || tr.edge[3] > 0.0f;
         const bool morphBlend = lodMorph_ > 0.0 && dt.key.level > kMinLevel;
         if (src.level == dt.key.level && (edgeBlend || morphBlend)) {
-            const int up = lodUp > 0 ? lodUp : 1;
+            const int up = lodUp > 0 ? lodUp : std::max(1, tr.edgeUp);
             const QuadKey want{dt.key.level - up, dt.key.x >> up, dt.key.y >> up};
             sg_view pv = view;
             float pu[4] = {uvx[0], uvx[1], uvx[2], uvx[3]};
@@ -3200,10 +3273,13 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             if (got.level >= 0 && got.level < src.level && sameGeneration && sameLayers) {
                 view3 = pv;
                 std::memcpy(uvx3, pu, sizeof(pu));
-                if (edgeBlend)
-                    for (int e = 0; e < 4; ++e) lodEdges[e] = coarser[e] > 0 ? 1.0f : 0.0f;
+                const float span = std::max(mine - static_cast<float>(got.level), 0.25f);
+                for (int e = 0; e < 4; ++e) edgeTarget[e] = std::clamp(deficit[e] / span, 0.0f, 1.0f);
+                tr.edgeUp = dt.key.level - got.level;
                 morphing = morphBlend && got.level == want.level && (ancestor->second.complete || ancestor->second.presentable);
-                spatial = edgeBlend || morphing;
+                spatial = true;
+            } else {
+                for (float& e : tr.edge) e = 0.0f;
             }
             if ((got.level != want.level || !sameLayers) && blendParents_.size() < 256) blendParents_.push_back({want, dt.distance * 2.0});
         }
@@ -3268,6 +3344,20 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         if (sg_query_view_state(view2) != SG_RESOURCESTATE_VALID) {
             ++invalidResources_;
             view2 = view;
+        }
+        {
+            const double step = continuing && tr.edgeTime >= 0.0 ? std::clamp(tnow - tr.edgeTime, 0.0, 0.1) / kFadeSeconds : 1.0;
+            tr.edgeTime = tnow;
+            bool any = false;
+            for (int e = 0; e < 4; ++e) {
+                const float target = spatial ? edgeTarget[e] : 0.0f;
+                tr.edge[e] = target > tr.edge[e] ? std::min(target, tr.edge[e] + static_cast<float>(step))
+                                                 : std::max(target, tr.edge[e] - static_cast<float>(step));
+                lodEdges[e] = tr.edge[e];
+                any = any || tr.edge[e] > 0.0f;
+                if (tr.edge[e] != target) fading = true;
+            }
+            if (!any && !morphing) spatial = false;
         }
         if (mergeMix > 0.0f && mergeView.id) {
             view3 = mergeView;
