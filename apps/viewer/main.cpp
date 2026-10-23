@@ -1212,7 +1212,7 @@ void parseArgs(int argc, char** argv) {
             state->framesFile = std::fopen(state->framesPath.c_str(), "w");
             if (state->framesFile)
                 std::fputs("t,dt_ms,cpu_ms,lat,lon,gsd,tilt,az,tiles,max_level,incomplete,coarse,depth,blank,renders,uploads,builds,pending,"
-                           "pop,pops,merge,terrain_pop,blur,blur2,blur_depth,fade,busy,input\n",
+                           "pop,pops,merge,terrain_pop,blur,blur2,blur_depth,fade,cover,busy,input\n",
                            state->framesFile);
 #if defined(_WIN32)
             _putenv_s("OTK_VISUAL", "1");
