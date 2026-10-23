@@ -3030,6 +3030,13 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             s->roadTiles.clear();
             for (const VectorDraw& vd : job.vectors)
                 if (vd.tile->roadCount > 0) s->roadTiles.push_back(vd.id);
+            if (visualLog_ && frame_ % 20 == 0) {
+                int withVector = 0;
+                for (const VectorDraw& vd : job.vectors) withVector += vd.tile && vd.tile->vector ? 1 : 0;
+                std::fprintf(visualLog_, "surfjob frame %llu L%d/%d/%d vectors %zu withvector %d roads %zu standin %d omitted %d\n",
+                             static_cast<unsigned long long>(frame_), job.key.level, job.key.x, job.key.y, job.vectors.size(), withVector,
+                             s->roadTiles.size(), job.standIn ? 1 : 0, job.overlaysOmitted ? 1 : 0);
+            }
             continue;
         }
         for (int level = 0; level < kMips; ++level) {
