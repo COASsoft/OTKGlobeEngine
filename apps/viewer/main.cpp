@@ -842,15 +842,16 @@ void frame() {
     logFrame(dt);
     {
         static double idleFor = 0.0;
-        double delay = state->engine.nextFrameDelay();
+        const double delay = state->engine.nextFrameDelay();
         idleFor = delay > 0.0 ? idleFor + dt : 0.0;
-        if (state->scriptNext < state->script.size()) delay = std::min(delay, state->script[state->scriptNext].at - state->shotElapsed);
+        double wait = state->idleFps > 0 ? 1.0 / state->idleFps : 0.0;
+        if (state->scriptNext < state->script.size()) wait = std::min(wait, state->script[state->scriptNext].at - state->shotElapsed);
 #if defined(__ANDROID__) || defined(_WIN32)
-        state->idleWaited = state->idleFps > 0 && delay > 0.0;
-        if (state->idleWaited) idleWait(std::min(delay, 1.0 / state->idleFps));
+        state->idleWaited = delay > 0.0 && wait > 0.0;
+        if (state->idleWaited) idleWait(wait);
 #else
-        state->idleWaited = state->idleFps > 0 && idleFor > 0.5 && delay > 0.0;
-        if (state->idleWaited) idleWait(std::min(delay, 1.0 / state->idleFps) - 1.0 / 60.0);
+        state->idleWaited = delay > 0.0 && idleFor > 0.5 && wait > 1.0 / 60.0;
+        if (state->idleWaited) idleWait(std::min(delay, wait) - 1.0 / 60.0);
 #endif
     }
     {
