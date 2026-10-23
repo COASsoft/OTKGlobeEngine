@@ -139,6 +139,8 @@ void otk_frame_metal(otk_engine* e, int width, int height, void* current_drawabl
 
 int otk_needs_redraw(const otk_engine* e) { return e->engine.needsRedraw() ? 1 : 0; }
 
+double otk_next_frame_delay(const otk_engine* e) { return e->engine.nextFrameDelay(); }
+
 void otk_set_xr_anchor(otk_engine* e, double lat, double lon, double alt, double heading_deg, double scale) {
     otk::XrAnchor a;
     a.lat = lat;
