@@ -151,10 +151,12 @@ struct ViewerState {
     double settledAt = -1.0;
     bool quitting = false;
     struct Totals {
-        long long frames = 0, pops = 0, jank25 = 0, jank50 = 0, incomplete = 0, reveals = 0, revealFrames = 0;
+        long long frames = 0, pops = 0, jank25 = 0, jank50 = 0, incomplete = 0, reveals = 0, revealFrames = 0, drawn = 0;
         double seconds = 0, pop = 0, merge = 0, terrain = 0, blur = 0, blur2 = 0, depth = 0, fade = 0, worst = 0, reveal = 0;
     };
     Totals during, after;
+    long long renderedPrev = -1;
+    bool drewPrev = false;
     int perfFrames = 0;
     double perfFrameMs = 0, perfFrameMax = 0, perfCpuMs = 0, perfCpuMax = 0;
     long long perfRenders = 0, perfBuilds = 0, perfUploads = 0;
@@ -424,9 +426,9 @@ void writeSummary() {
         const ViewerState::Totals& T = pass == 0 ? state->during : state->after;
         std::snprintf(line, sizeof(line),
                       "%s frames=%lld seconds=%.2f pop_screens=%.4f pops=%lld merge_screens=%.4f terrain_pop_screens=%.4f blur_seconds=%.4f "
-                      "blur2_seconds=%.4f depth_seconds=%.4f fade_seconds=%.4f incomplete_frames=%lld jank25=%lld jank50=%lld worst_ms=%.1f reveal_frames=%lld tile_reveals=%lld reveal_screens=%.4f\n",
+                      "blur2_seconds=%.4f depth_seconds=%.4f fade_seconds=%.4f incomplete_frames=%lld jank25=%lld jank50=%lld worst_ms=%.1f reveal_frames=%lld tile_reveals=%lld reveal_screens=%.4f drawn_frames=%lld\n",
                       pass == 0 ? "input" : "settle", T.frames, T.seconds, T.pop, T.pops, T.merge, T.terrain, T.blur, T.blur2, T.depth, T.fade,
-                      T.incomplete, T.jank25, T.jank50, T.worst, T.revealFrames, T.reveals, T.reveal);
+                      T.incomplete, T.jank25, T.jank50, T.worst, T.revealFrames, T.reveals, T.reveal, T.drawn);
         text += line;
     }
     const otk::Stats run = state->engine.stats();
@@ -446,11 +448,15 @@ void writeSummary() {
 #endif
 }
 
+bool viewLoading() { return state->engine.needsRedraw() || state->engine.stats().loading; }
+
 void logFrame(double dt) {
     if (!state->framesFile) return;
     const otk::Stats s = state->engine.stats();
     const otk::View v = state->engine.view();
-    const bool busy = state->engine.needsRedraw();
+    const bool busy = state->engine.needsRedraw() || s.loading;
+    const bool drew = s.renderedFrames != state->renderedPrev;
+    state->renderedPrev = s.renderedFrames;
     const bool input = state->scriptNext < state->script.size() || state->gesturing || state->engine.input().active() || state->engine.animating();
     const double t = state->shotElapsed;
     std::fprintf(state->framesFile,
@@ -480,11 +486,13 @@ void logFrame(double dt) {
     T.reveal += s.revealArea;
     if (s.revealArea > 0.001) ++T.revealFrames;
     if (s.incompleteTiles > 0) ++T.incomplete;
-    if (busy || input) {
+    if ((drew || input) && state->drewPrev) {
         if (dt > 0.025) ++T.jank25;
         if (dt > 0.050) ++T.jank50;
         T.worst = std::max(T.worst, dt * 1000.0);
     }
+    state->drewPrev = drew || input;
+    if (drew) ++T.drawn;
     if (!input && !busy && state->settledAt < 0) state->settledAt = t;
     if (busy && !input) state->settledAt = -1.0;
     if (!input && state->exitAfter >= 0 && !state->quitting && t - state->inputEnd >= state->exitAfter) {
@@ -662,14 +670,14 @@ void frame() {
                 ++state->filmFrame;
             }
         }
-        if (state->shotViewshed && !state->viewshed && state->shotElapsed > 1.0 && !state->engine.needsRedraw()) {
+        if (state->shotViewshed && !state->viewshed && state->shotElapsed > 1.0 && !viewLoading()) {
             otk::View v = state->engine.view();
             state->viewshed = state->engine.computeViewshed({v.lat, v.lon, 0}, 2.0, 5000.0);
         }
-        state->settledFrames = state->engine.needsRedraw() ? 0 : state->settledFrames + 1;
+        state->settledFrames = viewLoading() ? 0 : state->settledFrames + 1;
         if (state->zoomTest) {
             bool startNow = state->zoomStartAfter > 0 ? state->shotElapsed > state->zoomStartAfter
-                                                      : (state->shotElapsed > 1.0 && !state->engine.needsRedraw());
+                                                      : (state->shotElapsed > 1.0 && !viewLoading());
             if (!state->zoomStarted && startNow) {
                 state->engine.flyTo(state->zoomTarget, state->zoomSeconds);
                 state->zoomStarted = true;
