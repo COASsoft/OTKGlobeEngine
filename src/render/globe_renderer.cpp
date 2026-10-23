@@ -1777,21 +1777,30 @@ int GlobeRenderer::processLoads() {
             failCount_.erase(t.id);
         } else if (t.ok) {
             float tileMean[3] = {-1.0f, -1.0f, -1.0f};
+            float tileSpread[3] = {0.0f, 0.0f, 0.0f};
             if (t.id.layer >= 0 && t.id.layer < static_cast<int>(layerOpacity_.size()) && !t.rgba.empty()) {
                 size_t samples = 0, opaque = 0;
-                double sum[3] = {0.0, 0.0, 0.0};
+                double sum[3] = {0.0, 0.0, 0.0}, sq[3] = {0.0, 0.0, 0.0};
                 for (size_t a = 3; a < t.rgba.size(); a += 4 * 61) {
                     ++samples;
                     if (t.rgba[a] >= 128) {
                         ++opaque;
-                        for (int c = 0; c < 3; ++c) sum[c] += t.rgba[a - 3 + c];
+                        for (int c = 0; c < 3; ++c) {
+                            const double v = t.rgba[a - 3 + c];
+                            sum[c] += v;
+                            sq[c] += v * v;
+                        }
                     }
                 }
                 const float f = samples ? static_cast<float>(opaque) / static_cast<float>(samples) : 1.0f;
                 float& o = layerOpacity_[t.id.layer];
                 o = o < 0.0f ? f : o * 0.8f + f * 0.2f;
                 if (opaque * 2 > samples)
-                    for (int c = 0; c < 3; ++c) tileMean[c] = static_cast<float>(sum[c] / static_cast<double>(opaque));
+                    for (int c = 0; c < 3; ++c) {
+                        const double m = sum[c] / static_cast<double>(opaque);
+                        tileMean[c] = static_cast<float>(m);
+                        tileSpread[c] = static_cast<float>(std::sqrt(std::max(0.0, sq[c] / static_cast<double>(opaque) - m * m)));
+                    }
             }
             sg_image_desc d{};
             d.width = t.width;
@@ -1812,6 +1821,7 @@ int GlobeRenderer::processLoads() {
                 continue;
             }
             std::copy(tileMean, tileMean + 3, tex.mean);
+            std::copy(tileSpread, tileSpread + 3, tex.spread);
             auto old = imagery_.find(t.id);
             if (old != imagery_.end()) dropImagery(old->second);
             imagery_[t.id] = tex;
@@ -1852,7 +1862,7 @@ void GlobeRenderer::learnColour(const TileId& id) {
         if (p.z < 0 || colourLearned_.count(p)) continue;
         auto parent = imagery_.find(p);
         if (parent == imagery_.end() || parent->second.mean[0] < 0.0f) continue;
-        float sum[3] = {0.0f, 0.0f, 0.0f};
+        float sum[3] = {0.0f, 0.0f, 0.0f}, sq[3] = {0.0f, 0.0f, 0.0f};
         bool all = true;
         for (int i = 0; i < 4 && all; ++i) {
             auto child = imagery_.find(TileId{p.layer, p.z + 1, p.x * 2 + (i & 1), p.y * 2 + (i >> 1)});
@@ -1860,28 +1870,38 @@ void GlobeRenderer::learnColour(const TileId& id) {
                 all = false;
                 break;
             }
-            for (int c = 0; c < 3; ++c) sum[c] += child->second.mean[c];
+            for (int c = 0; c < 3; ++c) {
+                sum[c] += child->second.mean[c];
+                sq[c] += child->second.spread[c] * child->second.spread[c] + child->second.mean[c] * child->second.mean[c];
+            }
         }
         if (!all) continue;
         colourLearned_.insert(p);
         LevelColour& lc = levelColour_[p.layer * 64 + p.z];
         for (int c = 0; c < 3; ++c) {
-            const float ratio = std::clamp((sum[c] * 0.25f + 4.0f) / (parent->second.mean[c] + 4.0f), 0.4f, 3.0f);
-            lc.gain[c] = lc.count == 0 ? ratio : lc.gain[c] + (ratio - lc.gain[c]) * 0.2f;
+            const float mean = sum[c] * 0.25f;
+            const float spread = std::sqrt(std::max(0.0f, sq[c] * 0.25f - mean * mean));
+            const float gain = std::clamp(spread / std::max(parent->second.spread[c], 2.0f), 0.4f, 3.0f);
+            const float bias = std::clamp(mean - gain * parent->second.mean[c], -160.0f, 160.0f);
+            lc.gain[c] = lc.count == 0 ? gain : lc.gain[c] + (gain - lc.gain[c]) * 0.2f;
+            lc.bias[c] = lc.count == 0 ? bias : lc.bias[c] + (bias - lc.bias[c]) * 0.2f;
         }
         ++lc.count;
         for (int z = 0; z <= p.z; ++z) {
-            float g[3];
-            colourGain(p.layer, z, g);
+            float g[3], b[3];
+            colourGain(p.layer, z, g, b);
             auto& applied = colourApplied_[p.layer * 64 + z];
             for (int c = 0; c < 3; ++c)
-                if (std::abs(g[c] - (applied[c] > 0.0f ? applied[c] : 1.0f)) > 0.05f) colourChanged_ = true;
+                if (std::abs(g[c] - (applied[c] > 0.0f ? applied[c] : 1.0f)) > 0.05f || std::abs(b[c] - applied[3 + c]) > 6.0f) colourChanged_ = true;
         }
     }
 }
 
-void GlobeRenderer::colourGain(int layer, int z, float out[3]) const {
-    out[0] = out[1] = out[2] = 1.0f;
+void GlobeRenderer::colourGain(int layer, int z, float gain[3], float bias[3]) const {
+    for (int c = 0; c < 3; ++c) {
+        gain[c] = 1.0f;
+        bias[c] = 0.0f;
+    }
     if (!colourMatch_) return;
     for (int k = z; k < 40; ++k) {
         auto it = levelColour_.find(layer * 64 + k);
@@ -1889,9 +1909,12 @@ void GlobeRenderer::colourGain(int layer, int z, float out[3]) const {
         const LevelColour& lc = it->second;
         if (lc.count < 3) continue;
         bool significant = false;
-        for (int c = 0; c < 3; ++c) significant = significant || std::abs(lc.gain[c] - 1.0f) > 0.08f;
+        for (int c = 0; c < 3; ++c) significant = significant || std::abs(lc.gain[c] - 1.0f) > 0.08f || std::abs(lc.bias[c]) > 8.0f;
         if (!significant) continue;
-        for (int c = 0; c < 3; ++c) out[c] = std::clamp(out[c] * lc.gain[c], 0.4f, 3.0f);
+        for (int c = 0; c < 3; ++c) {
+            gain[c] = std::clamp(lc.gain[c] * gain[c], 0.4f, 3.0f);
+            bias[c] = std::clamp(lc.gain[c] * bias[c] + lc.bias[c], -200.0f, 200.0f);
+        }
     }
 }
 
@@ -2162,7 +2185,9 @@ bool GlobeRenderer::buildSurfaceJob(const QuadKey& k, double priority, SurfaceJo
                     const float* t = north > 0 ? layers_[l].polarTintNorth : layers_[l].polarTintSouth;
                     for (int c = 0; c < 3; ++c) sd.tint[c] = t[c];
                 } else if (!layers_[l].labels) {
-                    colourGain(l, src.z, sd.tint);
+                    float bias[3];
+                    colourGain(l, src.z, sd.tint, bias);
+                    for (int c = 0; c < 3; ++c) sd.bias[c] = bias[c] / 255.0f;
                 }
                 job->draws.push_back(sd);
             }
@@ -2439,12 +2464,15 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         colourChanged_ = false;
         colourDirtyAt_ = now();
         for (auto& [key, applied] : colourApplied_) {
-            float g[3];
-            colourGain(key / 64, key % 64, g);
-            for (int c = 0; c < 3; ++c) applied[c] = g[c];
-            if (visualLog_ && (g[0] != 1.0f || g[1] != 1.0f || g[2] != 1.0f))
-                std::fprintf(visualLog_, "colour frame %llu t %.3f layer %d z %d gain %.3f %.3f %.3f\n", static_cast<unsigned long long>(frame_), now(),
-                             key / 64, key % 64, g[0], g[1], g[2]);
+            float g[3], b[3];
+            colourGain(key / 64, key % 64, g, b);
+            for (int c = 0; c < 3; ++c) {
+                applied[c] = g[c];
+                applied[3 + c] = b[c];
+            }
+            if (visualLog_ && (g[0] != 1.0f || g[1] != 1.0f || g[2] != 1.0f || b[0] != 0.0f || b[1] != 0.0f || b[2] != 0.0f))
+                std::fprintf(visualLog_, "colour frame %llu t %.3f layer %d z %d gain %.3f %.3f %.3f bias %.1f %.1f %.1f\n",
+                             static_cast<unsigned long long>(frame_), now(), key / 64, key % 64, g[0], g[1], g[2], b[0], b[1], b[2]);
         }
         markDirty({-180.0, -90.0, 180.0, 90.0});
     }
@@ -2915,6 +2943,9 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 fsp.tint[1] = d.tint[1];
                 fsp.tint[2] = d.tint[2];
                 fsp.tint[3] = d.opacity;
+                fsp.bias[0] = d.bias[0];
+                fsp.bias[1] = d.bias[1];
+                fsp.bias[2] = d.bias[2];
                 sg_apply_uniforms(UB_surface_fs_params, SG_RANGE(fsp));
                 sg_draw(d.first, d.count, 1);
             }
