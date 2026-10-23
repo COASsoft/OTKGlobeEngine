@@ -13,6 +13,7 @@ void main() {
 @fs surface_fs
 layout(binding=1) uniform surface_fs_params {
     vec4 tint;
+    vec4 bias;
 };
 
 layout(binding=0) uniform texture2D tex;
@@ -23,7 +24,7 @@ out vec4 frag_color;
 
 void main() {
     vec4 c = texture(sampler2D(tex, smp), uv);
-    frag_color = vec4(c.rgb * tint.rgb, c.a * tint.a);
+    frag_color = vec4(c.rgb * tint.rgb + bias.rgb, c.a * tint.a);
 }
 @end
 
