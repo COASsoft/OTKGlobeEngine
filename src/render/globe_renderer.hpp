@@ -520,6 +520,7 @@ private:
     std::unordered_map<QuadKey, std::pair<double, std::uint64_t>, QuadKeyHash> morphSince_;
     bool visualStats_ = false;
     long long fadeMisses_ = 0;
+    FILE* visualLog_ = nullptr;
     double rerenderGap_ = 0.0;
     struct Shown {
         QuadKey src{-1, 0, 0};
