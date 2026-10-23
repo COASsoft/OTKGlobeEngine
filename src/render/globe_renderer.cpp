@@ -76,7 +76,7 @@ constexpr double budgetMs = 8.0;
 constexpr double prefetchBudgetMs = 3.0;
 #endif
 constexpr int kGrid = 32;
-constexpr int kMaxUniformDrop = 2;
+constexpr int kMaxUniformDrop = 3;
 constexpr int kPosts = kGrid + 1;
 constexpr int kVertexCount = kPosts * kPosts + 4 * kPosts;
 constexpr int kStride = 7;
@@ -1514,7 +1514,7 @@ void GlobeRenderer::setUniform(const Camera& c) {
     uniformDist_ = 0.0;
     uniformMix_ = 0.0;
     if (!uniformLod_ || c.firstPerson || c.hasPose()) return;
-    uniformMix_ = std::clamp((25.0 - c.tilt) / 10.0, 0.0, 1.0) * std::clamp((8.0e6 - c.range()) / 4.0e6, 0.0, 1.0);
+    uniformMix_ = std::clamp((25.0 - c.tilt) / 10.0, 0.0, 1.0);
     if (uniformMix_ > 0.0) uniformDist_ = std::max(c.range(), 1.0);
     else uniformMix_ = 0.0;
 }
@@ -1657,9 +1657,18 @@ int GlobeRenderer::readyGap(const QuadKey& k) const {
     return k.level + 1;
 }
 
+bool GlobeRenderer::roadsReady(const std::vector<TileId>& roads) const {
+    for (const TileId& r : roads) {
+        auto it = imagery_.find(r);
+        if (it != imagery_.end() && it->second.vector && !it->second.vector->roads.empty() && it->second.roads3dVersion < 0) return false;
+    }
+    return true;
+}
+
 bool GlobeRenderer::finished(const QuadKey& k) const {
     auto s = surface_.find(k);
     if (s == surface_.end() || s->second.version < 0) return false;
+    if (lines3d_ && labelsOn_ && !roadsReady(s->second.roadTiles)) return false;
     if (s->second.complete) return true;
     if (s->second.missing.empty()) return false;
     const double t = now();
@@ -3071,6 +3080,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             s->roadTiles.clear();
             for (const VectorDraw& vd : job.vectors)
                 if (vd.tile->roadCount > 0) s->roadTiles.push_back(vd.id);
+            if (lines3d_)
+                for (const TileId& r : s->roadTiles) roadBuildQueue_.insert(r);
             if (visualLog_ && frame_ % 20 == 0) {
                 int withVector = 0;
                 for (const VectorDraw& vd : job.vectors) withVector += vd.tile && vd.tile->vector ? 1 : 0;
@@ -3114,6 +3125,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         s->roadTiles.clear();
         for (const VectorDraw& vd : job.vectors)
             if (vd.tile->roadCount > 0) s->roadTiles.push_back(vd.id);
+        if (lines3d_)
+            for (const TileId& r : s->roadTiles) roadBuildQueue_.insert(r);
     }
 
     profileSub(-1);
@@ -3500,9 +3513,10 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         return st->second.complete ? std::max(st->second.sourceZ, st->second.imageryZ) : st->second.sourceZ;
     };
     int zCap = 99;
-    if (uniformMix_ >= 1.0 && uniformShare_ > 0.0) {
+    if (uniformMix_ >= 0.5 && uniformShare_ > 0.0) {
         int available = 99;
         int ideal = -1;
+        const bool reveal = frozenNow || revealOpen_ || uniformZ_ >= 99;
         for (const DrawTile& d : tiles) {
             int z = idealImageryZ(d.key);
             ideal = std::max(ideal, z);
@@ -3513,10 +3527,16 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 if (s.level < 0) continue;
                 z = zOf(s);
             }
+            if (!reveal) {
+                auto held = transitions_.find(d.key);
+                if (held != transitions_.end() && held->second.frame + 1 == frame_ && held->second.held && held->second.from.level >= 0) {
+                    const int hz = zOf(held->second.from);
+                    if (hz >= 0) z = std::min(z, hz);
+                }
+            }
             if (z >= 0) available = std::min(available, z);
         }
         if (available < 99 && ideal >= 0) available = std::max(available, ideal - kMaxUniformDrop);
-        const bool reveal = frozenNow || revealOpen_ || uniformZ_ >= 99;
         zCap = available >= 99 ? 99 : reveal ? available : std::max(std::min(uniformZ_, available), ideal - kMaxUniformDrop);
         if (visualLog_ && zCap != uniformZ_)
             std::fprintf(visualLog_, "zcap frame %llu t %.3f z %d -> %d available %d tiles %zu\n", static_cast<unsigned long long>(frame_), tnow, uniformZ_,
@@ -4065,7 +4085,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             rects.push_back({b.west, b.south, b.east, b.north});
         }
         labels_.warmLines3D();
-        labels_.drawBorders3D(dc, ground, dpiScale_, rects, lineVersion);
+        bordersReady_ = labels_.drawBorders3D(dc, ground, dpiScale_, rects, lineVersion);
         std::unordered_map<TileId, std::vector<size_t>, TileIdHash> users;
         for (size_t i = 0; i < lineTiles.size(); ++i) {
             auto s = lineTiles[i].second.level >= 0 ? surface_.find(lineTiles[i].second) : surface_.end();
@@ -4112,6 +4132,18 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         std::vector<RoadDraw> roadDraws;
         const auto buildStart = std::chrono::steady_clock::now();
         bool forcedBuild = false;
+        for (auto q = roadBuildQueue_.begin(); q != roadBuildQueue_.end();) {
+            auto it = imagery_.find(*q);
+            if (it == imagery_.end() || !it->second.vector || it->second.vector->roads.empty() || it->second.roads3dVersion >= 0) {
+                q = roadBuildQueue_.erase(q);
+                continue;
+            }
+            if (std::chrono::steady_clock::now() - buildStart >= std::chrono::milliseconds(2) && forcedBuild) break;
+            forcedBuild = true;
+            it->second.roads3dBuilt = tnow;
+            buildRoads3D(it->second, lineVersion);
+            q = roadBuildQueue_.erase(q);
+        }
         auto overlaps = [](const GeoRect& a, const GeoRect& b) {
             const double eps = 1e-9;
             return a.west < b.east - eps && b.west < a.east - eps && a.south < b.north - eps && b.south < a.north - eps;
@@ -4426,7 +4458,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     }
     viewComplete_ = incomplete == 0;
     if (snapshotShown_ && settleSnapshot_ && snapshotFade_ < 0.0) {
-        const bool quiet = heldNow == 0 && waitingNow == 0 && !fading && !mergeActive_ && visibleRenders == 0 && visibleDeferred == 0 && builds == 0;
+        const bool quiet = heldNow == 0 && waitingNow == 0 && !fading && !mergeActive_ && visibleRenders == 0 && visibleDeferred == 0 && builds == 0 &&
+                           bordersReady_ && roadBuildQueue_.empty();
         settleQuiet_ = quiet ? settleQuiet_ + 1 : 0;
         if (settleQuiet_ >= 2 || tnow - snapshotStart_ >= settleWait_) {
             snapshotFade_ = tnow;
@@ -4443,7 +4476,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             std::fprintf(visualLog_, "settle frame %llu t %.3f want held %d merging %d fades %d edges %d morphs %d\n", static_cast<unsigned long long>(frame_),
                          tnow, heldNow, mergeActive_ ? 1 : 0, fadeKinds[0], fadeKinds[1], fadeKinds[2]);
     }
-    busy_ = settleWanted_ || fading || mergeActive_ || snapshotShown_ || tilesBusy || renders > 0 || builds > 0 || deferred > 0 || loadsTaken > 0 || elevationChanged ||
+    busy_ = settleWanted_ || !bordersReady_ || !roadBuildQueue_.empty() || fading || mergeActive_ || snapshotShown_ || tilesBusy || renders > 0 || builds > 0 || deferred > 0 || loadsTaken > 0 || elevationChanged ||
             ((labelsOn_ || contours_) && labels_.animating()) || (buildingsOn_ && buildings_.busy());
     stats_.loading = pending || stats_.pendingRequests > 0 || heldNow > 0 ? 1 : 0;
     stats_.renderedFrames = static_cast<long long>(frame_);
