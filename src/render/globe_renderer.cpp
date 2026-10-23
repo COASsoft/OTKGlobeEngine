@@ -143,6 +143,7 @@ bool GlobeRenderer::init() {
     if (const char* v = std::getenv("OTK_REVEAL_HOLD")) revealHold_ = std::max(0.0, std::atof(v));
     if (const char* v = std::getenv("OTK_REVEAL_GAP")) revealGap_ = std::max(0.0, std::atof(v));
     if (const char* v = std::getenv("OTK_MOTION_HOLD")) motionHold_ = std::max(0.0, std::atof(v));
+    if (const char* v = std::getenv("OTK_MOTION_SPEED")) motionSpeed_ = std::max(0.0, std::atof(v));
     if (const char* v = std::getenv("OTK_MAX_DIVE")) maxDive_ = std::atoi(v);
     if (const char* v = std::getenv("OTK_LOD_MORPH")) lodMorph_ = std::clamp(std::atof(v), 0.0, 1.0);
     if (const char* v = std::getenv("OTK_MARGIN")) marginPrefetch_ = std::max(1.0, std::atof(v));
@@ -3217,10 +3218,16 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     };
     {
         const double key[5] = {cam.focus.lat, cam.focus.lon, std::log(std::max(cam.gsd, 1e-6)), cam.azimuth, cam.tilt};
-        const double eps[5] = {1e-9, 1e-9, 1e-6, 1e-4, 1e-4};
-        for (int i = 0; i < 5; ++i)
-            if (std::abs(key[i] - motionKey_[i]) > eps[i]) lastMotion_ = tnow;
+        const double perDegree = 111320.0 / std::max(cam.gsd, 1e-6);
+        const double half = 0.5 * std::max(cam.width, cam.height);
+        const double moved = std::max({std::abs(key[0] - motionKey_[0]) * perDegree,
+                                       std::abs(std::remainder(key[1] - motionKey_[1], 360.0)) * perDegree * std::cos(cam.focus.lat * kDegToRad),
+                                       std::abs(key[2] - motionKey_[2]) * half,
+                                       std::abs(std::remainder(key[3] - motionKey_[3], 360.0)) * kDegToRad * half,
+                                       std::abs(key[4] - motionKey_[4]) * kDegToRad * half});
+        if (moved > motionSpeed_ * std::max(tnow - motionTime_, 1.0 / 240.0)) lastMotion_ = tnow;
         std::copy(key, key + 5, motionKey_);
+        motionTime_ = tnow;
     }
     revealOpen_ = revealGate(tnow);
     if (revealOpen_ && heldPrev_ > 0) lastReveal_ = tnow;
