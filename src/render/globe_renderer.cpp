@@ -2216,7 +2216,7 @@ bool GlobeRenderer::buildSurfaceJob(const QuadKey& k, double priority, SurfaceJo
                     if (l == baseLayer_) job->background = true;
                     VectorDraw vd;
                     vd.tile = tex;
-                    vd.id = id;
+                    vd.id = src;
                     vd.xform[0] = static_cast<float>(2.0 / span);
                     vd.xform[1] = static_cast<float>(2.0 / span);
                     vd.xform[2] = static_cast<float>((tex->vector->originLon - b.west) * 2.0 / span - 1.0);
