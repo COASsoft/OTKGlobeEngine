@@ -2443,8 +2443,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             colourGain(key / 64, key % 64, g);
             for (int c = 0; c < 3; ++c) applied[c] = g[c];
             if (visualLog_ && (g[0] != 1.0f || g[1] != 1.0f || g[2] != 1.0f))
-                std::fprintf(visualLog_, "colour frame %llu t %.3f layer %d z %d gain %.3f %.3f %.3f
-", static_cast<unsigned long long>(frame_), now(),
+                std::fprintf(visualLog_, "colour frame %llu t %.3f layer %d z %d gain %.3f %.3f %.3f\n", static_cast<unsigned long long>(frame_), now(),
                              key / 64, key % 64, g[0], g[1], g[2]);
         }
         markDirty({-180.0, -90.0, 180.0, 90.0});
