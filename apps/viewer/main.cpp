@@ -1234,11 +1234,52 @@ bool runScript() {
             state->preset = static_cast<int>(st.v[0]);
             state->engine.setLayers(withAdded(preset(state->preset)));
         }
-        else if (st.op == "drag" || st.op == "rdrag") {
-            state->drag = st;
-            state->drag.at = t;
-            state->dragging = true;
-            in.pointerDown(77, st.v[0], st.v[1], otk::PointerType::Mouse, st.op == "rdrag" ? otk::MouseButton::Right : otk::MouseButton::Left, 0);
+        else if (st.op == "drag" || st.op == "rdrag" || st.op == "swipe") {
+            ViewerState::Gesture g;
+            g.count = 1;
+            g.from[0][0] = st.v[0];
+            g.from[0][1] = st.v[1];
+            g.to[0][0] = st.v[2];
+            g.to[0][1] = st.v[3];
+            g.seconds = st.v[4];
+            g.type = st.op == "swipe" ? otk::PointerType::Touch : otk::PointerType::Mouse;
+            g.button = st.op == "rdrag" ? otk::MouseButton::Right : otk::MouseButton::Left;
+            beginGesture(g, t);
+        } else if (st.op == "pinch") {
+            ViewerState::Gesture g;
+            g.count = 2;
+            const double a = st.v[5] * 3.14159265358979323846 / 180.0;
+            for (int p = 0; p < 2; ++p) {
+                const double s = p == 0 ? -0.5 : 0.5;
+                g.from[p][0] = st.v[0] + std::cos(a) * st.v[2] * s;
+                g.from[p][1] = st.v[1] + std::sin(a) * st.v[2] * s;
+                g.to[p][0] = st.v[0] + std::cos(a) * st.v[3] * s;
+                g.to[p][1] = st.v[1] + std::sin(a) * st.v[3] * s;
+            }
+            g.seconds = st.v[4];
+            beginGesture(g, t);
+        } else if (st.op == "twist") {
+            ViewerState::Gesture g;
+            g.count = 2;
+            g.turn = true;
+            g.cx = st.v[0];
+            g.cy = st.v[1];
+            g.radius = st.v[2] * 0.5;
+            g.angle0 = st.v[3];
+            g.angle1 = st.v[4];
+            g.seconds = st.v[5];
+            beginGesture(g, t);
+        } else if (st.op == "tilt") {
+            ViewerState::Gesture g;
+            g.count = 2;
+            for (int p = 0; p < 2; ++p) {
+                g.from[p][0] = st.v[0] + (p == 0 ? -120.0 : 120.0);
+                g.from[p][1] = st.v[1];
+                g.to[p][0] = g.from[p][0];
+                g.to[p][1] = st.v[1] + st.v[2];
+            }
+            g.seconds = st.v[3];
+            beginGesture(g, t);
         } else if (st.op == "fly") {
             otk::View v;
             v.lat = st.v[0];
