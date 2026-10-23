@@ -341,6 +341,7 @@ private:
     bool finished(const QuadKey& k) const;
     bool retrying(const QuadKey& k) const;
     int surfaceZ(const QuadKey& q) const;
+    int surfaceZMax(const QuadKey& q) const;
     bool roadsReady(const std::vector<TileId>& roads) const;
     int readyGap(const QuadKey& k) const;
     bool sparseLayer(int l) const;
