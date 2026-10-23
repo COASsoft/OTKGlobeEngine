@@ -71,6 +71,7 @@ public:
         return fetchUrl(url, body, options, cache_.isOpen() ? &cache_ : nullptr, &offline_, "OTKGlobeEngine/0.1");
     }
     void retryUnavailable();
+    void retryLayer(int layer);
     void setBackdrop(bool enabled) { backdropEnabled_ = enabled; }
     void setMemoryBudget(int megabytes);
     void fitPools();
