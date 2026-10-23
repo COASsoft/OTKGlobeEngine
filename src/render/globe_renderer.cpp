@@ -3415,6 +3415,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     };
     int zCap = 99;
     if (uniformMix_ >= 1.0 && uniformShare_ > 0.0) {
+        int available = 99;
         for (const DrawTile& d : tiles) {
             int z = idealImageryZ(d.key);
             if (expecting(d.key)) {
@@ -3424,12 +3425,15 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 if (s.level < 0) continue;
                 z = zOf(s);
             }
-            if (z >= 0) zCap = std::min(zCap, z);
+            if (z >= 0) available = std::min(available, z);
         }
+        const bool reveal = frozenNow || revealOpen_ || uniformZ_ >= 99;
+        zCap = available >= 99 ? 99 : reveal ? available : std::min(uniformZ_, available);
         if (visualLog_ && zCap != uniformZ_)
-            std::fprintf(visualLog_, "zcap frame %llu t %.3f z %d -> %d tiles %zu\n", static_cast<unsigned long long>(frame_), tnow, uniformZ_, zCap,
-                         tiles.size());
+            std::fprintf(visualLog_, "zcap frame %llu t %.3f z %d -> %d available %d tiles %zu\n", static_cast<unsigned long long>(frame_), tnow, uniformZ_,
+                         zCap, available, tiles.size());
     }
+    if (zCap < uniformZ_) coarsenAt_ = tnow;
     uniformZ_ = zCap;
     if (visualLog_ && capDepth != uniformDepth_)
         std::fprintf(visualLog_, "cap frame %llu t %.3f depth %d -> %d tiles %zu\n", static_cast<unsigned long long>(frame_), tnow, uniformDepth_, capDepth,
@@ -3598,7 +3602,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             const bool coarsen = !better && zCap < 99 && tr.from.level >= 0;
             if (revealHold_ <= 0.0 || revealOpen_ || switched || coarsen || (!better && tr.from.level < 0)) {
                 tr.held = false;
-                tr.start = tnow;
+                tr.start = coarsen && !revealOpen_ && tnow - coarsenAt_ < kFadeSeconds ? coarsenAt_ : tnow;
                 tr.why = revealOpen_ ? 'g' : coarsen ? 'c' : !better ? 'd' : 'o';
                 return;
             }
@@ -3616,7 +3620,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                     }
                     tr.held = false;
                     tr.finishing = false;
-                    tr.start = coarsenAt_;
+                    tr.start = tnow - coarsenAt_ < kFadeSeconds ? coarsenAt_ : tnow;
                     tr.why = 'c';
                 } else if (!tr.held && tr.start >= 0.0 && tnow - tr.start < kFadeSeconds && tr.src.level >= 0) {
                     tr.finishing = true;
