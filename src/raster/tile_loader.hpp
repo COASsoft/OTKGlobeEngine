@@ -73,6 +73,7 @@ public:
     void giveBack(DecodedTile& tile);
     int placeholders() const;
     int pending() const;
+    bool hasResults() const;
     std::string debug() const;
 
     int startDownload(int layer, const Region& region, int minZoom, int maxZoom, std::int64_t maxBytes = 0);
