@@ -1,6 +1,9 @@
 #if defined(__ANDROID__)
+#include <android/configuration.h>
 #include <android/log.h>
 #include <android/native_activity.h>
+#include <android/native_window.h>
+#include <dlfcn.h>
 #endif
 #if defined(_WIN32)
 #define NOMINMAX
@@ -57,6 +60,7 @@ struct ViewerState {
     sg_view shotDepthView{};
     std::string cacheDir;
     bool clearCache = false;
+    int fps = 60;
     bool offline = false;
     std::vector<otk::ImageryLayer> customLayers;
     bool hasDownload = false;
@@ -175,6 +179,26 @@ struct ViewerState {
 ViewerState* state = nullptr;
 FILE* logFile = nullptr;
 
+float viewerDpi() {
+#if defined(__ANDROID__)
+    static float scale = 0.0f;
+    if (scale <= 0.0f) {
+        scale = 1.0f;
+        auto* activity = static_cast<const ANativeActivity*>(sapp_android_get_native_activity());
+        if (activity && activity->assetManager) {
+            AConfiguration* cfg = AConfiguration_new();
+            AConfiguration_fromAssetManager(cfg, activity->assetManager);
+            const int32_t density = AConfiguration_getDensity(cfg);
+            AConfiguration_delete(cfg);
+            if (density > 0 && density != ACONFIGURATION_DENSITY_NONE && density != ACONFIGURATION_DENSITY_ANY) scale = static_cast<float>(density) / 160.0f;
+        }
+    }
+    return scale;
+#else
+    return sapp_dpi_scale();
+#endif
+}
+
 void openPath(const std::string& path);
 
 void fileLog(const char* tag, uint32_t level, uint32_t item, const char* msg, uint32_t line, const char* file, void*) {
@@ -224,13 +248,13 @@ void init() {
     state->engine.input().onTap([](double x, double y, int taps, otk::PointerType) {
         if (taps != 1) return;
         otk::Feature f;
-        std::uint64_t id = state->engine.hitTest(x, y, 16.0 * sapp_dpi_scale());
+        std::uint64_t id = state->engine.hitTest(x, y, 16.0 * viewerDpi());
         state->selected = id && state->engine.feature(id, f) ? (f.name.empty() ? "feature " + std::to_string(id) : f.name) : "";
     });
 #if defined(_WIN32)
     installPointerInput(sapp_win32_get_hwnd(), &state->engine.input());
 #endif
-    state->engine.setViewport(sapp_width(), sapp_height(), sapp_dpi_scale());
+    state->engine.setViewport(sapp_width(), sapp_height(), viewerDpi());
     std::string cache = state->cacheDir;
     if (cache.empty()) cache = otk::defaultCacheDirectory();
     if (!cache.empty()) {
@@ -495,21 +519,62 @@ void androidInsets() {
     jobject insets = call(decor, "getRootWindowInsets", "()Landroid/view/WindowInsets;");
     int inset[4] = {0, 0, 0, 0};
     bool ok = insets != nullptr;
-    if (insets) {
-        jclass cls = env->GetObjectClass(insets);
-        const char* names[4] = {"getSystemWindowInsetLeft", "getSystemWindowInsetTop", "getSystemWindowInsetRight", "getSystemWindowInsetBottom"};
-        for (int i = 0; i < 4 && ok; ++i) {
+    auto ints = [&](jobject obj, const char* const* names, int* out) {
+        if (!obj) return false;
+        jclass cls = env->GetObjectClass(obj);
+        bool good = true;
+        for (int i = 0; i < 4 && good; ++i) {
             jmethodID m = env->GetMethodID(cls, names[i], "()I");
             if (!m || env->ExceptionCheck()) {
                 env->ExceptionClear();
-                ok = false;
+                good = false;
                 break;
             }
-            inset[i] = env->CallIntMethod(insets, m);
+            out[i] = std::max(out[i], static_cast<int>(env->CallIntMethod(obj, m)));
             if (env->ExceptionCheck()) {
                 env->ExceptionClear();
-                ok = false;
+                good = false;
             }
+        }
+        env->DeleteLocalRef(cls);
+        return good;
+    };
+    if (insets) {
+        const char* bars[4] = {"getSystemWindowInsetLeft", "getSystemWindowInsetTop", "getSystemWindowInsetRight", "getSystemWindowInsetBottom"};
+        ok = ints(insets, bars, inset);
+        jobject cutout = call(insets, "getDisplayCutout", "()Landroid/view/DisplayCutout;");
+        const char* safe[4] = {"getSafeInsetLeft", "getSafeInsetTop", "getSafeInsetRight", "getSafeInsetBottom"};
+        if (cutout) {
+            ints(cutout, safe, inset);
+            env->DeleteLocalRef(cutout);
+        }
+        jclass cls = env->GetObjectClass(insets);
+        jmethodID corner = env->GetMethodID(cls, "getRoundedCorner", "(I)Landroid/view/RoundedCorner;");
+        if (env->ExceptionCheck()) {
+            env->ExceptionClear();
+            corner = nullptr;
+        }
+        for (int position = 0; corner && position < 4; ++position) {
+            jobject rc = env->CallObjectMethod(insets, corner, position);
+            if (env->ExceptionCheck()) {
+                env->ExceptionClear();
+                rc = nullptr;
+            }
+            if (!rc) continue;
+            jclass rcc = env->GetObjectClass(rc);
+            jmethodID radius = env->GetMethodID(rcc, "getRadius", "()I");
+            int r = 0;
+            if (radius && !env->ExceptionCheck()) r = env->CallIntMethod(rc, radius);
+            if (env->ExceptionCheck()) {
+                env->ExceptionClear();
+                r = 0;
+            }
+            const int edge = static_cast<int>(std::ceil(r * 0.3));
+            const bool left = position == 0 || position == 3, top = position == 0 || position == 1;
+            inset[left ? 0 : 2] = std::max(inset[left ? 0 : 2], edge);
+            inset[top ? 1 : 3] = std::max(inset[top ? 1 : 3], edge);
+            env->DeleteLocalRef(rcc);
+            env->DeleteLocalRef(rc);
         }
         env->DeleteLocalRef(cls);
     }
@@ -517,14 +582,25 @@ void androidInsets() {
         if (o) env->DeleteLocalRef(o);
     if (attached) vm->DetachCurrentThread();
     if (!ok) return;
-    const double d = std::max(static_cast<double>(sapp_dpi_scale()), 0.5);
+    const double d = std::max(static_cast<double>(viewerDpi()), 0.5);
     state->engine.setControlsPadding(inset[0] / d, inset[1] / d, inset[2] / d, inset[3] / d);
+}
+
+void androidFrameRate() {
+    static ANativeWindow* last = nullptr;
+    ANativeWindow* window = _sapp.android.current.window;
+    if (!window || window == last || state->fps <= 0) return;
+    last = window;
+    using SetFrameRate = int32_t (*)(ANativeWindow*, float, int8_t);
+    static auto fn = reinterpret_cast<SetFrameRate>(dlsym(RTLD_DEFAULT, "ANativeWindow_setFrameRate"));
+    if (fn) fn(window, static_cast<float>(state->fps), 0);
 }
 #endif
 
 void frame() {
 #if defined(__ANDROID__)
     androidInsets();
+    androidFrameRate();
 #endif
     watchdogBeat();
     if (!state->shotPath.empty()) {
@@ -696,7 +772,7 @@ void frame() {
         state->shotElapsed += sapp_frame_duration();
         runScript();
     }
-    state->engine.setViewport(sapp_width(), sapp_height(), sapp_dpi_scale());
+    state->engine.setViewport(sapp_width(), sapp_height(), viewerDpi());
     if (state->stereo >= 0) state->engine.frameStereo(sglue_swapchain(), state->stereo);
     else state->engine.frame(sglue_swapchain());
     sg_commit();
@@ -1106,6 +1182,8 @@ void parseArgs(int argc, char** argv) {
             state->cacheDir = argv[++i];
         } else if (a == "--clear-cache") {
             state->clearCache = std::atoi(argv[++i]) != 0;
+        } else if (a == "--fps") {
+            state->fps = std::max(0, std::atoi(argv[++i]));
         } else if (a == "--offline") {
             state->offline = std::atoi(argv[++i]) != 0;
         } else if (a == "--mbtiles" || a == "--gpkg" || a == "--osmdroid") {
