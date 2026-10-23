@@ -7,6 +7,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace otk {
@@ -90,6 +91,7 @@ private:
     Target pressed_;
     Target hover_;
     bool dirty_ = true;
+    mutable std::unordered_map<std::string, std::string> fits_;
 };
 
 }
