@@ -955,7 +955,7 @@ bool LabelLayer::drawBorders3D(const Camera& cam, const GroundFn& ground, double
                 const std::vector<float> part(b->inst.begin() + static_cast<std::ptrdiff_t>(first) * 6,
                                               b->inst.begin() + static_cast<std::ptrdiff_t>(first + n) * 6);
                 std::vector<float> out;
-                buildLines3D(part, b->south, b->west, ground, out, 0.01);
+                buildLines3D(part, b->south, b->west, ground, out, tier == Fine ? 0.01 : tier == Coarse ? 0.1 : 0.5);
                 if (b->buffer3d[l].id) sg_destroy_buffer(b->buffer3d[l]);
                 b->buffer3d[l] = {};
                 b->count3d[l] = 0;
