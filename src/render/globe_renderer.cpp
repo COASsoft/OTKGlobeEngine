@@ -1523,6 +1523,36 @@ void GlobeRenderer::traverse(const Camera& cam, const QuadKey& k, std::vector<Dr
             return;
         }
     }
+    if (!ni.refine && !prefetching_ && retaining_ == 0 && mergeDepth_ == 0 && mergeSeconds_ > 0.0 && k.level >= kMinLevel &&
+        wasRefined(k) && presentable(k)) {
+        Merge& m = merges_[k];
+        const double t = now();
+        if (m.frame + 1 != frame_) m.start = t;
+        m.frame = frame_;
+        const double p = (t - m.start) / (mergeSeconds_ / std::max(1.0, zoomRate_));
+        if (p < 1.0) {
+            bool drawable = true;
+            NodeInfo kin[4];
+            for (int i = 0; i < 4 && drawable; ++i) {
+                kin[i] = info(cam, kids[i]);
+                if (kin[i].visible && terrain_.find(kids[i]) == terrain_.end()) drawable = false;
+            }
+            if (drawable) {
+                refined_[k] = frame_;
+                need(k, ni.distance);
+                const size_t first = out.size();
+                ++mergeDepth_;
+                for (int i = 0; i < 4; ++i)
+                    if (kin[i].visible) traverse(cam, kids[i], out);
+                --mergeDepth_;
+                for (size_t i = first; i < out.size(); ++i) {
+                    out[i].merge = k;
+                    out[i].mergeT = static_cast<float>(p);
+                }
+                return;
+            }
+        }
+    }
     need(k, ni.distance);
     if (k.level > kMinLevel) {
         QuadKey parent{k.level - 1, k.x / 2, k.y / 2};
