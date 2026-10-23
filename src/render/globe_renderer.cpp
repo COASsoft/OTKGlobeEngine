@@ -3023,6 +3023,45 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             }
             if ((got.level != want.level || !sameLayers) && blendParents_.size() < 256) blendParents_.push_back({want, dt.distance * 2.0});
         }
+        if (visualStats_) {
+            const double area = screenFraction(cam, dt.key, tt);
+            if (shownDepth >= 1) visBlur += area;
+            if (shownDepth >= 2) visBlur2 += area;
+            visDepth += area * shownDepth;
+            const bool faded = blend < 0.999f;
+            if (faded) visFade += area;
+            const bool held = snapshotShown_ && snapshotFade_ < 0.0;
+            Shown& sh = shown_[dt.key];
+            if (sh.frame + 1 == frame_) {
+                if (!held && !faded && (!(sh.src == src) || sh.version != shownVersion)) {
+                    visPop += area;
+                    ++visPops;
+                }
+                if (!held && sh.terrain >= 0 && sh.terrain != tt.version) visTerrain += area;
+            } else if (!held && !faded) {
+                int before = -1;
+                for (int up = 1; up <= 8 && up <= dt.key.level && before < 0; ++up) {
+                    auto a = shown_.find({dt.key.level - up, dt.key.x >> up, dt.key.y >> up});
+                    if (a != shown_.end() && a->second.frame + 1 == frame_) before = a->second.src.level;
+                }
+                if (before >= 0 && src.level > before) {
+                    visPop += area;
+                    ++visPops;
+                } else if (before < 0) {
+                    for (int i = 0; i < 4; ++i) {
+                        auto c = shown_.find({dt.key.level + 1, dt.key.x * 2 + (i & 1), dt.key.y * 2 + (i >> 1)});
+                        if (c != shown_.end() && c->second.frame + 1 == frame_ && c->second.src.level > src.level) {
+                            visMerge += area;
+                            break;
+                        }
+                    }
+                }
+            }
+            sh.src = src;
+            sh.version = shownVersion;
+            sh.terrain = tt.version;
+            sh.frame = frame_;
+        }
         if (sg_query_buffer_state(tt.vbuf) != SG_RESOURCESTATE_VALID) {
             ++invalidResources_;
             continue;
