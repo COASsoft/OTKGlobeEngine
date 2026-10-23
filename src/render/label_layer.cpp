@@ -595,6 +595,13 @@ bool LabelLayer::init() {
     iconPipeline_ = overlay(iconShader_);
 
     const float quad[12] = {0, -1, 1, -1, 1, 1, 0, -1, 1, 1, 0, 1};
+    {
+        const float idle[12] = {};
+        sg_buffer_desc wd{};
+        wd.usage.vertex_buffer = true;
+        wd.data = SG_RANGE(idle);
+        warmLine_ = sg_make_buffer(&wd);
+    }
     sg_buffer_desc qd{};
     qd.usage.vertex_buffer = true;
     qd.data = SG_RANGE(quad);
@@ -642,12 +649,14 @@ void LabelLayer::shutdown() {
     if (sg_isvalid()) {
         for (auto& [k, b] : batches_) {
             if (b.buffer.id) sg_destroy_buffer(b.buffer);
-            if (b.buffer3d.id) sg_destroy_buffer(b.buffer3d);
+            for (sg_buffer& l3 : b.buffer3d)
+                if (l3.id) sg_destroy_buffer(l3);
         }
         if (contourBuffer_.id) sg_destroy_buffer(contourBuffer_);
         for (sg_pipeline p : {linePipeline_, line3dPipeline_, labelPipeline_, iconPipeline_}) sg_destroy_pipeline(p);
         for (sg_shader s : {lineShader_, line3dShader_, labelShader_, iconShader_}) sg_destroy_shader(s);
         sg_destroy_buffer(quad_);
+        if (warmLine_.id) sg_destroy_buffer(warmLine_);
         for (sg_buffer b : labelBuffers_) sg_destroy_buffer(b);
         for (sg_buffer b : iconBuffers_) sg_destroy_buffer(b);
         if (atlasView_.id) sg_destroy_view(atlasView_);
@@ -762,7 +771,8 @@ void LabelLayer::trim() {
             if (oldest == batches_.end() || it->second.used < oldest->second.used) oldest = it;
         if (oldest == batches_.end() || oldest->second.used + 2 >= frame_) break;
         if (oldest->second.buffer.id) sg_destroy_buffer(oldest->second.buffer);
-        if (oldest->second.buffer3d.id) sg_destroy_buffer(oldest->second.buffer3d);
+        for (sg_buffer& l3 : oldest->second.buffer3d)
+            if (l3.id) sg_destroy_buffer(l3);
         batches_.erase(oldest);
     }
 }
@@ -830,6 +840,15 @@ LabelLayer::Batch* LabelLayer::batch(int tier, int cell, bool load) {
             }
         }
         if (!inst.empty()) {
+            std::vector<float> sorted;
+            sorted.reserve(inst.size());
+            for (int l = 0; l < 4; ++l) {
+                b.levelFirst[l] = static_cast<int>(sorted.size() / 6);
+                for (size_t i = 0; i + 5 < inst.size(); i += 6)
+                    if (static_cast<int>(inst[i + 5] + 0.5f) == l) sorted.insert(sorted.end(), inst.begin() + static_cast<std::ptrdiff_t>(i), inst.begin() + static_cast<std::ptrdiff_t>(i + 6));
+            }
+            b.levelFirst[4] = static_cast<int>(sorted.size() / 6);
+            inst.swap(sorted);
             sg_buffer_desc bd{};
             bd.usage.vertex_buffer = true;
             bd.data = {inst.data(), inst.size() * sizeof(float)};
@@ -876,7 +895,7 @@ void LabelLayer::drawBorders3D(const Camera& cam, const GroundFn& ground, double
     const double unitDeg = std::max(cam.gsd, 1e-3) / 111320.0;
     std::vector<std::pair<int, int>> cells;
     for (const GeoRect& r : visible) {
-        keys(r, unitDeg, scratchKeys_);
+        keys(r, unitDeg * 2.5, scratchKeys_);
         cells.insert(cells.end(), scratchKeys_.begin(), scratchKeys_.end());
     }
     std::sort(cells.begin(), cells.end());
@@ -908,31 +927,6 @@ void LabelLayer::drawBorders3D(const Camera& cam, const GroundFn& ground, double
     for (const auto& [tier, cell] : cells) {
         Batch* b = batch(tier, cell, true);
         if (!b || b->count <= 0) continue;
-        const auto now = std::chrono::steady_clock::now();
-        const bool due = b->version3d != version && (!b->buffer3d.id || now - b->built3d > std::chrono::seconds(1));
-        const bool allowed = now - start < std::chrono::milliseconds(2) || (!b->buffer3d.id && !forced);
-        if (due && allowed) {
-            if (!b->buffer3d.id) forced = true;
-            b->built3d = now;
-            std::vector<float> out;
-            buildLines3D(b->inst, b->south, b->west, ground, out);
-            if (b->buffer3d.id) sg_destroy_buffer(b->buffer3d);
-            b->buffer3d = {};
-            b->count3d = 0;
-            b->version3d = version;
-            if (!out.empty()) {
-                sg_buffer_desc bd{};
-                bd.usage.vertex_buffer = true;
-                bd.data = {out.data(), out.size() * sizeof(float)};
-                b->buffer3d = sg_make_buffer(&bd);
-                b->count3d = static_cast<int>(out.size() / 12);
-            }
-        }
-        if (!b->buffer3d.id || b->count3d <= 0 || sg_query_buffer_state(b->buffer3d) != SG_RESOURCESTATE_VALID) continue;
-        if (!applied) {
-            sg_apply_pipeline(line3dPipeline_);
-            applied = true;
-        }
         const Vec3 origin = geodeticToEcef(b->south, b->west, 0.0);
         toFloat(cam.viewProjRel() * translation(origin - eye), p.mvp);
         const Vec3 local = eye - origin;
@@ -940,13 +934,57 @@ void LabelLayer::drawBorders3D(const Camera& cam, const GroundFn& ground, double
         p.lift[1] = static_cast<float>(local.y);
         p.lift[2] = static_cast<float>(local.z);
         p.lift[3] = 0.003f;
-        sg_bindings bind{};
-        bind.vertex_buffers[0] = quad_;
-        bind.vertex_buffers[1] = b->buffer3d;
-        sg_apply_bindings(&bind);
-        sg_apply_uniforms(UB_bline3d_params, SG_RANGE(p));
-        sg_draw(0, 6, b->count3d);
+        for (int l = 0; l < 4; ++l) {
+            const int first = b->levelFirst[l], n = b->levelFirst[l + 1] - first;
+            if (n <= 0 || p.styles[l][0] <= 0.0f) continue;
+            const auto now = std::chrono::steady_clock::now();
+            const bool due = b->version3d[l] != version && (!b->buffer3d[l].id || now - b->built3d[l] > std::chrono::seconds(1));
+            const bool allowed = now - start < std::chrono::milliseconds(2) || (!b->buffer3d[l].id && !forced);
+            if (due && allowed) {
+                if (!b->buffer3d[l].id) forced = true;
+                b->built3d[l] = now;
+                const std::vector<float> part(b->inst.begin() + static_cast<std::ptrdiff_t>(first) * 6,
+                                              b->inst.begin() + static_cast<std::ptrdiff_t>(first + n) * 6);
+                std::vector<float> out;
+                buildLines3D(part, b->south, b->west, ground, out);
+                if (b->buffer3d[l].id) sg_destroy_buffer(b->buffer3d[l]);
+                b->buffer3d[l] = {};
+                b->count3d[l] = 0;
+                b->version3d[l] = version;
+                if (!out.empty()) {
+                    sg_buffer_desc bd{};
+                    bd.usage.vertex_buffer = true;
+                    bd.data = {out.data(), out.size() * sizeof(float)};
+                    b->buffer3d[l] = sg_make_buffer(&bd);
+                    b->count3d[l] = static_cast<int>(out.size() / 12);
+                }
+            }
+            if (!b->buffer3d[l].id || b->count3d[l] <= 0 || sg_query_buffer_state(b->buffer3d[l]) != SG_RESOURCESTATE_VALID) continue;
+            if (!applied) {
+                sg_apply_pipeline(line3dPipeline_);
+                applied = true;
+            }
+            sg_bindings bind{};
+            bind.vertex_buffers[0] = quad_;
+            bind.vertex_buffers[1] = b->buffer3d[l];
+            sg_apply_bindings(&bind);
+            sg_apply_uniforms(UB_bline3d_params, SG_RANGE(p));
+            sg_draw(0, 6, b->count3d[l]);
+        }
     }
+    road3dPass_ = -1;
+}
+
+void LabelLayer::warmLines3D() {
+    if (!ready_ || !line3dPipeline_.id || !warmLine_.id) return;
+    sg_apply_pipeline(line3dPipeline_);
+    sg_bindings bind{};
+    bind.vertex_buffers[0] = quad_;
+    bind.vertex_buffers[1] = warmLine_;
+    sg_apply_bindings(&bind);
+    bline3d_params_t p{};
+    sg_apply_uniforms(UB_bline3d_params, SG_RANGE(p));
+    sg_draw(0, 6, 1);
     road3dPass_ = -1;
 }
 
@@ -978,7 +1016,7 @@ void LabelLayer::beginRoads3D(const Camera& cam, double dpi) {
     road3dEye_ = cam.eye();
 }
 
-void LabelLayer::drawRoads3D(sg_buffer buffer, int count, const Vec3& origin, const float clip[4], int pass) {
+void LabelLayer::drawRoads3D(sg_buffer buffer, int first, int count, const Vec3& origin, const float clip[4], int pass) {
     if (!road3dAny_ || count <= 0 || !buffer.id || sg_query_buffer_state(buffer) != SG_RESOURCESTATE_VALID) return;
     if (road3dPass_ != pass) {
         sg_apply_pipeline(line3dPipeline_);
@@ -1001,6 +1039,7 @@ void LabelLayer::drawRoads3D(sg_buffer buffer, int count, const Vec3& origin, co
     sg_bindings bind{};
     bind.vertex_buffers[0] = quad_;
     bind.vertex_buffers[1] = buffer;
+    bind.vertex_buffer_offsets[1] = first * 12 * static_cast<int>(sizeof(float));
     sg_apply_bindings(&bind);
     sg_apply_uniforms(UB_bline3d_params, SG_RANGE(p));
     sg_draw(0, 6, count);
