@@ -1513,8 +1513,8 @@ void GlobeRenderer::buildRoads3D(ImageryTexture& t, int version) {
 void GlobeRenderer::setUniform(const Camera& c) {
     uniformDist_ = 0.0;
     uniformMix_ = 0.0;
-    if (!uniformLod_ || c.firstPerson || c.hasPose() || c.range() > 1.5e6) return;
-    uniformMix_ = std::clamp((25.0 - c.tilt) / 10.0, 0.0, 1.0);
+    if (!uniformLod_ || c.firstPerson || c.hasPose()) return;
+    uniformMix_ = std::clamp((25.0 - c.tilt) / 10.0, 0.0, 1.0) * std::clamp((8.0e6 - c.range()) / 4.0e6, 0.0, 1.0);
     if (uniformMix_ > 0.0) uniformDist_ = std::max(c.range(), 1.0);
     else uniformMix_ = 0.0;
 }
