@@ -1,5 +1,6 @@
 #include "net/http.hpp"
 
+#include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <mutex>
@@ -54,6 +55,9 @@ double roll() {
 
 }
 
+std::atomic<std::uint64_t> received{0};
+std::atomic<std::uint64_t> requests{0};
+
 Response faulted(const std::string& url, const std::string& userAgent, const Headers& headers) {
     const Faults& f = faults();
     if (!f.any) return getBackend(url, userAgent, headers);
@@ -97,8 +101,14 @@ Response get(const std::string& url, const std::string& userAgent, const Headers
         return out;
     }
     Response out = faulted(url, userAgent, headers);
+    received += out.body.size();
+    ++requests;
     report(url, out.status);
     return out;
 }
+
+std::uint64_t bytesReceived() { return received.load(); }
+
+std::uint64_t requestsMade() { return requests.load(); }
 
 }
