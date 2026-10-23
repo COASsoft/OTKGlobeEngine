@@ -1,6 +1,6 @@
 # OTKGlobeEngine
 
-OTKGlobeEngine is a 3D map of the whole Earth that you can put inside your own app. It draws satellite imagery, terrain, roads and place names, and it keeps working offline.
+OTKGlobeEngine is a 3D Globe map that you can put inside your own app. It draws satellite imagery, terrain, roads and place names, and it keeps working offline.
 
 It runs on Windows, macOS, Linux (including Raspberry Pi), Android, iOS and iPadOS, and in web browsers. It is free to use, including in paid and closed-source products (Apache 2.0 license).
 
