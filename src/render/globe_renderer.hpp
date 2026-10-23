@@ -168,6 +168,8 @@ public:
                 const std::vector<RenderView>* views = nullptr);
     bool busy() const { return busy_; }
     bool wakeDue() const;
+    bool waiting() const { return waiting_; }
+    double wakeIn() const { return wakeAt_ - now(); }
     bool presentIdle(Camera& cam, const sg_swapchain& swapchain);
     Stats stats() const { return stats_; }
     void setCpuMs(double ms, double threadMs = 0) {
@@ -274,6 +276,8 @@ private:
     double motionHold_ = 2.0;
     double lastMotion_ = -1.0e9;
     double motionKey_[5] = {};
+    double motionTime_ = 0.0;
+    double motionSpeed_ = 60.0;
     bool revealOpen_ = true;
     int heldPrev_ = 0;
     double oldestHeldPrev_ = 0.0;
