@@ -141,6 +141,7 @@ bool GlobeRenderer::init() {
     if (const char* v = std::getenv("OTK_RERENDER_GAP")) rerenderGap_ = std::max(0.0, std::atof(v));
     if (const char* v = std::getenv("OTK_MERGE_FADE")) mergeSeconds_ = std::max(0.0, std::atof(v));
     if (const char* v = std::getenv("OTK_REVEAL_HOLD")) revealHold_ = std::max(0.0, std::atof(v));
+    if (const char* v = std::getenv("OTK_REVEAL_GAP")) revealGap_ = std::max(0.0, std::atof(v));
     if (const char* v = std::getenv("OTK_MAX_DIVE")) maxDive_ = std::atoi(v);
     if (const char* v = std::getenv("OTK_LOD_MORPH")) lodMorph_ = std::clamp(std::atof(v), 0.0, 1.0);
     if (const char* v = std::getenv("OTK_MARGIN")) marginPrefetch_ = std::max(1.0, std::atof(v));
@@ -3191,7 +3192,9 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         }
         return low;
     };
-    revealOpen_ = revealHold_ <= 0.0 || (heldPrev_ > 0 && (waitingPrev_ == 0 || tnow - oldestHeldPrev_ >= revealHold_));
+    revealOpen_ = revealHold_ <= 0.0 ||
+                  (heldPrev_ > 0 && tnow - lastReveal_ >= revealGap_ && (waitingPrev_ == 0 || tnow - oldestHeldPrev_ >= revealHold_));
+    if (revealOpen_ && heldPrev_ > 0) lastReveal_ = tnow;
     int heldNow = 0;
     int waitingNow = refineWaiting_;
     double oldestHeld = tnow;
