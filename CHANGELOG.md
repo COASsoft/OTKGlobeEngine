@@ -1,5 +1,38 @@
 # Changelog
 
+## Unreleased
+
+### Loading
+- Map detail no longer switches in abruptly. Every change of what a tile shows now crossfades over about a third of a second. That covers a tile swapping a blurry stand-in for its own imagery, detail arriving for an area that was already on screen, and a tile being redrawn with newer data. Before, tiles whose detail arrived late snapped in, sometimes a fifth of the screen at once during a fly-to.
+- When zooming out, areas fade into the coarser view before switching to it, instead of switching in one frame.
+- Where a sharp tile meets one that is still loading, the edge between them is blended, so loading areas no longer show as hard-edged rectangles.
+- Place and street names keep their position and fade state when more detailed map data replaces less detailed data, instead of fading out and back in.
+- Labels are placed ten times a second while the map moves instead of every frame, and right away when the map turns or tilts or new data arrives.
+
+### Performance
+- Smoother on phones and tablets:
+  - The sky is only drawn where no terrain covers it.
+  - The terrain shader skips texture reads it does not need.
+  - The credits strip is laid out once instead of every frame (it took 2.4 ms per frame on a 4 GB tablet).
+  - Labels in tilted views no longer check for 3D buildings when buildings are off.
+- On a 4 GB Android tablet, frames slower than 25 ms dropped:
+
+  | While | Before | After |
+  | --- | --- | --- |
+  | Panning | 44% | 15% |
+  | Tilting | 24% | 9% |
+  | Pinch zooming in | 30% | 12% |
+  | Flying | 55% | 31% |
+
+### Viewer
+- Scripts can play touch gestures: `pinch`, `swipe` (with fling), `twist` and `tilt`.
+- `--frames file.csv` writes per-frame statistics plus a summary of how much of the screen popped, merged, faded or showed blurry stand-ins.
+- New test options:
+  - `--exit-after s` quits after the script.
+  - `--clear-cache 1` starts with an empty cache.
+  - `--env NAME=VALUE` sets an `OTK_` setting.
+- On Android, settings in `args.txt` now take effect: environment settings used to be read too late.
+
 ## 0.1.2
 
 ### Labels
