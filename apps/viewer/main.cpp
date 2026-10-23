@@ -1225,6 +1225,16 @@ void parseArgs(int argc, char** argv) {
 #endif
         } else if (a == "--exit-after") {
             state->exitAfter = std::atof(argv[++i]);
+        } else if (a == "--env") {
+            std::string kv = argv[++i];
+            const size_t eq = kv.find('=');
+            if (eq != std::string::npos && eq > 0) {
+#if defined(_WIN32)
+                _putenv_s(kv.substr(0, eq).c_str(), kv.substr(eq + 1).c_str());
+#else
+                setenv(kv.substr(0, eq).c_str(), kv.substr(eq + 1).c_str(), 1);
+#endif
+            }
         } else if (a == "--diag") {
             state->diag = std::atoi(argv[++i]) != 0;
         } else if (a == "--lod-blend") {
