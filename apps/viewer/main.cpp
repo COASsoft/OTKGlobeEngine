@@ -718,8 +718,8 @@ void frame() {
                                 static_cast<unsigned char>((px[a] + px[a + 4] + px[a + row] + px[a + row + 4] + 2) / 4);
                         }
                 char name[64];
-                std::snprintf(name, sizeof(name), "/frame-%04d.png", state->filmFrame);
-                writePng((state->filmDir + name).c_str(), w, h, half);
+                std::snprintf(name, sizeof(name), "/frame-%04d.bmp", state->filmFrame);
+                writeBmp((state->filmDir + name).c_str(), w, h, half);
                 if (FILE* f = std::fopen((state->filmDir + "/film.csv").c_str(), state->filmFrame == 0 ? "w" : "a")) {
                     if (state->filmFrame == 0) std::fprintf(f, "frame,ms,step,verb,pending,wants,settled,lat,lon,gsd,tilt,azimuth\n");
                     const otk::View fv = state->engine.view();
