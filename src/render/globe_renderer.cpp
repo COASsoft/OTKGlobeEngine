@@ -2897,6 +2897,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     }
     if (drawn_.size() > 20000)
         for (auto it = drawn_.begin(); it != drawn_.end();) it = it->second + 2 < frame_ ? drawn_.erase(it) : std::next(it);
+    if (transitions_.size() > 20000)
+        for (auto it = transitions_.begin(); it != transitions_.end();) it = it->second.frame + 2 < frame_ ? transitions_.erase(it) : std::next(it);
     if (morphSince_.size() > 20000)
         for (auto it = morphSince_.begin(); it != morphSince_.end();)
             it = it->second.second + 2 < frame_ ? morphSince_.erase(it) : std::next(it);
