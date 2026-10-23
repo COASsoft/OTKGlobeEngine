@@ -1226,9 +1226,22 @@ void GlobeRenderer::dropIdleTarget() {
     idleValid_ = false;
 }
 
+bool GlobeRenderer::revealGate(double t) const {
+    if (revealHold_ <= 0.0) return true;
+    if (heldPrev_ == 0 || t - lastReveal_ < revealGap_) return false;
+    const double still = t - lastMotion_;
+    const double heldAge = t - oldestHeldPrev_;
+    if (still < 0.15) return motionHold_ > 0.0 && heldAge >= motionHold_;
+    return waitingPrev_ == 0 || std::min(heldAge, still) >= revealHold_;
+}
+
+bool GlobeRenderer::wakeDue() const {
+    return waiting_ && (now() >= wakeAt_ || loader_.hasResults() || elevation_.hasResults());
+}
+
 bool GlobeRenderer::presentIdle(Camera& cam, const sg_swapchain& swapchain) {
     if (!ready_ || swapchain.width <= 0 || swapchain.height <= 0 || snapshotShown_) return false;
-    if (!idleValid_ || idleWidth_ != swapchain.width || idleHeight_ != swapchain.height) {
+    if (!idleValid_ || wakeDue() || idleWidth_ != swapchain.width || idleHeight_ != swapchain.height) {
         if (!ensureIdleTarget(swapchain.width, swapchain.height)) return false;
         sg_attachments att{};
         att.colors[0] = idleColor_;
@@ -1690,7 +1703,7 @@ void GlobeRenderer::traverse(const Camera& cam, const QuadKey& k, std::vector<Dr
     out.push_back({k, ni.distance, retaining_ > 0 ? 2 : 0});
 }
 
-void GlobeRenderer::processLoads() {
+int GlobeRenderer::processLoads() {
     auto taken = loader_.take(kUploadsPerFrame);
     int uploaded = 0;
     size_t keep = taken.size();
@@ -1795,6 +1808,7 @@ void GlobeRenderer::processLoads() {
     for (size_t i = taken.size(); i-- > keep;) loader_.giveBack(taken[i]);
     stats_.uploads = uploaded;
     stats_.imageryLoads += uploaded;
+    return uploaded;
 }
 
 void GlobeRenderer::evict() {
@@ -2336,7 +2350,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     blendParents_.clear();
     elevation_.beginFrame();
     profileSub(-1);
-    processLoads();
+    const int loadsTaken = processLoads();
     profileSub(4);
     bool elevationChanged = elevation_.processResults(32);
     profileSub(5);
@@ -2559,6 +2573,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
 
     profileMark(2);
     int builds = 0;
+    int deferred = 0;
     int currentTerrain = elevation_.version() + terrainEpoch_ * 1000000;
     for (const Need& n : needs_) {
         auto it = terrain_.find(n.key);
@@ -2568,6 +2583,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 buildTerrain(n.key, t, n.priority);
                 t.used = frame_;
                 ++builds;
+            } else {
+                ++deferred;
             }
             continue;
         }
@@ -2583,6 +2600,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             elevation_.gridFor(b.west - cell, std::max(b.south - cell, -90.0), b.east + cell,
                                std::min(b.north + cell, 90.0), kPosts + 2, n.priority, scratch, false);
         }
+        if (!it->second.complete && it->second.version != currentTerrain) ++deferred;
     }
     elevation_.submit();
 
@@ -2649,6 +2667,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         bool overBudget = renders > 0 && (elapsedMs() > budgetMs * (holding ? 2.5 : 1.0) || (speculative && elapsedMs() - visibleDone > specBudget));
         const bool placeholder = standIn(cam, needs_[i].key);
         if (!w.render || renders >= kSurfaceRendersPerFrame * (holding ? 2 : 1) || verts.size() * sizeof(float) > kSurfaceBufferBytes / 2 || overBudget) {
+            if (w.render) ++deferred;
             buildSurfaceJob(needs_[i].key, needs_[i].priority, nullptr, nullptr, nullptr, 0, placeholder);
             continue;
         }
@@ -2664,6 +2683,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         const double labelDeg = std::max(cam.pixelSizeAt(std::max(std::sqrt(jd * length(jc - cam.eye())), cam.eyeAboveGround())) / 111320.0,
                                          (jb.north - jb.south) / kSurfaceSize * 0.85);
         if (labelsOn_ && !labels_.prepare({jb.west, jb.south, jb.east, jb.north}, labelDeg)) {
+            ++deferred;
             buildSurfaceJob(needs_[i].key, needs_[i].priority, nullptr, nullptr, nullptr, 0, placeholder);
             continue;
         }
@@ -3202,14 +3222,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             if (std::abs(key[i] - motionKey_[i]) > eps[i]) lastMotion_ = tnow;
         std::copy(key, key + 5, motionKey_);
     }
-    {
-        const double still = tnow - lastMotion_;
-        const double heldAge = tnow - oldestHeldPrev_;
-        if (revealHold_ <= 0.0) revealOpen_ = true;
-        else if (heldPrev_ == 0 || tnow - lastReveal_ < revealGap_) revealOpen_ = false;
-        else if (still < 0.15) revealOpen_ = motionHold_ > 0.0 && heldAge >= motionHold_;
-        else revealOpen_ = waitingPrev_ == 0 || std::min(heldAge, still) >= revealHold_;
-    }
+    revealOpen_ = revealGate(tnow);
     if (revealOpen_ && heldPrev_ > 0) lastReveal_ = tnow;
     int heldNow = 0;
     int waitingNow = refineWaiting_;
@@ -3364,7 +3377,6 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             if (src.level >= 0 && fadeTexture(dt.key, tr.from, tr.fromVersion, fv, fu)) {
                 ++heldNow;
                 oldestHeld = std::min(oldestHeld, tr.heldSince);
-                fading = true;
             } else {
                 tr.held = false;
                 tr.start = tnow;
@@ -3855,13 +3867,28 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         }
     }
     viewComplete_ = incomplete == 0;
-    busy_ = pending || fading || mergeActive_ || snapshotShown_ || tilesBusy || stats_.pendingRequests > 0 || renders > 0 || builds > 0 || elevationChanged ||
+    busy_ = fading || mergeActive_ || snapshotShown_ || tilesBusy || renders > 0 || builds > 0 || deferred > 0 || loadsTaken > 0 || elevationChanged ||
             ((labelsOn_ || contours_) && labels_.animating()) || (buildingsOn_ && buildings_.busy());
+    stats_.loading = pending || stats_.pendingRequests > 0 || heldNow > 0 ? 1 : 0;
+    stats_.renderedFrames = static_cast<long long>(frame_);
+    waiting_ = !busy_ && stats_.loading;
+    if (busy_) {
+        pollGap_ = 0.25;
+    } else if (waiting_) {
+        double wake = tnow + pollGap_;
+        pollGap_ = std::min(pollGap_ * 2.0, 4.0);
+        if (heldNow > 0) {
+            if (revealGate(tnow)) wake = tnow;
+            for (double d : {lastReveal_ + revealGap_, lastMotion_ + 0.15, std::max(oldestHeld, lastMotion_) + revealHold_, oldestHeld + motionHold_})
+                if (d > tnow) wake = std::min(wake, d);
+        }
+        wakeAt_ = wake;
+    }
     if (busyLog_ && busy_ && frame_ % 30 == 0)
-        std::fprintf(stderr, "[otk] busy frame %llu pending %d fading %d merging %d labels %d buildings %d tiles %d requests %d renders %d builds %d elevation %d needs %zu\n",
+        std::fprintf(stderr, "[otk] busy frame %llu pending %d fading %d merging %d labels %d buildings %d tiles %d requests %d renders %d builds %d elevation %d needs %zu deferred %d loads %d held %d\n",
                      static_cast<unsigned long long>(frame_), pending ? 1 : 0, fading ? 1 : 0, mergeActive_ ? 1 : 0,
                      (labelsOn_ || contours_) && labels_.animating() ? 1 : 0, buildingsOn_ && buildings_.busy() ? 1 : 0, tilesBusy ? 1 : 0,
-                     stats_.pendingRequests, renders, builds, elevationChanged ? 1 : 0, needs_.size());
+                     stats_.pendingRequests, renders, builds, elevationChanged ? 1 : 0, needs_.size(), deferred, loadsTaken, heldNow);
     if (busyLog_ && busy_ && frame_ % 30 == 0) std::fprintf(stderr, "[otk]   t %.2f base %d %s\n", now(), baseLayer_, loader_.debug().c_str());
     if (trace_) {
         int waitImagery = 0, waitTerrain = 0, unrendered = 0;
