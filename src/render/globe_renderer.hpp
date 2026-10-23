@@ -344,7 +344,13 @@ private:
     bool fadeUpgrades_ = true;
     bool busyLog_ = false;
     int maxDive_ = 0;
-    std::unordered_map<QuadKey, std::pair<SurfaceTile, double>, QuadKeyHash> retiring_;
+    struct Retired {
+        SurfaceTile surface;
+        std::uint64_t frame = 0;
+    };
+    std::unordered_map<QuadKey, std::vector<Retired>, QuadKeyHash> retiring_;
+    std::vector<std::pair<QuadKey, int>> fadeRefs_;
+    size_t retiredCount_ = 0;
     bool slope_ = false;
     float slopeOpacity_ = 0.6f;
     double slopeMax_ = 45.0;
