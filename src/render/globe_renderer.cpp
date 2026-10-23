@@ -1469,23 +1469,35 @@ void GlobeRenderer::buildRoads3D(ImageryTexture& t, int version) {
     const size_t total = vt.roads.size() / 6;
     const size_t solid = std::min(total, vt.solidRoads);
     std::vector<int> chunkOf(total);
+    std::vector<int> rankOf(total);
     for (size_t i = 0; i < total; ++i) {
         const float* v = &vt.roads[i * 6];
         const double mx = vt.originLon + 0.5 * (v[0] + v[2]) - west, my = vt.originLat + 0.5 * (v[1] + v[3]) - south;
         const int cx = std::clamp(static_cast<int>(std::floor(mx / std::max(east - west, 1e-12) * 4.0)), 0, 3);
         const int cy = std::clamp(static_cast<int>(std::floor(my / std::max(north - south, 1e-12) * 4.0)), 0, 3);
         chunkOf[i] = (i < solid ? 0 : 16) + cy * 4 + cx;
+        rankOf[i] = LabelLayer::roadRank(v[5]);
     }
     std::array<int, 33> start{};
     for (size_t i = 0; i < total; ++i) ++start[chunkOf[i] + 1];
     for (int c = 0; c < 32; ++c) start[c + 1] += start[c];
+    for (auto& ranks : t.roadRanks) ranks.fill(0);
+    for (size_t i = 0; i < total; ++i) ++t.roadRanks[chunkOf[i]][rankOf[i] + 1];
+    std::array<std::array<int, 12>, 32> slot{};
+    for (int c = 0; c < 32; ++c) {
+        int at = start[c];
+        for (int r = 0; r < 12; ++r) {
+            slot[c][r] = at;
+            at += t.roadRanks[c][r + 1];
+        }
+        for (int r = 0; r < 12; ++r) t.roadRanks[c][r + 1] += t.roadRanks[c][r];
+    }
     for (GeoRect& box : t.roadBox) box = GeoRect{1e9, 1e9, -1e9, -1e9};
     std::vector<float> sorted(total * 6);
-    std::array<int, 32> fill{};
     for (size_t i = 0; i < total; ++i) {
         const int c = chunkOf[i];
         const float* v = &vt.roads[i * 6];
-        std::copy(v, v + 6, sorted.begin() + static_cast<std::ptrdiff_t>(start[c] + fill[c]++) * 6);
+        std::copy(v, v + 6, sorted.begin() + static_cast<std::ptrdiff_t>(slot[c][rankOf[i]]++) * 6);
         GeoRect& box = t.roadBox[c];
         box.west = std::min({box.west, vt.originLon + v[0], vt.originLon + v[2]});
         box.east = std::max({box.east, vt.originLon + v[0], vt.originLon + v[2]});
@@ -4106,6 +4118,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             seen.east = std::max(seen.east, r.east);
             seen.north = std::max(seen.north, r.north);
         }
+        const int roadRanksShown = LabelLayer::visibleRoadRanks(dc, dpiScale_);
         auto addChunks = [&](std::vector<RoadDraw>& outDraws, const ImageryTexture& t, const GeoRect& cull, const float clip[4], bool solidOnly) {
             int runFirst = -1, runEnd = -1;
             auto flush = [&]() {
@@ -4116,14 +4129,12 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 runFirst = runEnd = -1;
             };
             for (int c = 0; c < 32; ++c) {
-                const int a = t.roadChunk[c], e = t.roadChunk[c + 1];
+                const int a = t.roadChunk[c], e = a + t.roadRanks[c][std::clamp(roadRanksShown, 0, 12)];
                 const GeoRect& bx = t.roadBox[c];
                 const bool visible = e > a && !(solidOnly && c >= 16) && bx.west <= cull.east && cull.west <= bx.east && bx.south <= cull.north &&
                                      cull.south <= bx.north;
-                if (!visible) {
-                    flush();
-                    continue;
-                }
+                if (!visible || (runFirst >= 0 && runEnd != a)) flush();
+                if (!visible) continue;
                 if (runFirst < 0) runFirst = a;
                 runEnd = e;
             }
@@ -4174,6 +4185,22 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             if (!shared) {
                 const float none[4] = {1.0f, 0.0f, -1.0f, 0.0f};
                 addChunks(roadDraws, t, seen, none, solidOnly);
+                continue;
+            }
+            GeoRect group{1e9, 1e9, -1e9, -1e9};
+            for (size_t i : list) {
+                group.west = std::min(group.west, rects[i].west);
+                group.south = std::min(group.south, rects[i].south);
+                group.east = std::max(group.east, rects[i].east);
+                group.north = std::max(group.north, rects[i].north);
+            }
+            bool groupClear = true;
+            for (size_t j = 0; j < lineTiles.size() && groupClear; ++j)
+                if (!mine[j] && overlaps(rects[j], group)) groupClear = false;
+            if (groupClear) {
+                const float clip[4] = {static_cast<float>(group.west - vt.originLon), static_cast<float>(group.south - vt.originLat),
+                                       static_cast<float>(group.east - vt.originLon), static_cast<float>(group.north - vt.originLat)};
+                addChunks(roadDraws, t, group, clip, solidOnly);
                 continue;
             }
             for (size_t i : list) {
