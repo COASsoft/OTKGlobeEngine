@@ -11,9 +11,6 @@
   - Startup and arriving from a fly-to load the same way, so they no longer show rectangles of detail over a blurry map.
   - A tile that gets newer detail while it is still fading in finishes that fade before the next change.
   - Before, each tile snapped or faded in on its own as soon as it arrived. During pans and zooms that looked like tiles flickering in and out.
-- Colours stay the same when the map changes zoom level:
-  - Some imagery services switch source between zoom levels. Esri World Imagery jumps by up to 44 colour levels between zooms 11 and 12, from dark brown-green to bright green.
-  - The engine now learns the colour difference between levels while it runs, and tints the coarser imagery to match.
 - When zooming out:
   - Areas fade into the coarser view before switching to it, instead of switching in one frame.
   - These switches happen in batches instead of tile by tile.
