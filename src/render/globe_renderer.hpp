@@ -267,6 +267,8 @@ private:
     int mergeDepth_ = 0;
     bool mergeActive_ = false;
     double revealHold_ = 0.6;
+    double revealGap_ = 0.3;
+    double lastReveal_ = -1.0e9;
     bool revealOpen_ = true;
     int heldPrev_ = 0;
     double oldestHeldPrev_ = 0.0;
