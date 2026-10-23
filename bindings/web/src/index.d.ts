@@ -68,6 +68,7 @@ export declare class OTKGlobe {
   getView(): Required<View>;
   viewRegion(): Region;
   setControls(mask: number): void;
+  setControlsPadding(left: number, top: number, right: number, bottom: number): void;
   setLabels(on: boolean): void;
   setBuildings(on: boolean): void;
   setTerrain(on: boolean): void;
