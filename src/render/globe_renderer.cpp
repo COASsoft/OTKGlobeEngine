@@ -4470,7 +4470,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                              visibleDeferred, levelMixText().c_str());
         }
     } else if (settleFreeze_ && !settleBroken_ && !views && !snapshotShown_ && terrainAlpha_ >= 0.999f && tnow - lastMotion_ >= 0.15 &&
-               (heldNow > 0 || mergeActive_ || fading)) {
+               (heldNow > 0 || mergeActive_ || fading || frame_ <= 2)) {
         settleWanted_ = true;
         if (visualLog_)
             std::fprintf(visualLog_, "settle frame %llu t %.3f want held %d merging %d fades %d edges %d morphs %d\n", static_cast<unsigned long long>(frame_),
