@@ -25,6 +25,8 @@ void report(const std::string& url, int status);
 std::uint64_t reachabilityEpoch();
 void probeDueHosts(const std::string& userAgent);
 int hostsDown();
+std::uint64_t bytesReceived();
+std::uint64_t requestsMade();
 void resetReachability();
 
 }
