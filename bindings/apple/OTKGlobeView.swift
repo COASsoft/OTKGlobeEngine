@@ -274,6 +274,13 @@ public final class OTKGlobeView: OTEPlatformView, MTKViewDelegate {
         if window != nil { becomeFirstResponder() }
     }
 
+    public override func safeAreaInsetsDidChange() {
+        super.safeAreaInsetsDidChange()
+        guard autoPadding else { return }
+        let inset = safeAreaInsets
+        otk_set_controls_padding(engine, Double(inset.left), Double(inset.top), Double(inset.right), Double(inset.bottom))
+    }
+
     private func modifiers(_ flags: UIKeyModifierFlags) -> Int32 {
         var m: Int32 = 0
         if flags.contains(.shift) { m |= Int32(OTK_MOD_SHIFT.rawValue) }
