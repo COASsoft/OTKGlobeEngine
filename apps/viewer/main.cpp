@@ -780,18 +780,14 @@ void frame() {
     else state->engine.frame(sglue_swapchain());
     sg_commit();
     logFrame(sapp_frame_duration());
-#if defined(__ANDROID__)
     {
         static double idleFor = 0.0;
-        static int interval = 1;
         idleFor = state->engine.needsRedraw() ? 0.0 : idleFor + sapp_frame_duration();
-        const int want = idleFor > 0.5 ? 3 : 1;
-        if (want != interval && eglGetCurrentDisplay() != EGL_NO_DISPLAY) {
-            interval = want;
-            eglSwapInterval(eglGetCurrentDisplay(), interval);
+        if (state->idleFps > 0 && idleFor > 0.5) {
+            const double pause = 1.0 / state->idleFps - 1.0 / 60.0;
+            if (pause > 0.0) std::this_thread::sleep_for(std::chrono::duration<double>(pause));
         }
     }
-#endif
     {
         otk::Stats ps = state->engine.stats();
         double ft = sapp_frame_duration() * 1000.0;
