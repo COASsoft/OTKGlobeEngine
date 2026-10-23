@@ -3236,6 +3236,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     double oldestHeld = tnow;
     double visPop = 0, visMerge = 0, visTerrain = 0, visBlur = 0, visBlur2 = 0, visDepth = 0, visFade = 0, visCover = 0, visReveal = 0;
     int visReveals = 0;
+    double visUngated = 0, visMergeStart = 0;
+    int visUngatedTiles = 0, visDown = 0, visRefade = 0, visLost = 0, visMergeStarts = 0;
     int visPops = 0;
     if (visualStats_ && shown_.size() > 20000)
         for (auto it = shown_.begin(); it != shown_.end();) it = it->second.frame + 2 < frame_ ? shown_.erase(it) : std::next(it);
@@ -3339,6 +3341,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             if (revealHold_ <= 0.0 || revealOpen_ || !improving(tr.from, tr.fromVersion)) {
                 tr.held = false;
                 tr.start = tnow;
+                tr.why = !improving(tr.from, tr.fromVersion) ? 'd' : revealOpen_ ? 'g' : 'o';
                 return;
             }
             if (!tr.held) tr.heldSince = tnow;
@@ -3353,8 +3356,12 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                     const bool settledBefore = tr.start < 0.0;
                     tr.from = tr.src.level >= 0 ? tr.src : QuadKey{-2, 0, 0};
                     tr.fromVersion = tr.version;
-                    if (settledBefore) hold();
-                    else tr.start = tnow;
+                    if (settledBefore) {
+                        hold();
+                    } else {
+                        tr.start = tnow;
+                        tr.why = 'f';
+                    }
                 }
             }
         } else {
@@ -3379,6 +3386,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         if (tr.held && revealOpen_) {
             tr.held = false;
             tr.start = tnow;
+            tr.why = 'g';
         }
         if (tr.held) {
             if (src.level >= 0 && fadeTexture(dt.key, tr.from, tr.fromVersion, fv, fu)) {
@@ -3387,6 +3395,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             } else {
                 tr.held = false;
                 tr.start = tnow;
+                tr.why = 'l';
             }
         }
         tr.src = src;
@@ -3399,6 +3408,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 tr.from = tr.merge;
                 tr.fromVersion = tr.mergeVersion;
                 tr.start = tnow - (1.0 - tr.mergeT) * kFadeSeconds;
+                tr.why = 'm';
             }
             tr.merge = {-1, 0, 0};
         }
@@ -3435,6 +3445,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         float mergeMix = 0.0f;
         sg_view mergeView{};
         float mergeUv[4] = {1.0f, 1.0f, 0.0f, 0.0f};
+        const bool mergeContinuing = tr.mergeFrame + 1 == frame_;
         if (dt.merge.level >= 0 && src.level >= 0) {
             auto target = surface_.find(dt.merge);
             if (target != surface_.end() && target->second.version >= 0 &&
@@ -3508,6 +3519,24 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             if (tr.start == tnow && !tr.held) {
                 visReveal += area;
                 ++visReveals;
+                if (tr.why != 'g') {
+                    visUngated += area;
+                    ++visUngatedTiles;
+                    if (tr.why == 'd') ++visDown;
+                    if (tr.why == 'f') ++visRefade;
+                    if (tr.why == 'l') ++visLost;
+                }
+                if (visualLog_)
+                    std::fprintf(visualLog_, "fade frame %llu t %.3f tile L%d/%d/%d why %c from L%d v%d to L%d v%d depth %d area %.4f\n",
+                                 static_cast<unsigned long long>(frame_), tnow, dt.key.level, dt.key.x, dt.key.y, tr.why ? tr.why : '?', tr.from.level,
+                                 tr.fromVersion, src.level, shownVersion, shownDepth, area);
+            }
+            if (dt.merge.level >= 0 && !mergeContinuing) {
+                visMergeStart += area;
+                ++visMergeStarts;
+                if (visualLog_)
+                    std::fprintf(visualLog_, "merge frame %llu t %.3f tile L%d/%d/%d into L%d area %.4f\n", static_cast<unsigned long long>(frame_), tnow,
+                                 dt.key.level, dt.key.x, dt.key.y, dt.merge.level, area);
             }
             const bool held = snapshotShown_ && snapshotFade_ < 0.0;
             const bool merged = dt.merge.level >= 0 && mergeMix >= 0.5f;
@@ -3837,6 +3866,13 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     stats_.heldTiles = heldNow;
     stats_.reveals = visReveals;
     stats_.revealArea = visReveal;
+    stats_.ungated = visUngatedTiles;
+    stats_.ungatedArea = visUngated;
+    stats_.fadeDown = visDown;
+    stats_.fadeRefade = visRefade;
+    stats_.fadeLost = visLost;
+    stats_.mergeStarts = visMergeStarts;
+    stats_.mergeStartArea = visMergeStart;
     stats_.fadeMisses = fadeMisses_;
     stats_.coarseTiles = coarse;
     stats_.coverageOnlyTiles = coverageOnly;
