@@ -3,7 +3,6 @@
 #include <android/log.h>
 #include <android/native_activity.h>
 #include <android/native_window.h>
-#include <EGL/egl.h>
 #include <dlfcn.h>
 #include <pthread.h>
 #endif
@@ -31,6 +30,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <string>
+#include <thread>
 
 void parseArgs(int argc, char** argv);
 void loadScript(const char* path);
@@ -63,6 +63,7 @@ struct ViewerState {
     std::string cacheDir;
     bool clearCache = false;
     int fps = 60;
+    int idleFps = 20;
     bool offline = false;
     std::vector<otk::ImageryLayer> customLayers;
     bool hasDownload = false;
@@ -477,9 +478,11 @@ void logFrame(double dt) {
     T.reveal += s.revealArea;
     if (s.revealArea > 0.001) ++T.revealFrames;
     if (s.incompleteTiles > 0) ++T.incomplete;
-    if (dt > 0.025) ++T.jank25;
-    if (dt > 0.050) ++T.jank50;
-    T.worst = std::max(T.worst, dt * 1000.0);
+    if (busy || input) {
+        if (dt > 0.025) ++T.jank25;
+        if (dt > 0.050) ++T.jank50;
+        T.worst = std::max(T.worst, dt * 1000.0);
+    }
     if (!input && !busy && state->settledAt < 0) state->settledAt = t;
     if (busy && !input) state->settledAt = -1.0;
     if (!input && state->exitAfter >= 0 && !state->quitting && t - state->inputEnd >= state->exitAfter) {
@@ -596,7 +599,9 @@ void androidFrameRate() {
     last = window;
     using SetFrameRate = int32_t (*)(ANativeWindow*, float, int8_t);
     static auto fn = reinterpret_cast<SetFrameRate>(dlsym(RTLD_DEFAULT, "ANativeWindow_setFrameRate"));
-    if (fn) fn(window, static_cast<float>(state->fps), 0);
+    if (!fn) return;
+    const int32_t rc = fn(window, static_cast<float>(state->fps), 0);
+    __android_log_print(ANDROID_LOG_INFO, "OTKGlobeEngine", "setFrameRate %d -> %d", state->fps, rc);
 }
 #endif
 
@@ -1195,6 +1200,8 @@ void parseArgs(int argc, char** argv) {
             state->clearCache = std::atoi(argv[++i]) != 0;
         } else if (a == "--fps") {
             state->fps = std::max(0, std::atoi(argv[++i]));
+        } else if (a == "--idle-fps") {
+            state->idleFps = std::max(0, std::atoi(argv[++i]));
         } else if (a == "--offline") {
             state->offline = std::atoi(argv[++i]) != 0;
         } else if (a == "--mbtiles" || a == "--gpkg" || a == "--osmdroid") {
