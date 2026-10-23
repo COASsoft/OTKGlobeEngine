@@ -141,6 +141,7 @@ bool GlobeRenderer::init() {
     if (const char* v = std::getenv("OTK_RERENDER_GAP")) rerenderGap_ = std::max(0.0, std::atof(v));
     if (const char* v = std::getenv("OTK_MERGE_FADE")) mergeSeconds_ = std::max(0.0, std::atof(v));
     if (const char* v = std::getenv("OTK_MERGE_GAP")) mergeGap_ = std::max(0.0, std::atof(v));
+    if (const char* v = std::getenv("OTK_UNIFORM_SHARE")) uniformShare_ = std::clamp(std::atof(v), 0.0, 1.0);
     if (const char* v = std::getenv("OTK_REVEAL_HOLD_LONG")) revealHoldLong_ = std::max(0.0, std::atof(v));
     if (const char* v = std::getenv("OTK_REVEAL_SHARE")) revealShare_ = std::clamp(std::atof(v), 0.0, 1.0);
     if (const char* v = std::getenv("OTK_REVEAL_HOLD")) revealHold_ = std::max(0.0, std::atof(v));
@@ -3253,6 +3254,31 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     int visPops = 0;
     if (visualStats_ && shown_.size() > 20000)
         for (auto it = shown_.begin(); it != shown_.end();) it = it->second.frame + 2 < frame_ ? shown_.erase(it) : std::next(it);
+    auto depthOf = [&](const QuadKey& key, const QuadKey& s) {
+        if (s.level < 0) return 99;
+        auto st = surface_.find(s);
+        if (st == surface_.end()) return 0;
+        const int ideal = idealImageryZ(key);
+        const int effective = st->second.sourceZ;
+        if (ideal >= 0 && effective < 99) return std::max(0, ideal - effective);
+        return key.level - s.level + (st->second.complete ? 0 : 1);
+    };
+    int capDepth = 0;
+    if (uniformShare_ > 0.0 && revealHold_ > 0.0 && !tiles.empty()) {
+        int hist[17] = {};
+        for (const DrawTile& d : tiles) {
+            sg_view v{};
+            float u[4];
+            ++hist[std::min(depthOf(d.key, source(d.key, 0, v, u)), 16)];
+        }
+        const double need = uniformShare_ * static_cast<double>(tiles.size());
+        double acc = 0.0;
+        while (capDepth < 16 && acc + hist[capDepth] < need) acc += hist[capDepth++];
+    }
+    if (visualLog_ && capDepth != uniformDepth_)
+        std::fprintf(visualLog_, "cap frame %llu t %.3f depth %d -> %d tiles %zu\n", static_cast<unsigned long long>(frame_), tnow, uniformDepth_, capDepth,
+                     tiles.size());
+    uniformDepth_ = capDepth;
     for (auto& dt : tiles) {
         TerrainTile& tt = terrain(dt.key);
         tt.used = frame_;
@@ -3294,9 +3320,39 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                      loader_.pending());
             }
         }
+        const int availDepth = src.level < 0 ? 99 : shownDepth;
+        if (capDepth > 0 && src.level >= 0 && shownDepth < capDepth) {
+            int prev = 0;
+            auto pt = transitions_.find(dt.key);
+            if (pt != transitions_.end() && pt->second.frame + 1 == frame_) {
+                prev = pt->second.held && pt->second.from.level >= 0 ? depthOf(dt.key, pt->second.from) : pt->second.depth;
+            } else {
+                for (int up = 1; up <= 8 && up <= dt.key.level; ++up) {
+                    auto a = transitions_.find({dt.key.level - up, dt.key.x >> up, dt.key.y >> up});
+                    if (a == transitions_.end() || a->second.frame + 1 != frame_) continue;
+                    const QuadKey shown = a->second.held && a->second.from.level >= 0 ? a->second.from : a->second.src;
+                    prev = depthOf(dt.key, shown);
+                    break;
+                }
+            }
+            const int target = std::min(capDepth, prev);
+            for (int up = dt.key.level - src.level + 1; shownDepth < target && up <= dt.key.level; ++up) {
+                sg_view cv{};
+                float cu[4];
+                const QuadKey c = source(dt.key, up, cv, cu);
+                if (c.level < 0) break;
+                const int cd = depthOf(dt.key, c);
+                if (cd > target) break;
+                if (cd <= shownDepth) continue;
+                src = c;
+                view = cv;
+                std::memcpy(uvx, cu, sizeof(cu));
+                shownDepth = cd;
+            }
+        }
         auto own = surface_.find(dt.key);
         if (own == surface_.end() || !own->second.complete) ++incomplete;
-        if (src.level >= 0 && (src.level < dt.key.level || shownDepth >= 1)) ++waitingNow;
+        if (src.level >= 0 && (capDepth > 0 ? availDepth > capDepth : (src.level < dt.key.level || shownDepth >= 1))) ++waitingNow;
         sg_view view2 = view;
         float uvx2[4] = {uvx[0], uvx[1], uvx[2], uvx[3]};
         float blend = 1.0f;
