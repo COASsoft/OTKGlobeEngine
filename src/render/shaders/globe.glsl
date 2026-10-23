@@ -98,13 +98,19 @@ void main() {
     float s = mix(1.0, min(0.25 + 0.75 * light, 1.0), flags.y);
     vec2 t2 = vec2(uv2.x, flags.x > 0.5 ? 1.0 - uv2.y : uv2.y);
     vec2 t3 = vec2(uv3.x, flags.x > 0.5 ? 1.0 - uv3.y : uv3.y);
-    vec3 own = mix(texture(sampler2D(tex2, smp), t2).rgb, texture(sampler2D(tex, smp), t).rgb, flags.z);
+    vec2 d3x = dFdx(t3);
+    vec2 d3y = dFdy(t3);
+    vec3 own = texture(sampler2D(tex, smp), t).rgb;
+    if (flags.z < 0.999) own = mix(texture(sampler2D(tex2, smp), t2).rgb, own, flags.z);
     if (morphw > 0.0) {
-        vec3 lowOwn = mix(textureLod(sampler2D(tex2, smp), t2, lows.y).rgb, textureLod(sampler2D(tex, smp), t, lows.x).rgb, flags.z);
+        vec3 lowOwn = textureLod(sampler2D(tex, smp), t, lows.x).rgb;
+        if (flags.z < 0.999) lowOwn = mix(textureLod(sampler2D(tex2, smp), t2, lows.y).rgb, lowOwn, flags.z);
         vec3 lowParent = textureLod(sampler2D(tex3, smp), t3, lows.z).rgb;
         own = clamp(own + morphw * (lowParent - lowOwn), 0.0, 1.0);
     }
-    vec3 c = mix(own, texture(sampler2D(tex3, smp), t3).rgb, (1.0 - smoothstep(0.0, 1.0, lodw)) * sgain);
+    float edge = (1.0 - smoothstep(0.0, 1.0, lodw)) * sgain;
+    vec3 c = own;
+    if (edge > 0.0) c = mix(own, textureGrad(sampler2D(tex3, smp), t3, d3x, d3y).rgb, edge);
     c = mix(c, ramp((elev - heat.x) * heat.y), heat.z);
     if (slope.x > 0.0) {
         float cs = clamp(light, 0.0001, 1.0);
