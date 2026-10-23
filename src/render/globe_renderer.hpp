@@ -338,6 +338,7 @@ private:
     bool ready(const QuadKey& k) const;
     bool presentable(const QuadKey& k) const;
     bool finished(const QuadKey& k) const;
+    bool retrying(const QuadKey& k) const;
     int readyGap(const QuadKey& k) const;
     bool sparseLayer(int l) const;
     bool progressed(const SurfaceTile& s) const;
