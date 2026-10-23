@@ -3,11 +3,27 @@
 ## Unreleased
 
 ### Loading
-- Map detail no longer switches in abruptly. Every change of what a tile shows now crossfades over about a third of a second. That covers a tile swapping a blurry stand-in for its own imagery, detail arriving for an area that was already on screen, and a tile being redrawn with newer data. Before, tiles whose detail arrived late snapped in, sometimes a fifth of the screen at once during a fly-to.
+- Map detail no longer switches in abruptly, and it no longer sharpens one tile at a time:
+  - While the map moves, new detail waits until it stops (at most 2 s).
+  - Then everything that is ready fades in together over about a third of a second.
+  - A slow tile holds the rest back for at most 0.6 s.
+  - This covers a tile swapping a blurry stand-in for its own imagery, detail arriving for an area already on screen, and a tile being redrawn with newer data.
+  - Before, each tile snapped or faded in on its own as soon as it arrived. During pans and zooms that looked like tiles flickering in and out.
 - When zooming out, areas fade into the coarser view before switching to it, instead of switching in one frame.
 - Where a sharp tile meets one that is still loading, the edge between them is blended, so loading areas no longer show as hard-edged rectangles.
 - Place and street names keep their position and fade state when more detailed map data replaces less detailed data, instead of fading out and back in.
 - Labels are placed ten times a second while the map moves instead of every frame, and right away when the map turns or tilts or new data arrives.
+
+### Battery and data
+- The engine no longer redraws while it waits for downloads. It sleeps until a tile actually arrives. Before, it drew every frame at full speed until the last tile was in, which kept phones warm on slow connections.
+- When nothing on the map changes, the last frame is shown again instead of drawing the map.
+- The viewer slows to 20 frames per second after half a second without changes (`--idle-fps`). On Android it asks the screen for 60 Hz instead of 90 or 120 (`--fps`).
+- Background downloads are checked twice a second instead of forcing a redraw every frame.
+- `Stats` has new fields:
+  - `networkBytes` and `networkRequests`: data downloaded so far.
+  - `imageryWasted`: tiles loaded but dropped before they were ever shown.
+  - `renderedFrames`: how many frames the engine has drawn.
+  - `loading`: 1 while the view is still loading.
 
 ### Performance
 - Smoother on phones and tablets:
@@ -15,6 +31,7 @@
   - The terrain shader skips texture reads it does not need.
   - The credits strip is laid out once instead of every frame (it took 2.4 ms per frame on a 4 GB tablet).
   - Labels in tilted views no longer check for 3D buildings when buildings are off.
+- Engine threads have names, so they are easy to find in debuggers and profilers.
 - On a 4 GB Android tablet, frames slower than 25 ms dropped:
 
   | While | Before | After |
@@ -24,6 +41,11 @@
   | Pinch zooming in | 30% | 12% |
   | Flying | 55% | 31% |
 
+### Controls
+- On-screen controls stay clear of notches, rounded corners and system bars.
+  - Android and iOS (`OTKGlobeView`) and the web package read the safe area themselves.
+  - `setControlsPadding` sets the margins by hand instead.
+
 ### Viewer
 - Scripts can play touch gestures: `pinch`, `swipe` (with fling), `twist` and `tilt`.
 - `--frames file.csv` writes per-frame statistics plus a summary of how much of the screen popped, merged, faded or showed blurry stand-ins.
@@ -31,7 +53,14 @@
   - `--exit-after s` quits after the script.
   - `--clear-cache 1` starts with an empty cache.
   - `--env NAME=VALUE` sets an `OTK_` setting.
+- The `--frames` summary also reports:
+  - `drawn_frames`: frames the engine actually drew.
+  - `reveal_frames` and `tile_reveals`: how often new detail appeared.
+  - `settled_after_input`: seconds until loading finished.
+  - `net_mb` and `net_requests`: data downloaded.
+  - `imagery_loads` and `imagery_wasted`: tiles loaded, and tiles dropped unseen.
 - On Android, settings in `args.txt` now take effect: environment settings used to be read too late.
+- On Android the viewer now tells the engine the screen's pixel density, so controls and text are the right size. On phones they were too small to use.
 
 ## 0.1.2
 
