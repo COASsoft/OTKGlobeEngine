@@ -3220,7 +3220,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             ++it;
         }
         if (contours_ && contours_->marks) overlayTiles.push_back(contours_->marks.get());
-        auto above = [this](double lat, double lon) { return buildingsOn_ ? buildings_.heightAt(lat, lon) : 0.0; };
+        GroundFn above;
+        if (buildingsOn_) above = [this](double lat, double lon) { return buildings_.heightAt(lat, lon); };
         labels_.drawLabels(dc, ground, dpiScale_, visibleRects, overlayTiles, 0, labelsOn_, above);
     }
     profileSub(1);
@@ -3296,7 +3297,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             if (!xray) objects();
             if (labelsOn_ || contours_)
                 labels_.drawLabels(vc, ground, dpiScale_, visibleRects, overlayTiles, static_cast<int>(vi), labelsOn_,
-                                   [this](double lat, double lon) { return buildingsOn_ ? buildings_.heightAt(lat, lon) : 0.0; });
+                                   buildingsOn_ ? GroundFn([this](double lat, double lon) { return buildings_.heightAt(lat, lon); }) : GroundFn{});
             features_.drawOverlay(vc, ground, dpiScale_, flipSurface_, &vectorLabels);
             sg_end_pass();
         }
