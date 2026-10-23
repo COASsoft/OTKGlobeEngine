@@ -4169,6 +4169,22 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         sg_apply_uniforms(UB_globe_vs_params, SG_RANGE(vsp));
         sg_draw(0, xray ? kGrid * kGrid * 6 : kIndexCount, 1);
     }
+    if (visualLog_ && capFail[0] + capFail[1] + capFail[2] + capFail[3] > 0) {
+        std::string chain;
+        if (capExample.level >= 0)
+            for (int up = 0; up <= capExample.level && up <= 8; ++up) {
+                const QuadKey a{capExample.level - up, capExample.x >> up, capExample.y >> up};
+                auto st = surface_.find(a);
+                char buf[48];
+                std::snprintf(buf, sizeof(buf), " L%d:%s%d", a.level,
+                              st == surface_.end() ? "-" : st->second.version < 0 ? "0" : st->second.complete ? "C" : st->second.presentable ? "p" : "i",
+                              st == surface_.end() ? -1 : zOf(a));
+                chain += buf;
+            }
+        std::fprintf(visualLog_, "capfail frame %llu t %.3f cap %d src %d held %d fade %d merge %d example L%d/%d/%d z %d chain%s\n",
+                     static_cast<unsigned long long>(frame_), tnow, zCap, capFail[0], capFail[1], capFail[2], capFail[3], capExample.level, capExample.x,
+                     capExample.y, capExampleZ, chain.c_str());
+    }
     if (lines3d_ && labelsOn_ && !xray && !lineTiles.empty()) {
         const int lineVersion = elevation_.version() + terrainEpoch_ * 1000000;
         std::vector<GeoRect> rects;
