@@ -3087,7 +3087,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     int heldNow = 0;
     int waitingNow = refineWaiting_;
     double oldestHeld = tnow;
-    double visPop = 0, visMerge = 0, visTerrain = 0, visBlur = 0, visBlur2 = 0, visDepth = 0, visFade = 0, visCover = 0;
+    double visPop = 0, visMerge = 0, visTerrain = 0, visBlur = 0, visBlur2 = 0, visDepth = 0, visFade = 0, visCover = 0, visReveal = 0;
+    int visReveals = 0;
     int visPops = 0;
     if (visualStats_ && shown_.size() > 20000)
         for (auto it = shown_.begin(); it != shown_.end();) it = it->second.frame + 2 < frame_ ? shown_.erase(it) : std::next(it);
@@ -3358,6 +3359,10 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             visDepth += area * shownDepth;
             const bool faded = blend < 0.999f || dt.merge.level >= 0;
             if (faded) visFade += area;
+            if (tr.start == tnow && !tr.held) {
+                visReveal += area;
+                ++visReveals;
+            }
             const bool held = snapshotShown_ && snapshotFade_ < 0.0;
             const bool merged = dt.merge.level >= 0 && mergeMix >= 0.5f;
             const QuadKey shownKey = merged ? dt.merge : src;
@@ -3682,6 +3687,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     oldestHeldPrev_ = oldestHeld;
     waitingPrev_ = waitingNow;
     stats_.heldTiles = heldNow;
+    stats_.reveals = visReveals;
+    stats_.revealArea = visReveal;
     stats_.fadeMisses = fadeMisses_;
     stats_.coarseTiles = coarse;
     stats_.coverageOnlyTiles = coverageOnly;
