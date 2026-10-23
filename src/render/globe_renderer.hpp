@@ -167,6 +167,7 @@ public:
     void render(Camera& cam, const sg_swapchain* swapchain, const sg_attachments* attachments, int width, int height,
                 const std::vector<RenderView>* views = nullptr);
     bool busy() const { return busy_; }
+    bool presentIdle(Camera& cam, const sg_swapchain& swapchain);
     Stats stats() const { return stats_; }
     void setCpuMs(double ms, double threadMs = 0) {
         stats_.cpuMs = ms;
@@ -327,6 +328,8 @@ private:
     SurfaceTile freshSurface();
     void recycleSurface(SurfaceTile& s);
     bool ensureSnapshotTarget(int width, int height);
+    bool ensureIdleTarget(int width, int height);
+    void dropIdleTarget();
     void dropSnapshotTarget();
     void drawSnapshot(float alpha);
     static void dropSurface(SurfaceTile& s);
@@ -560,6 +563,17 @@ private:
     sg_view snapshotDepthView_{};
     sg_view snapshotTexture_{};
     int snapshotWidth_ = 0;
+    sg_image idleImage_{};
+    sg_image idleMsaa_{};
+    sg_image idleDepth_{};
+    sg_view idleColor_{};
+    sg_view idleResolve_{};
+    sg_view idleDepthView_{};
+    sg_view idleTexture_{};
+    int idleWidth_ = 0;
+    int idleHeight_ = 0;
+    bool idleValid_ = false;
+    bool renderingIdle_ = false;
     int snapshotHeight_ = 0;
     bool snapshotWanted_ = false;
     double lastIncompleteFraction_ = 1.0;
