@@ -122,8 +122,31 @@ struct ViewerState {
     };
     std::vector<ScriptStep> script;
     size_t scriptNext = 0;
-    bool dragging = false;
-    ScriptStep drag;
+    struct Gesture {
+        double start = 0;
+        double seconds = 0;
+        int count = 0;
+        double from[2][2] = {};
+        double to[2][2] = {};
+        double angle0 = 0, angle1 = 0, radius = 0;
+        double cx = 0, cy = 0;
+        bool turn = false;
+        otk::PointerType type = otk::PointerType::Touch;
+        otk::MouseButton button = otk::MouseButton::Left;
+    };
+    bool gesturing = false;
+    Gesture gesture;
+    std::string framesPath;
+    FILE* framesFile = nullptr;
+    double exitAfter = -1.0;
+    double inputEnd = -1.0;
+    double settledAt = -1.0;
+    bool quitting = false;
+    struct Totals {
+        long long frames = 0, pops = 0, jank25 = 0, jank50 = 0, incomplete = 0;
+        double seconds = 0, pop = 0, merge = 0, terrain = 0, blur = 0, blur2 = 0, depth = 0, fade = 0, worst = 0;
+    };
+    Totals during, after;
     int perfFrames = 0;
     double perfFrameMs = 0, perfFrameMax = 0, perfCpuMs = 0, perfCpuMax = 0;
     long long perfRenders = 0, perfBuilds = 0, perfUploads = 0;
