@@ -158,6 +158,8 @@ struct ViewerState {
     bool quitting = false;
     struct Totals {
         long long frames = 0, pops = 0, jank25 = 0, jank50 = 0, incomplete = 0, reveals = 0, revealFrames = 0, drawn = 0;
+        long long ungatedFrames = 0, ungatedTiles = 0, down = 0, refade = 0, lost = 0, mergeFrames = 0, mergeTiles = 0, terrainFrames = 0;
+        double ungated = 0, mergeStart = 0;
         double seconds = 0, pop = 0, merge = 0, terrain = 0, blur = 0, blur2 = 0, depth = 0, fade = 0, worst = 0, reveal = 0;
     };
     Totals during, after;
@@ -437,6 +439,12 @@ void writeSummary() {
                       pass == 0 ? "input" : "settle", T.frames, T.seconds, T.pop, T.pops, T.merge, T.terrain, T.blur, T.blur2, T.depth, T.fade,
                       T.incomplete, T.jank25, T.jank50, T.worst, T.revealFrames, T.reveals, T.reveal, T.drawn);
         text += line;
+        std::snprintf(line, sizeof(line),
+                      "%s_changes ungated_frames=%lld ungated_tiles=%lld ungated_screens=%.4f down_tiles=%lld refade_tiles=%lld lost_tiles=%lld "
+                      "merge_frames=%lld merge_tiles=%lld merge_start_screens=%.4f terrain_frames=%lld\n",
+                      pass == 0 ? "input" : "settle", T.ungatedFrames, T.ungatedTiles, T.ungated, T.down, T.refade, T.lost, T.mergeFrames, T.mergeTiles,
+                      T.mergeStart, T.terrainFrames);
+        text += line;
     }
     const otk::Stats run = state->engine.stats();
     std::snprintf(line, sizeof(line), "settled_after_input=%.2f fade_misses=%lld imagery_loads=%lld imagery_wasted=%lld net_mb=%.2f net_requests=%lld\n",
@@ -492,6 +500,16 @@ void logFrame(double dt) {
     T.reveals += s.reveals;
     T.reveal += s.revealArea;
     if (s.revealArea > 0.001) ++T.revealFrames;
+    if (s.ungatedArea > 0.001) ++T.ungatedFrames;
+    T.ungated += s.ungatedArea;
+    T.ungatedTiles += s.ungated;
+    T.down += s.fadeDown;
+    T.refade += s.fadeRefade;
+    T.lost += s.fadeLost;
+    if (s.mergeStartArea > 0.001) ++T.mergeFrames;
+    T.mergeTiles += s.mergeStarts;
+    T.mergeStart += s.mergeStartArea;
+    if (s.terrainPopArea > 0.001) ++T.terrainFrames;
     if (s.incompleteTiles > 0) ++T.incomplete;
     if ((drew || input) && state->drewPrev && !state->idleWaited) {
         if (dt > 0.025) ++T.jank25;
