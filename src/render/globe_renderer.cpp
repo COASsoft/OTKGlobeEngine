@@ -4245,11 +4245,10 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         if (contours_ && contours_->marks) overlayTiles.push_back(contours_->marks.get());
         if (buildingsOn_) labelAbove = [this](double lat, double lon) { return buildings_.heightAt(lat, lon); };
     }
-    auto drawTop = [&]() {
-        if (labelsOn_ || contours_) labels_.drawLabels(dc, ground, dpiScale_, visibleRects, overlayTiles, 0, labelsOn_, labelAbove);
-        profileSub(1);
-        features_.drawOverlay(dc, ground, dpiScale_, flipSurface_, &vectorLabels);
-    };
+    if (labelsOn_ || contours_) labels_.drawLabels(dc, ground, dpiScale_, visibleRects, overlayTiles, 0, labelsOn_, labelAbove);
+    profileSub(1);
+    drawSettle();
+    auto drawTop = [&]() { features_.drawOverlay(dc, ground, dpiScale_, flipSurface_, &vectorLabels); };
     if (!settleCapture) drawTop();
     if (!capture && snapshotShown_ && !settleSnapshot_) drawSnapshot(snapshotAlpha());
     if (!capture && !views && overlay_) overlay_(width, height);
