@@ -3,19 +3,26 @@
 ## Unreleased
 
 ### Loading
-- The view sharpens as a whole instead of one tile at a time:
-  - New detail waits until the map stops moving (at most 2 s while it moves).
-  - It then appears in one crossfade for the whole view.
-  - While some tiles are still loading, the view sharpens in even steps: no tile is shown sharper than the slowest part of the view allows. Tiles whose data cannot arrive (missing or offline) do not hold the rest back.
-  - A slow area holds the rest back for at most 3 s.
-  - Startup and arriving from a fly-to load the same way, so they no longer show rectangles of detail over a blurry map.
-  - A tile that gets newer detail while it is still fading in finishes that fade before the next change.
-  - Before, each tile snapped or faded in on its own as soon as it arrived. During pans and zooms that looked like tiles flickering in and out.
+- When the map stops moving, it no longer sharpens piece by piece:
+  - The engine keeps showing the picture you were looking at, loads and composes everything behind it, then fades the whole screen to the finished view in one 0.35 s dissolve.
+  - It waits at most 3 s (`OTK_SETTLE_WAIT`). Labels and live features stay live above the held picture.
+  - If you start moving again during the hold or the dissolve, the held picture moves with the map and fades out, so there is no jump.
+  - `OTK_SETTLE=0` turns this off.
+- A flat or slightly tilted view uses one detail level for the whole screen, like a 2D map:
+  - Tiles at the edges no longer use a coarser level than tiles in the middle. With Esri imagery that mix showed as a patchwork of dark and pale squares, because Esri switches photo sources between zoom 11 and 12.
+  - While the map moves, the whole view shows the same imagery level. If new ground only has coarser imagery yet, the whole view steps down together, at most 2 levels, and sharpens again when you stop.
+  - `OTK_UNIFORM_LOD=0` turns this off. Views tilted more than 25 degrees keep the distance-based detail they need.
+- Startup loads the same way: one fade from the empty globe to the full map, instead of tiles appearing one by one.
 - When zooming out:
   - Areas fade into the coarser view before switching to it, instead of switching in one frame.
   - These switches happen in batches instead of tile by tile.
   - They only happen once the coarser image is complete, so an area no longer goes blurry and then sharp again.
 - During a fling, the engine starts loading the place where the fling will stop.
+- Roads and boundaries are drawn as their own layer on top of the terrain instead of being painted into the imagery tiles:
+  - They are sharp and keep the same width at every zoom, and they change width smoothly while zooming.
+  - They no longer turn into thick, glowing bands when coarser tiles are stretched while loading, and they no longer jump in width when tiles switch level.
+  - Tiles are no longer redrawn just to keep painted lines thin, which saves work while zooming.
+  - `OTK_LINES3D=0` goes back to painted lines.
 - Where a sharp tile meets one that is still loading, the edge between them is blended, so loading areas no longer show as hard-edged rectangles.
 - Place and street names keep their position and fade state when more detailed map data replaces less detailed data, instead of fading out and back in.
 - Labels are placed ten times a second while the map moves instead of every frame, and right away when the map turns or tilts or new data arrives.
