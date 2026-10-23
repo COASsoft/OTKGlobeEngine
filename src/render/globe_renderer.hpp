@@ -169,6 +169,7 @@ public:
     bool busy() const { return busy_; }
     bool wakeDue() const;
     bool waiting() const { return waiting_; }
+    bool fetching() const { return stats_.pendingRequests > 0; }
     double wakeIn() const { return wakeAt_ - now(); }
     bool presentIdle(Camera& cam, const sg_swapchain& swapchain);
     Stats stats() const { return stats_; }
