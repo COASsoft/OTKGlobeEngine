@@ -163,6 +163,7 @@ struct ViewerState {
     Totals during, after;
     long long renderedPrev = -1;
     bool drewPrev = false;
+    bool idleWaited = false;
     int perfFrames = 0;
     double perfFrameMs = 0, perfFrameMax = 0, perfCpuMs = 0, perfCpuMax = 0;
     long long perfRenders = 0, perfBuilds = 0, perfUploads = 0;
@@ -492,7 +493,7 @@ void logFrame(double dt) {
     T.reveal += s.revealArea;
     if (s.revealArea > 0.001) ++T.revealFrames;
     if (s.incompleteTiles > 0) ++T.incomplete;
-    if ((drew || input) && state->drewPrev) {
+    if ((drew || input) && state->drewPrev && !state->idleWaited) {
         if (dt > 0.025) ++T.jank25;
         if (dt > 0.050) ++T.jank50;
         T.worst = std::max(T.worst, dt * 1000.0);
@@ -845,9 +846,11 @@ void frame() {
         idleFor = delay > 0.0 ? idleFor + dt : 0.0;
         if (state->scriptNext < state->script.size()) delay = std::min(delay, state->script[state->scriptNext].at - state->shotElapsed);
 #if defined(__ANDROID__) || defined(_WIN32)
-        if (state->idleFps > 0 && delay > 0.0) idleWait(std::min(delay, 1.0 / state->idleFps));
+        state->idleWaited = state->idleFps > 0 && delay > 0.0;
+        if (state->idleWaited) idleWait(std::min(delay, 1.0 / state->idleFps));
 #else
-        if (state->idleFps > 0 && idleFor > 0.5 && delay > 0.0) idleWait(std::min(delay, 1.0 / state->idleFps) - 1.0 / 60.0);
+        state->idleWaited = state->idleFps > 0 && idleFor > 0.5 && delay > 0.0;
+        if (state->idleWaited) idleWait(std::min(delay, 1.0 / state->idleFps) - 1.0 / 60.0);
 #endif
     }
     {
