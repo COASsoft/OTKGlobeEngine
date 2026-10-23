@@ -108,10 +108,43 @@ export class OTKGlobe {
     this.dpr = window.devicePixelRatio || 1;
     const w = Math.max(1, Math.round(this.canvas.clientWidth * this.dpr));
     const h = Math.max(1, Math.round(this.canvas.clientHeight * this.dpr));
-    if (this.canvas.width !== w || this.canvas.height !== h) {
+    const changed = this.canvas.width !== w || this.canvas.height !== h;
+    if (changed) {
       this.canvas.width = w;
       this.canvas.height = h;
     }
+    const now = performance.now();
+    if (this.autoPadding !== false && (changed || !(now - (this.paddingAt || 0) < 1000))) {
+      this.paddingAt = now;
+      this.applySafeArea();
+    }
+  }
+
+  applySafeArea() {
+    if (!this.probe) {
+      const p = document.createElement('div');
+      p.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;' +
+        'padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)';
+      document.body.appendChild(p);
+      this.probe = p;
+    }
+    const s = getComputedStyle(this.probe);
+    const r = this.canvas.getBoundingClientRect();
+    const inset = [
+      Math.max(0, (parseFloat(s.paddingLeft) || 0) - r.left),
+      Math.max(0, (parseFloat(s.paddingTop) || 0) - r.top),
+      Math.max(0, (parseFloat(s.paddingRight) || 0) - (window.innerWidth - r.right)),
+      Math.max(0, (parseFloat(s.paddingBottom) || 0) - (window.innerHeight - r.bottom)),
+    ];
+    const key = inset.join(',');
+    if (key === this.paddingKey) return;
+    this.paddingKey = key;
+    this.M._otk_set_controls_padding(this.engine, inset[0], inset[1], inset[2], inset[3]);
+  }
+
+  setControlsPadding(left, top, right, bottom) {
+    this.autoPadding = false;
+    this.M._otk_set_controls_padding(this.engine, left, top, right, bottom);
   }
 
   point(e) {
