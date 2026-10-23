@@ -322,6 +322,8 @@ export class OTKGlobe {
   destroy() {
     this.running = false;
     this.resizeObserver?.disconnect();
+    this.probe?.remove();
+    this.probe = null;
     for (const off of this.listeners) off();
     this.listeners = [];
     this.M._otk_destroy(this.engine);
