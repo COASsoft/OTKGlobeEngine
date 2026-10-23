@@ -28,6 +28,12 @@ public class OTKGlobeView extends GLSurfaceView implements GLSurfaceView.Rendere
     private boolean autoPadding = true;
     private final ArrayList<Runnable> pending = new ArrayList<>();
     private Ready ready;
+    private final Runnable redraw = new Runnable() {
+        @Override
+        public void run() {
+            requestRender();
+        }
+    };
     private ConnectivityManager.NetworkCallback networkCallback;
 
     public interface Result {
@@ -141,6 +147,7 @@ public class OTKGlobeView extends GLSurfaceView implements GLSurfaceView.Rendere
             }
         }
         networkCallback = null;
+        removeCallbacks(redraw);
         super.onDetachedFromWindow();
     }
 
@@ -457,7 +464,13 @@ public class OTKGlobeView extends GLSurfaceView implements GLSurfaceView.Rendere
     public void onDrawFrame(GL10 gl) {
         if (engine == 0) return;
         OTKGlobeEngine.nativeFrame(engine, width, height, density);
-        if (OTKGlobeEngine.nativeNeedsRedraw(engine)) requestRender();
+        final double delay = OTKGlobeEngine.nativeNextFrameDelay(engine);
+        if (delay <= 0.0) {
+            requestRender();
+        } else if (!Double.isInfinite(delay)) {
+            removeCallbacks(redraw);
+            postDelayed(redraw, Math.max(1L, (long) (delay * 1000.0)));
+        }
     }
 
     public interface MapListener {
