@@ -2585,8 +2585,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             continue;
         }
         if (fadeUpgrades_ && s->version >= 0) {
-            auto dr = drawn_.find(job.key);
-            if (dr != drawn_.end() && dr->second + 1 >= frame_) {
+            if (s->shown + 1 >= frame_) {
                 SurfaceTile fresh = freshSurface();
                 if (sg_query_view_state(fresh.texture) == SG_RESOURCESTATE_VALID) {
                     auto old = retiring_.find(job.key);
