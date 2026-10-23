@@ -2693,6 +2693,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             s->overlaysOmitted = job.overlaysOmitted;
             s->lineDeg = jobLabel.count(job.key) ? jobLabel[job.key] : 0.0;
             s->presentable = job.presentable;
+            s->renderedAt = now();
             continue;
         }
         for (int level = 0; level < kMips; ++level) {
@@ -2725,6 +2726,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         s->overlaysOmitted = job.overlaysOmitted;
         s->lineDeg = jobLabel.count(job.key) ? jobLabel[job.key] : 0.0;
         s->presentable = job.presentable;
+        s->renderedAt = now();
     }
 
     if (!mipQueue.empty()) generateMips(mipQueue);
@@ -2975,10 +2977,43 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         }
         bool fadingFrom = false;
         int fromVersion = -1;
+        auto fadeTexture = [&](const QuadKey& tile, const QuadKey& f, int version, double remaining, sg_view& out, float uv[4]) {
+            uv[0] = uv[1] = 1.0f;
+            uv[2] = uv[3] = 0.0f;
+            if (f.level == -2) {
+                out = fallbackView_;
+                return true;
+            }
+            const int k = tile.level - f.level;
+            if (f.level < 0 || k < 0 || (tile.x >> k) != f.x || (tile.y >> k) != f.y) return false;
+            out = {};
+            auto fs = surface_.find(f);
+            if (fs != surface_.end() && fs->second.version == version) {
+                out = fs->second.texture;
+                fs->second.used = frame_;
+                fs->second.shown = frame_;
+            } else {
+                auto rs = retiring_.find(f);
+                if (rs == retiring_.end() || rs->second.first.version != version) return false;
+                out = rs->second.first.texture;
+                rs->second.second = std::max(rs->second.second, tnow - 0.4 + remaining + 0.05);
+            }
+            if (!out.id || sg_query_view_state(out) != SG_RESOURCESTATE_VALID) return false;
+            const double sc = 1.0 / static_cast<double>(1 << k);
+            const int rx = tile.x - (f.x << k), ry = tile.y - (f.y << k);
+            uv[0] = static_cast<float>(sc);
+            uv[1] = static_cast<float>(sc);
+            uv[2] = static_cast<float>(rx * sc);
+            uv[3] = static_cast<float>(((1 << k) - 1 - ry) * sc);
+            return true;
+        };
         Transition& tr = transitions_[dt.key];
+        sg_view fv{};
+        float fu[4] = {1.0f, 1.0f, 0.0f, 0.0f};
         if (tr.frame + 1 == frame_) {
             if (!(tr.src == src) || tr.version != shownVersion) {
-                const bool early = tr.start >= 0.0 && (tnow - tr.start) / kFadeSeconds < 0.5 && tr.from.level != -1;
+                const bool early = tr.start >= 0.0 && (tnow - tr.start) / kFadeSeconds < 0.5 && tr.from.level != -1 &&
+                                   fadeTexture(dt.key, tr.from, tr.fromVersion, kFadeSeconds, fv, fu);
                 if (!early) {
                     tr.from = tr.src.level >= 0 ? tr.src : QuadKey{-2, 0, 0};
                     tr.fromVersion = tr.version;
@@ -3004,35 +3039,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         tr.frame = frame_;
         if (tr.start >= 0.0) {
             const double t = (tnow - tr.start) / kFadeSeconds;
-            sg_view fv{};
-            float fu[4] = {1.0f, 1.0f, 0.0f, 0.0f};
-            if (t < 1.0 && src.level >= 0) {
-                const QuadKey f = tr.from;
-                const int k = dt.key.level - f.level;
-                if (f.level == -2) {
-                    fv = fallbackView_;
-                } else if (f.level >= 0 && k >= 0 && (dt.key.x >> k) == f.x && (dt.key.y >> k) == f.y) {
-                    auto fs = surface_.find(f);
-                    if (fs != surface_.end() && fs->second.version == tr.fromVersion) {
-                        fv = fs->second.texture;
-                        fs->second.used = frame_;
-                        fs->second.shown = frame_;
-                    } else {
-                        auto rs = retiring_.find(f);
-                        if (rs != retiring_.end() && rs->second.first.version == tr.fromVersion) {
-                            fv = rs->second.first.texture;
-                            rs->second.second = std::max(rs->second.second, tnow - 0.4 + kFadeSeconds * (1.0 - t) + 0.05);
-                        }
-                    }
-                    const double sc = 1.0 / static_cast<double>(1 << k);
-                    const int rx = dt.key.x - (f.x << k), ry = dt.key.y - (f.y << k);
-                    fu[0] = static_cast<float>(sc);
-                    fu[1] = static_cast<float>(sc);
-                    fu[2] = static_cast<float>(rx * sc);
-                    fu[3] = static_cast<float>(((1 << k) - 1 - ry) * sc);
-                }
-            }
-            if (fv.id && sg_query_view_state(fv) == SG_RESOURCESTATE_VALID) {
+            if (t < 1.0 && src.level >= 0 && fadeTexture(dt.key, tr.from, tr.fromVersion, kFadeSeconds * (1.0 - t), fv, fu)) {
                 view2 = fv;
                 std::memcpy(uvx2, fu, sizeof(fu));
                 blend = static_cast<float>(t * t * (3 - 2 * t));
@@ -3040,6 +3047,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 fadingFrom = true;
                 fromVersion = tr.fromVersion;
             } else {
+                if (t < 1.0 && src.level >= 0) ++fadeMisses_;
                 tr.start = -1.0;
             }
         }
