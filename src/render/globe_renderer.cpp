@@ -3429,8 +3429,9 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             }
             if (z >= 0) available = std::min(available, z);
         }
+        if (available < 99 && ideal >= 0) available = std::max(available, ideal - kMaxUniformDrop);
         const bool reveal = frozenNow || revealOpen_ || uniformZ_ >= 99;
-        zCap = available >= 99 ? 99 : reveal ? available : std::min(uniformZ_, available);
+        zCap = available >= 99 ? 99 : reveal ? available : std::max(std::min(uniformZ_, available), ideal - kMaxUniformDrop);
         if (visualLog_ && zCap != uniformZ_)
             std::fprintf(visualLog_, "zcap frame %llu t %.3f z %d -> %d available %d tiles %zu\n", static_cast<unsigned long long>(frame_), tnow, uniformZ_,
                          zCap, available, tiles.size());
