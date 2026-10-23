@@ -3934,6 +3934,19 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 tr.mergeFrame = frame_;
             }
         }
+        if (visualLog_ && zCap < 99 && src.level >= 0) {
+            const int zs = zOf(src);
+            int reason = zs > zCap ? 0 : -1;
+            if (reason < 0 && fadingFrom && tr.from.level >= 0 && zOf(tr.from) > zCap) reason = tr.held ? 1 : 2;
+            if (reason < 0 && mergeMix > 0.0f && zOf(dt.merge) > zCap) reason = 3;
+            if (reason >= 0) {
+                ++capFail[reason];
+                if (capExample.level < 0) {
+                    capExample = dt.key;
+                    capExampleZ = reason == 0 ? zs : reason == 3 ? zOf(dt.merge) : zOf(tr.from);
+                }
+            }
+        }
         int coarser[4];
         double skirtLen = seamSkirt(dt.key, tt, drawnNow, coarser);
         float deficit[4] = {0, 0, 0, 0};
