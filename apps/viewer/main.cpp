@@ -144,8 +144,8 @@ struct ViewerState {
     double settledAt = -1.0;
     bool quitting = false;
     struct Totals {
-        long long frames = 0, pops = 0, jank25 = 0, jank50 = 0, incomplete = 0;
-        double seconds = 0, pop = 0, merge = 0, terrain = 0, blur = 0, blur2 = 0, depth = 0, fade = 0, worst = 0;
+        long long frames = 0, pops = 0, jank25 = 0, jank50 = 0, incomplete = 0, reveals = 0, revealFrames = 0;
+        double seconds = 0, pop = 0, merge = 0, terrain = 0, blur = 0, blur2 = 0, depth = 0, fade = 0, worst = 0, reveal = 0;
     };
     Totals during, after;
     int perfFrames = 0;
@@ -396,9 +396,9 @@ void writeSummary() {
         const ViewerState::Totals& T = pass == 0 ? state->during : state->after;
         std::snprintf(line, sizeof(line),
                       "%s frames=%lld seconds=%.2f pop_screens=%.4f pops=%lld merge_screens=%.4f terrain_pop_screens=%.4f blur_seconds=%.4f "
-                      "blur2_seconds=%.4f depth_seconds=%.4f fade_seconds=%.4f incomplete_frames=%lld jank25=%lld jank50=%lld worst_ms=%.1f\n",
+                      "blur2_seconds=%.4f depth_seconds=%.4f fade_seconds=%.4f incomplete_frames=%lld jank25=%lld jank50=%lld worst_ms=%.1f reveal_frames=%lld tile_reveals=%lld reveal_screens=%.4f\n",
                       pass == 0 ? "input" : "settle", T.frames, T.seconds, T.pop, T.pops, T.merge, T.terrain, T.blur, T.blur2, T.depth, T.fade,
-                      T.incomplete, T.jank25, T.jank50, T.worst);
+                      T.incomplete, T.jank25, T.jank50, T.worst, T.revealFrames, T.reveals, T.reveal);
         text += line;
     }
     std::snprintf(line, sizeof(line), "settled_after_input=%.2f fade_misses=%lld\n",
@@ -446,6 +446,9 @@ void logFrame(double dt) {
     T.blur2 += s.blurArea2 * dt;
     T.depth += s.blurDepth * dt;
     T.fade += s.fadeArea * dt;
+    T.reveals += s.reveals;
+    T.reveal += s.revealArea;
+    if (s.revealArea > 0.001) ++T.revealFrames;
     if (s.incompleteTiles > 0) ++T.incomplete;
     if (dt > 0.025) ++T.jank25;
     if (dt > 0.050) ++T.jank50;
