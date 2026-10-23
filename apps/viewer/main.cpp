@@ -1298,7 +1298,7 @@ bool runScript() {
             state->engine.setView(v);
         }
     }
-    return state->scriptNext < state->script.size() || state->dragging || in.active();
+    return state->scriptNext < state->script.size() || state->gesturing || in.active();
 }
 
 sapp_desc sokol_main(int argc, char* argv[]) {
