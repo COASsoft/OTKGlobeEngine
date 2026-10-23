@@ -195,6 +195,11 @@ int TileLoader::pending() const {
     return static_cast<int>(queue_.size() + inflight_.size());
 }
 
+bool TileLoader::hasResults() const {
+    std::lock_guard lock(mutex_);
+    return !done_.empty();
+}
+
 int TileLoader::startDownload(int layer, const Region& region, int minZoom, int maxZoom, std::int64_t maxBytes) {
     std::lock_guard lock(mutex_);
     if (layer < 0 || layer >= static_cast<int>(providers_.size())) return 0;
