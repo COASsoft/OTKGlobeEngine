@@ -132,7 +132,7 @@ bool GlobeRenderer::init() {
     if (const char* v = std::getenv("OTK_LOD_BLEND")) lodBlend_ = std::atoi(v) != 0;
     if (const char* v = std::getenv("OTK_UPGRADE_FADE")) fadeUpgrades_ = std::atoi(v) != 0;
     busyLog_ = std::getenv("OTK_BUSY_LOG") != nullptr;
-    visualStats_ = std::getenv("OTK_VISUAL") != nullptr;
+    if (const char* v = std::getenv("OTK_VISUAL")) visualStats_ = std::atoi(v) != 0;
     if (const char* v = std::getenv("OTK_MAX_DIVE")) maxDive_ = std::atoi(v);
     if (const char* v = std::getenv("OTK_LOD_MORPH")) lodMorph_ = std::clamp(std::atof(v), 0.0, 1.0);
     if (const char* v = std::getenv("OTK_MARGIN")) marginPrefetch_ = std::max(1.0, std::atof(v));
