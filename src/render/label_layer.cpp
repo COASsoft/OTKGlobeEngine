@@ -512,12 +512,14 @@ struct LabelLayer::Text {
     std::unordered_map<std::uint64_t, Fade> fades;
     std::chrono::steady_clock::time_point last{};
     bool animating = false;
+    bool stale = false;
     std::unordered_map<std::uint64_t, std::pair<std::uint64_t, bool>> hidden;
     std::vector<Item> lastPlaced;
     std::uint64_t placedFrame = 0;
     std::chrono::steady_clock::time_point placedAt{};
     double placedAzimuth = 0.0;
     double placedTilt = 0.0;
+    Vec3 placedEye{};
     std::uint64_t placedData = 0;
 };
 
@@ -651,11 +653,12 @@ bool LabelLayer::available() {
     return loaded_ && usable_;
 }
 
-bool LabelLayer::animating() const { return ready_ && text_->animating; }
+bool LabelLayer::animating() const { return ready_ && (text_->animating || text_->stale); }
 
 void LabelLayer::beginFrame() {
     ++frame_;
     decodes_ = 0;
+    text_->stale = false;
     trim();
     if (ready_ && contours_.get() != contoursUploaded_) {
         if (contourBuffer_.id) sg_destroy_buffer(contourBuffer_);
@@ -962,6 +965,7 @@ void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dp
     const bool turned = std::abs(cam.azimuth - T.placedAzimuth) > 0.5 || std::abs(cam.tilt - T.placedTilt) > 0.5;
     const bool full = !primary || T.placedFrame == 0 || turned || dataKey != T.placedData ||
                       std::chrono::duration<double>(now - T.placedAt).count() >= kPlacementSeconds;
+    if (primary) T.stale = !full && length(eye - T.placedEye) > 0.001;
     std::vector<Item> placed;
     if (!full) {
         placed = T.lastPlaced;
@@ -1339,6 +1343,7 @@ void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dp
             T.placedAt = now;
             T.placedAzimuth = cam.azimuth;
             T.placedTilt = cam.tilt;
+            T.placedEye = eye;
             T.placedData = dataKey;
         }
     }
