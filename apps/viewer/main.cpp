@@ -600,8 +600,12 @@ void androidFrameRate() {
     if (!window || window == last || state->fps <= 0) return;
     last = window;
     using SetFrameRate = int32_t (*)(ANativeWindow*, float, int8_t);
-    static auto fn = reinterpret_cast<SetFrameRate>(dlsym(RTLD_DEFAULT, "ANativeWindow_setFrameRate"));
-    if (!fn) return;
+    static void* lib = dlopen("libandroid.so", RTLD_NOW);
+    static auto fn = lib ? reinterpret_cast<SetFrameRate>(dlsym(lib, "ANativeWindow_setFrameRate")) : nullptr;
+    if (!fn) {
+        __android_log_print(ANDROID_LOG_INFO, "OTKGlobeEngine", "setFrameRate unavailable");
+        return;
+    }
     const int32_t rc = fn(window, static_cast<float>(state->fps), 0);
     __android_log_print(ANDROID_LOG_INFO, "OTKGlobeEngine", "setFrameRate %d -> %d", state->fps, rc);
 }
