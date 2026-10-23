@@ -226,8 +226,6 @@ private:
         int roadCount = 0;
         int solidRoads = 0;
         bool drawn = false;
-        float mean[3] = {-1.0f, -1.0f, -1.0f};
-        std::shared_ptr<std::array<float, 192>> cells;
     };
     struct DrawTile {
         QuadKey key;
@@ -298,7 +296,6 @@ private:
         int first = 0;
         int count = 0;
         float tint[3] = {1.0f, 1.0f, 1.0f};
-        float bias[3] = {0.0f, 0.0f, 0.0f};
     };
     struct VectorDraw {
         const ImageryTexture* tile = nullptr;
@@ -355,8 +352,6 @@ private:
     void drawSnapshot(float alpha);
     static void dropSurface(SurfaceTile& s);
     int processLoads();
-    void learnColour(const TileId& id);
-    void colourGain(int layer, int z, float gain[3], float bias[3]) const;
     void evict();
     bool buildSurfaceJob(const QuadKey& k, double priority, SurfaceJob* job, std::vector<float>* verts,
                          std::vector<float>* fverts = nullptr, double texelDeg = 0, bool standIn = false);
@@ -432,18 +427,6 @@ private:
     std::unordered_map<QuadKey, TerrainTile, QuadKeyHash> terrain_;
     std::unordered_map<QuadKey, SurfaceTile, QuadKeyHash> surface_;
     std::unordered_map<TileId, ImageryTexture, TileIdHash> imagery_;
-    struct LevelColour {
-        float gain[3] = {1.0f, 1.0f, 1.0f};
-        float bias[3] = {0.0f, 0.0f, 0.0f};
-        int count = 0;
-    };
-    std::unordered_map<int, LevelColour> levelColour_;
-    std::unordered_map<int, std::array<float, 6>> colourApplied_;
-    std::unordered_set<TileId, TileIdHash> colourLearned_;
-    bool colourChanged_ = false;
-    double colourDirtyAt_ = -1.0e9;
-    int colourRenders_ = 0;
-    bool colourMatch_ = true;
     std::unordered_map<TileId, double, TileIdHash> failed_;
     std::unordered_map<TileId, int, TileIdHash> failCount_;
     std::vector<SurfaceTile> freeSurfaces_;
