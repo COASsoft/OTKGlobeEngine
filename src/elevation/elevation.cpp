@@ -1,5 +1,7 @@
 #include "elevation/elevation.hpp"
 
+#include "core/thread_name.hpp"
+
 #include "core/geoid.hpp"
 #include "core/math.hpp"
 #include "elevation/quantized_mesh.hpp"
@@ -560,7 +562,11 @@ float HeightGrid::sample(double x, double y) const {
 }
 
 ElevationManager::ElevationManager(int threads) {
-    for (int i = 0; i < threads; ++i) workers_.emplace_back([this] { run(); });
+    for (int i = 0; i < threads; ++i)
+        workers_.emplace_back([this] {
+            setThreadName("otk-elev");
+            run();
+        });
 }
 
 ElevationManager::~ElevationManager() {
