@@ -16,6 +16,9 @@
 #include <limits>
 #include <unordered_map>
 #include <unordered_set>
+#if !defined(_WIN32)
+#include <time.h>
+#endif
 
 #include "core/camera.hpp"
 #include "core/contours.hpp"
@@ -1949,8 +1952,23 @@ void Engine::updateLookahead() {
     I.havePose = true;
 }
 
+namespace {
+
+double threadCpuMs() {
+#if defined(_WIN32)
+    return 0.0;
+#else
+    timespec ts{};
+    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts);
+    return static_cast<double>(ts.tv_sec) * 1000.0 + static_cast<double>(ts.tv_nsec) / 1.0e6;
+#endif
+}
+
+}
+
 void Engine::frame(const sg_swapchain& swapchain) {
     auto cpuStart = std::chrono::steady_clock::now();
+    const double threadStart = threadCpuMs();
     impl_->input->update();
     impl_->animate();
     updateLookahead();
@@ -1961,7 +1979,7 @@ void Engine::frame(const sg_swapchain& swapchain) {
     impl_->globe.render(impl_->camera, &swapchain, nullptr, swapchain.width, swapchain.height);
     impl_->sanity();
     impl_->dirty = false;
-    impl_->globe.setCpuMs(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - cpuStart).count());
+    impl_->globe.setCpuMs(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - cpuStart).count(), threadCpuMs() - threadStart);
 }
 
 void Engine::setXrAnchor(const XrAnchor& anchor) {
