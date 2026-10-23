@@ -3416,8 +3416,10 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     int zCap = 99;
     if (uniformMix_ >= 1.0 && uniformShare_ > 0.0) {
         int available = 99;
+        int ideal = -1;
         for (const DrawTile& d : tiles) {
             int z = idealImageryZ(d.key);
+            ideal = std::max(ideal, z);
             if (expecting(d.key)) {
                 sg_view v{};
                 float u[4];
