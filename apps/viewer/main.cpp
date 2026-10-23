@@ -424,8 +424,8 @@ void logFrame(double dt) {
     const bool input = state->scriptNext < state->script.size() || state->gesturing || state->engine.input().active() || state->engine.animating();
     const double t = state->shotElapsed;
     std::fprintf(state->framesFile,
-                 "%.4f,%.2f,%.2f,%.6f,%.6f,%.4f,%.1f,%.1f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%.5f,%d,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.4f,%d,%d\n", t,
-                 dt * 1000.0, s.cpuMs, v.lat, v.lon, v.gsd, v.tilt, v.azimuth, s.terrainTiles, s.maxLevel, s.incompleteTiles, s.coarseTiles,
+                 "%.4f,%.2f,%.2f,%.2f,%.6f,%.6f,%.4f,%.1f,%.1f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%.5f,%d,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.4f,%d,%d\n", t,
+                 dt * 1000.0, s.cpuMs, s.cpuThreadMs, v.lat, v.lon, v.gsd, v.tilt, v.azimuth, s.terrainTiles, s.maxLevel, s.incompleteTiles, s.coarseTiles,
                  s.maxFallbackDepth, s.blankTiles, s.surfaceRenders, s.uploads, s.terrainBuilds, s.pendingRequests, s.popArea, s.pops, s.mergeArea,
                  s.terrainPopArea, s.blurArea, s.blurArea2, s.blurDepth, s.fadeArea, s.coverArea, busy ? 1 : 0, input ? 1 : 0);
     if (state->scriptNext == 0) return;
@@ -1215,7 +1215,7 @@ void parseArgs(int argc, char** argv) {
             if (state->framesFile) std::fclose(state->framesFile);
             state->framesFile = std::fopen(state->framesPath.c_str(), "w");
             if (state->framesFile)
-                std::fputs("t,dt_ms,cpu_ms,lat,lon,gsd,tilt,az,tiles,max_level,incomplete,coarse,depth,blank,renders,uploads,builds,pending,"
+                std::fputs("t,dt_ms,cpu_ms,thread_ms,lat,lon,gsd,tilt,az,tiles,max_level,incomplete,coarse,depth,blank,renders,uploads,builds,pending,"
                            "pop,pops,merge,terrain_pop,blur,blur2,blur_depth,fade,cover,busy,input\n",
                            state->framesFile);
 #if defined(_WIN32)
