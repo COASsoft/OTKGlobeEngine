@@ -3561,9 +3561,10 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     busy_ = pending || fading || mergeActive_ || snapshotShown_ || tilesBusy || stats_.pendingRequests > 0 || renders > 0 || builds > 0 || elevationChanged ||
             ((labelsOn_ || contours_) && labels_.animating()) || (buildingsOn_ && buildings_.busy());
     if (busyLog_ && busy_ && frame_ % 30 == 0)
-        std::fprintf(stderr, "[otk] busy frame %llu pending %d fading %d tiles %d requests %d renders %d builds %d elevation %d needs %zu\n",
-                     static_cast<unsigned long long>(frame_), pending ? 1 : 0, fading ? 1 : 0, tilesBusy ? 1 : 0, stats_.pendingRequests, renders, builds,
-                     elevationChanged ? 1 : 0, needs_.size());
+        std::fprintf(stderr, "[otk] busy frame %llu pending %d fading %d merging %d labels %d buildings %d tiles %d requests %d renders %d builds %d elevation %d needs %zu\n",
+                     static_cast<unsigned long long>(frame_), pending ? 1 : 0, fading ? 1 : 0, mergeActive_ ? 1 : 0,
+                     (labelsOn_ || contours_) && labels_.animating() ? 1 : 0, buildingsOn_ && buildings_.busy() ? 1 : 0, tilesBusy ? 1 : 0,
+                     stats_.pendingRequests, renders, builds, elevationChanged ? 1 : 0, needs_.size());
     if (busyLog_ && busy_ && frame_ % 30 == 0) std::fprintf(stderr, "[otk]   t %.2f base %d %s\n", now(), baseLayer_, loader_.debug().c_str());
     if (trace_) {
         int waitImagery = 0, waitTerrain = 0, unrendered = 0;
