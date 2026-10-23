@@ -2068,10 +2068,13 @@ void GlobeRenderer::profileMark(int section) {
         if (FILE* f = std::fopen(profilePath_.c_str(), "a")) {
             const char* names[8] = {"traverse", "overview+admit", "terrain", "work", "surface", "main", "overview-only", "pre-traverse"};
             for (int i = 0; i < 8; ++i) std::fprintf(f, "%s %.3f ", names[i], profileAcc_[i] / profileFrames_);
+            const char* subs[4] = {"main.globe", "main.labels", "main.overlay", "main.end"};
+            for (int i = 0; i < 4; ++i) std::fprintf(f, "%s %.3f ", subs[i], profileSub_[i] / profileFrames_);
             std::fputc(10, f);
             std::fclose(f);
         }
         for (double& a : profileAcc_) a = 0;
+        for (double& a : profileSub_) a = 0;
         profileFrames_ = 0;
     }
 }
@@ -2712,6 +2715,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     if (buildingsOn_) buildings_.bake(roofImagery(), flipSurface_);
 
     profileMark(5);
+    profileSub(-1);
     const RenderView* firstView = views && !views->empty() ? &views->front() : nullptr;
     const Camera& dc = firstView ? *firstView->cam : cam;
     auto ground = [this](double lat, double lon) { return elevationAt(lat, lon); };
@@ -3134,6 +3138,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         sg_draw(0, xray ? kGrid * kGrid * 6 : kIndexCount, 1);
     }
     if (!xray) drawObjects();
+    profileSub(0);
     std::vector<FeatureLayer::ExternalLabel> vectorLabels;
     if (!vectorLayers_.empty() && !labelsOn_) {
         std::unordered_set<TileId, TileIdHash> seen;
@@ -3204,6 +3209,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         auto above = [this](double lat, double lon) { return buildingsOn_ ? buildings_.heightAt(lat, lon) : 0.0; };
         labels_.drawLabels(dc, ground, dpiScale_, visibleRects, overlayTiles, 0, labelsOn_, above);
     }
+    profileSub(1);
     features_.drawOverlay(dc, ground, dpiScale_, flipSurface_, &vectorLabels);
     if (!capture && snapshotShown_) {
         float alpha = 1.0f;
@@ -3215,7 +3221,9 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         drawSnapshot(alpha);
     }
     if (!capture && !views && overlay_) overlay_(width, height);
+    profileSub(2);
     sg_end_pass();
+    profileSub(3);
     if (capture) {
         sg_pass show{};
         show.action.colors[0].load_action = SG_LOADACTION_CLEAR;
