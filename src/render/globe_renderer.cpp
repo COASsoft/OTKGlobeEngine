@@ -1859,14 +1859,19 @@ void GlobeRenderer::traverse(const Camera& cam, const QuadKey& k, std::vector<Dr
             if (kt != transitions_.end() && kt->second.frame + 1 >= frame_ && kt->second.start >= 0.0 && t - kt->second.start < kFadeSeconds)
                 m.start = tick;
         }
+        bool capped = false;
         if (uniformMix_ >= 0.5 && uniformZ_ < 99 && !settleFrozen_) {
             const int zk = surfaceZ(k);
             if (zk >= 0 && uniformZ_ > zk && uniformZ_ - zk <= kMaxUniformDrop) {
                 pendingMergeZ_ = std::min(pendingMergeZ_, zk);
                 m.start = t;
             }
+            if (zk > uniformZ_) {
+                m.start = t;
+                capped = true;
+            }
         }
-        const double p = settleFrozen_ || stepInstant_ ? 1.0 : std::max(0.0, (t - m.start) / (mergeSeconds_ / std::max(1.0, zoomRate_)));
+        const double p = settleFrozen_ || (stepInstant_ && !capped) ? 1.0 : std::max(0.0, (t - m.start) / (mergeSeconds_ / std::max(1.0, zoomRate_)));
         if (p < 1.0) {
             mergeActive_ = true;
             bool drawable = true;
