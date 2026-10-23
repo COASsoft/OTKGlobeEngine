@@ -227,7 +227,7 @@ private:
         int solidRoads = 0;
         bool drawn = false;
         float mean[3] = {-1.0f, -1.0f, -1.0f};
-        float spread[3] = {0.0f, 0.0f, 0.0f};
+        std::shared_ptr<std::array<float, 192>> cells;
     };
     struct DrawTile {
         QuadKey key;
@@ -442,6 +442,7 @@ private:
     std::unordered_set<TileId, TileIdHash> colourLearned_;
     bool colourChanged_ = false;
     double colourDirtyAt_ = -1.0e9;
+    int colourRenders_ = 0;
     bool colourMatch_ = true;
     std::unordered_map<TileId, double, TileIdHash> failed_;
     std::unordered_map<TileId, int, TileIdHash> failCount_;
