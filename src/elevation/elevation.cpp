@@ -781,6 +781,11 @@ void ElevationManager::clearFailures() {
     ++version_;
 }
 
+bool ElevationManager::hasResults() const {
+    std::lock_guard lock(mutex_);
+    return !done_.empty();
+}
+
 int ElevationManager::pending() const {
     std::lock_guard lock(mutex_);
     return static_cast<int>(queue_.size() + inflight_.size());
