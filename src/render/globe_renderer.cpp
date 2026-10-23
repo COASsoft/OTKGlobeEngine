@@ -1538,6 +1538,7 @@ void GlobeRenderer::traverse(const Camera& cam, const QuadKey& k, std::vector<Dr
         }
         const double p = (t - m.start) / (mergeSeconds_ / std::max(1.0, zoomRate_));
         if (p < 1.0) {
+            mergeActive_ = true;
             bool drawable = true;
             NodeInfo kin[4];
             for (int i = 0; i < 4 && drawable; ++i) {
@@ -2283,6 +2284,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     terrain({0, 0, 0});
     terrain({0, 1, 0});
     profileMark(0);
+    mergeActive_ = false;
     traverse(cam, {0, 0, 0}, tiles);
     traverse(cam, {0, 1, 0}, tiles);
     profileMark(1);
@@ -3165,7 +3167,6 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 fadeTexture(dt.key, dt.merge, target->second.version, mergeView, mergeUv)) {
                 const double m = std::clamp(static_cast<double>(dt.mergeT), 0.0, 1.0);
                 mergeMix = static_cast<float>(m * m * (3.0 - 2.0 * m));
-                fading = true;
                 tr.merge = dt.merge;
                 tr.mergeVersion = target->second.version;
                 tr.mergeT = dt.mergeT;
@@ -3212,12 +3213,15 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             if (shownDepth >= 1) visBlur += area;
             if (shownDepth >= 2) visBlur2 += area;
             visDepth += area * shownDepth;
-            const bool faded = blend < 0.999f;
+            const bool faded = blend < 0.999f || (mergeMix > 0.0f && mergeMix < 0.999f);
             if (faded) visFade += area;
             const bool held = snapshotShown_ && snapshotFade_ < 0.0;
+            const bool merged = dt.merge.level >= 0 && mergeMix >= 0.999f;
+            const QuadKey shownKey = merged ? dt.merge : src;
+            const int shownVer = merged ? tr.mergeVersion : shownVersion;
             Shown& sh = shown_[dt.key];
             if (sh.frame + 1 == frame_) {
-                if (!held && !faded && (!(sh.src == src) || sh.version != shownVersion)) {
+                if (!held && !faded && (!(sh.src == shownKey) || sh.version != shownVer)) {
                     visPop += area;
                     ++visPops;
                     if (visualLog_)
@@ -3232,7 +3236,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                     auto a = shown_.find({dt.key.level - up, dt.key.x >> up, dt.key.y >> up});
                     if (a != shown_.end() && a->second.frame + 1 == frame_) before = a->second.src.level;
                 }
-                if (before >= 0 && src.level > before) {
+                if (before >= 0 && shownKey.level > before) {
                     visPop += area;
                     ++visPops;
                     if (visualLog_)
@@ -3241,16 +3245,15 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 } else if (before < 0) {
                     for (int i = 0; i < 4; ++i) {
                         auto c = shown_.find({dt.key.level + 1, dt.key.x * 2 + (i & 1), dt.key.y * 2 + (i >> 1)});
-                        if (c != shown_.end() && c->second.frame + 1 == frame_ && c->second.src.level > src.level) {
+                        if (c != shown_.end() && c->second.frame + 1 == frame_ && c->second.src.level > shownKey.level) {
                             visMerge += area;
                             break;
                         }
                     }
                 }
             }
-            const bool merged = dt.merge.level >= 0 && mergeMix > 0.99f;
-            sh.src = merged ? dt.merge : src;
-            sh.version = merged ? tr.mergeVersion : shownVersion;
+            sh.src = shownKey;
+            sh.version = shownVer;
             sh.terrain = tt.version;
             sh.frame = frame_;
         }
@@ -3555,7 +3558,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         }
     }
     viewComplete_ = incomplete == 0;
-    busy_ = pending || fading || snapshotShown_ || tilesBusy || stats_.pendingRequests > 0 || renders > 0 || builds > 0 || elevationChanged ||
+    busy_ = pending || fading || mergeActive_ || snapshotShown_ || tilesBusy || stats_.pendingRequests > 0 || renders > 0 || builds > 0 || elevationChanged ||
             ((labelsOn_ || contours_) && labels_.animating()) || (buildingsOn_ && buildings_.busy());
     if (busyLog_ && busy_ && frame_ % 30 == 0)
         std::fprintf(stderr, "[otk] busy frame %llu pending %d fading %d tiles %d requests %d renders %d builds %d elevation %d needs %zu\n",
