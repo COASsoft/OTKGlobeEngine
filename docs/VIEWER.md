@@ -14,7 +14,7 @@ otk_viewer [file or folder ...] [--view lat,lon,gsd,tilt,azimuth] [--preset 0..3
            [--first-person heading,pitch[,height]] [--download w,s,e,n,minz,maxz]
            [--shot out.png] [--shot-timeout s] [--script file] [--film dir] [--film-every s]
            [--zoom-test lat,lon,gsd,tilt,az,seconds] [--zoom-start s] [--diag 1]
-           [--frames file.csv] [--exit-after s] [--clear-cache 1] [--env NAME=VALUE]
+           [--frames file.csv] [--exit-after s] [--clear-cache 1] [--env NAME=VALUE] [--fps n] [--idle-fps n]
 ```
 
 - Drop files or folders on the window, or pass them as arguments, to open them: KML/KMZ (with overlays and models), GeoJSON, GPX, Shapefile, CoT, CSV, GML, TAK data packages, ATAK iconsets, MBTiles, PMTiles, GeoPackage, osmdroid/RMaps/OsmAnd archives, MOBAC sources, DTED/HGT files or folders, Cesium terrain folders, 3D Tiles, LAS, glTF/OBJ/COLLADA models (placed at the view centre) and, with GDAL, GeoTIFF imagery and DEMs. The view flies to what was loaded and the title bar reports what was added.
@@ -35,13 +35,15 @@ otk_viewer [file or folder ...] [--view lat,lon,gsd,tilt,azimuth] [--preset 0..3
   - `seconds view lat lon gsd tilt azimuth`
   - `seconds fly lat lon gsd tilt azimuth duration`
 - `--film` saves half-size frames every `--film-every` seconds with a `film.csv` of pending loads.
-- `--frames file.csv` writes one row per frame: timing, view, tiles, loads, and the share of the screen that switched without a fade, merged without a fade, faded, or showed imagery one or more levels coarser than wanted. It also writes `file.csv.txt` with totals for the input and settle periods.
+- `--frames file.csv` writes one row per frame: timing, view, tiles, loads, and the share of the screen that switched without a fade, merged without a fade, faded, or showed imagery one or more levels coarser than wanted. It also writes `file.csv.txt` with totals for the input and settle periods: frames actually drawn (`drawn_frames`), how often new detail appeared (`reveal_frames`, `tile_reveals`), seconds until loading finished (`settled_after_input`), data downloaded (`net_mb`, `net_requests`), and tiles loaded and dropped unseen (`imagery_loads`, `imagery_wasted`).
 - `--exit-after s` quits that many seconds after the script's input ends.
 - `--clear-cache 1` empties the cache folder first.
+- `--idle-fps n` slows the viewer to about `n` frames per second once nothing has changed for half a second (20 by default, 0 off). Any input brings back full speed at once.
+- `--fps n` asks an Android screen for `n` frames per second (60 by default, 0 leaves the system's choice). This keeps 90 and 120 Hz phones from drawing the map more often than needed.
 - `--env NAME=VALUE` sets one of the `OTK_` settings below. This is the way to set them on Android.
 - `--diag 1` logs subtree collapses and deep-fallback tiles.
 - On Android the viewer also reads arguments from `Android/data/com.otkglobeengine.viewer/files/args.txt` and logs statistics under the logcat tag `OTKGlobeEngine`.
-- Environment: `OTK_LOD_MORPH=0..1` level-of-detail colour blend (1 by default, 0 off; always off on software rasterizers such as llvmpipe), `OTK_TRACE=file` per-frame trace, `OTK_WATCHDOG=file` main-thread stack dump on a 3 s stall, `OTK_LOG=file` sokol validation messages, `OTK_PROFILE=file` per-section CPU times (wall and thread time for the main pass), `OTK_MERGE_FADE=seconds` how long zoom-out merges fade (0 off), `OTK_VISUAL_LOG=file` one line per untidy tile change, `OTK_PERF=file` frame and cache statistics, `OTK_NET_DELAY_MS` / `OTK_NET_JITTER_MS` / `OTK_NET_FAIL_RATE` / `OTK_NET_TIMEOUT_RATE` / `OTK_NET_CORRUPT_RATE` / `OTK_NET_404_RATE` / `OTK_NET_UNREACHABLE` network fault injection.
+- Environment: `OTK_LOD_MORPH=0..1` level-of-detail colour blend (1 by default, 0 off; always off on software rasterizers such as llvmpipe), `OTK_TRACE=file` per-frame trace, `OTK_WATCHDOG=file` main-thread stack dump on a 3 s stall, `OTK_LOG=file` sokol validation messages, `OTK_PROFILE=file` per-section CPU times (wall and thread time for the main pass), `OTK_MERGE_FADE=seconds` how long zoom-out merges fade (0 off), `OTK_REVEAL_HOLD=seconds` how long ready detail may wait for slower tiles so an area sharpens at once (0.6 by default, 0 shows each tile as soon as it is ready), `OTK_REVEAL_GAP=seconds` shortest time between two reveals (0.3), `OTK_MOTION_HOLD=seconds` how long new detail may wait while the map moves (2), `OTK_BUSY_LOG=1` logs why the engine keeps drawing, `OTK_VISUAL_LOG=file` one line per untidy tile change, `OTK_PERF=file` frame and cache statistics, `OTK_NET_DELAY_MS` / `OTK_NET_JITTER_MS` / `OTK_NET_FAIL_RATE` / `OTK_NET_TIMEOUT_RATE` / `OTK_NET_CORRUPT_RATE` / `OTK_NET_404_RATE` / `OTK_NET_UNREACHABLE` network fault injection.
 
 ## Building from source
 
