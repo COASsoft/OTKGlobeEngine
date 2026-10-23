@@ -860,7 +860,8 @@ LabelLayer::Batch* LabelLayer::batch(int tier, int cell, bool load) {
     return &(batches_[id] = std::move(b));
 }
 
-void LabelLayer::buildLines3D(const std::vector<float>& inst, double originLat, double originLon, const GroundFn& ground, std::vector<float>& out) {
+void LabelLayer::buildLines3D(const std::vector<float>& inst, double originLat, double originLon, const GroundFn& ground, std::vector<float>& out,
+                              double pieceDeg) {
     out.clear();
     if (inst.size() < 6) return;
     const Vec3 origin = geodeticToEcef(originLat, originLon, 0.0);
@@ -882,16 +883,28 @@ void LabelLayer::buildLines3D(const std::vector<float>& inst, double originLat, 
     };
     out.reserve(inst.size() / 6 * 12);
     for (size_t i = 0; i + 5 < inst.size(); i += 6) {
-        const Vec3 a = point(inst[i], inst[i + 1]);
-        const Vec3 c = point(inst[i + 2], inst[i + 3]);
-        out.insert(out.end(), {static_cast<float>(a.x), static_cast<float>(a.y), static_cast<float>(a.z), static_cast<float>(c.x),
-                               static_cast<float>(c.y), static_cast<float>(c.z), inst[i], inst[i + 1], inst[i + 2], inst[i + 3],
-                               static_cast<float>(inst[i + 4] * 111320.0), inst[i + 5]});
+        const float ax = inst[i], ay = inst[i + 1], bx = inst[i + 2], by = inst[i + 3];
+        const double coslat = std::max(std::cos((originLat + 0.5 * (ay + by)) * kDegToRad), 0.05);
+        const double len = std::hypot((bx - ax) * coslat, by - ay);
+        const int pieces = pieceDeg > 0.0 ? std::clamp(static_cast<int>(std::ceil(len / pieceDeg)), 1, 4096) : 1;
+        float px = ax, py = ay;
+        Vec3 a = point(ax, ay);
+        for (int k = 1; k <= pieces; ++k) {
+            const float t = static_cast<float>(k) / static_cast<float>(pieces);
+            const float qx = k == pieces ? bx : ax + (bx - ax) * t, qy = k == pieces ? by : ay + (by - ay) * t;
+            const Vec3 c = point(qx, qy);
+            const double along = (inst[i + 4] + len * static_cast<double>(k - 1) / pieces) * 111320.0;
+            out.insert(out.end(), {static_cast<float>(a.x), static_cast<float>(a.y), static_cast<float>(a.z), static_cast<float>(c.x),
+                                   static_cast<float>(c.y), static_cast<float>(c.z), px, py, qx, qy, static_cast<float>(along), inst[i + 5]});
+            a = c;
+            px = qx;
+            py = qy;
+        }
     }
 }
 
-void LabelLayer::drawBorders3D(const Camera& cam, const GroundFn& ground, double dpi, const std::vector<GeoRect>& visible, int version) {
-    if (!available() || visible.empty() || cam.width <= 0 || cam.height <= 0) return;
+bool LabelLayer::drawBorders3D(const Camera& cam, const GroundFn& ground, double dpi, const std::vector<GeoRect>& visible, int version) {
+    if (!available() || visible.empty() || cam.width <= 0 || cam.height <= 0) return true;
     const double unitDeg = std::max(cam.gsd, 1e-3) / 111320.0;
     std::vector<std::pair<int, int>> cells;
     for (const GeoRect& r : visible) {
@@ -900,7 +913,7 @@ void LabelLayer::drawBorders3D(const Camera& cam, const GroundFn& ground, double
     }
     std::sort(cells.begin(), cells.end());
     cells.erase(std::unique(cells.begin(), cells.end()), cells.end());
-    if (cells.empty()) return;
+    if (cells.empty()) return true;
     const double meters = unitDeg * 111320.0;
     bline3d_params_t p{};
     p.view[0] = static_cast<float>(cam.width);
@@ -912,28 +925,24 @@ void LabelLayer::drawBorders3D(const Camera& cam, const GroundFn& ground, double
     p.clip[2] = -1.0f;
     p.dashk[0] = static_cast<float>(1.0 / std::max(cam.gsd, 1e-3));
     for (int l = 0; l < 4; ++l) {
-        const BorderStyle& s = kBorders[l];
+        const BorderStyle& st = kBorders[l];
         const bool hidden = (l == 3 && meters > kCountyMeters) || (l == 2 && meters > kStateMeters);
-        p.styles[l][0] = hidden ? 0.0f : s.width;
-        p.styles[l][1] = s.casing;
-        p.styles[l][2] = s.on;
-        p.styles[l][3] = s.off;
-        std::memcpy(p.colors[l], s.color, sizeof(p.colors[l]));
+        p.styles[l][0] = hidden ? 0.0f : st.width;
+        p.styles[l][1] = st.casing;
+        p.styles[l][2] = st.on;
+        p.styles[l][3] = st.off;
+        std::memcpy(p.colors[l], st.color, sizeof(p.colors[l]));
     }
     const auto start = std::chrono::steady_clock::now();
-    const Vec3 eye = cam.eye();
-    bool applied = false;
     bool forced = false;
+    bool ready = true;
     for (const auto& [tier, cell] : cells) {
         Batch* b = batch(tier, cell, true);
-        if (!b || b->count <= 0) continue;
-        const Vec3 origin = geodeticToEcef(b->south, b->west, 0.0);
-        toFloat(cam.viewProjRel() * translation(origin - eye), p.mvp);
-        const Vec3 local = eye - origin;
-        p.lift[0] = static_cast<float>(local.x);
-        p.lift[1] = static_cast<float>(local.y);
-        p.lift[2] = static_cast<float>(local.z);
-        p.lift[3] = 0.003f;
+        if (!b) {
+            ready = false;
+            continue;
+        }
+        if (b->count <= 0) continue;
         for (int l = 0; l < 4; ++l) {
             const int first = b->levelFirst[l], n = b->levelFirst[l + 1] - first;
             if (n <= 0 || p.styles[l][0] <= 0.0f) continue;
@@ -946,7 +955,7 @@ void LabelLayer::drawBorders3D(const Camera& cam, const GroundFn& ground, double
                 const std::vector<float> part(b->inst.begin() + static_cast<std::ptrdiff_t>(first) * 6,
                                               b->inst.begin() + static_cast<std::ptrdiff_t>(first + n) * 6);
                 std::vector<float> out;
-                buildLines3D(part, b->south, b->west, ground, out);
+                buildLines3D(part, b->south, b->west, ground, out, 0.01);
                 if (b->buffer3d[l].id) sg_destroy_buffer(b->buffer3d[l]);
                 b->buffer3d[l] = {};
                 b->count3d[l] = 0;
@@ -959,7 +968,26 @@ void LabelLayer::drawBorders3D(const Camera& cam, const GroundFn& ground, double
                     b->count3d[l] = static_cast<int>(out.size() / 12);
                 }
             }
-            if (!b->buffer3d[l].id || b->count3d[l] <= 0 || sg_query_buffer_state(b->buffer3d[l]) != SG_RESOURCESTATE_VALID) continue;
+            if (!b->buffer3d[l].id) ready = false;
+        }
+    }
+    if (ready) lastBorderCells_ = cells;
+    const Vec3 eye = cam.eye();
+    bool applied = false;
+    for (const auto& [tier, cell] : lastBorderCells_) {
+        Batch* b = batch(tier, cell, false);
+        if (!b || b->count <= 0) continue;
+        const Vec3 origin = geodeticToEcef(b->south, b->west, 0.0);
+        toFloat(cam.viewProjRel() * translation(origin - eye), p.mvp);
+        const Vec3 local = eye - origin;
+        p.lift[0] = static_cast<float>(local.x);
+        p.lift[1] = static_cast<float>(local.y);
+        p.lift[2] = static_cast<float>(local.z);
+        p.lift[3] = 0.008f;
+        for (int l = 0; l < 4; ++l) {
+            if (p.styles[l][0] <= 0.0f || !b->buffer3d[l].id || b->count3d[l] <= 0 ||
+                sg_query_buffer_state(b->buffer3d[l]) != SG_RESOURCESTATE_VALID)
+                continue;
             if (!applied) {
                 sg_apply_pipeline(line3dPipeline_);
                 applied = true;
@@ -973,6 +1001,7 @@ void LabelLayer::drawBorders3D(const Camera& cam, const GroundFn& ground, double
         }
     }
     road3dPass_ = -1;
+    return ready;
 }
 
 void LabelLayer::warmLines3D() {
@@ -986,6 +1015,22 @@ void LabelLayer::warmLines3D() {
     sg_apply_uniforms(UB_bline3d_params, SG_RANGE(p));
     sg_draw(0, 6, 1);
     road3dPass_ = -1;
+}
+
+int LabelLayer::roadRank(float style) {
+    const int cls = std::clamp(static_cast<int>(style + 0.5f) - 4, 0, 11);
+    int rank = 0;
+    for (int i = 0; i < 12; ++i)
+        if (kRoads[i].zoom[0] < kRoads[cls].zoom[0] || (kRoads[i].zoom[0] == kRoads[cls].zoom[0] && i < cls)) ++rank;
+    return rank;
+}
+
+int LabelLayer::visibleRoadRanks(const Camera& cam, double dpi) {
+    const double zoom = std::log2(156543.034 * std::max(std::cos(cam.focus.lat * kDegToRad), 1e-3) / std::max(cam.gsd * dpi, 1e-6));
+    int visible = 0;
+    for (int i = 0; i < 12; ++i)
+        if (kRoads[i].zoom[0] <= zoom) ++visible;
+    return visible;
 }
 
 void LabelLayer::beginRoads3D(const Camera& cam, double dpi) {
@@ -1031,7 +1076,7 @@ void LabelLayer::drawRoads3D(sg_buffer buffer, int first, int count, const Vec3&
     p.lift[0] = static_cast<float>(local.x);
     p.lift[1] = static_cast<float>(local.y);
     p.lift[2] = static_cast<float>(local.z);
-    p.lift[3] = 0.003f;
+    p.lift[3] = 0.008f;
     std::memcpy(p.clip, clip, sizeof(p.clip));
     p.dashk[0] = road3dDash_;
     std::memcpy(p.styles, road3dStyles_, sizeof(p.styles));
