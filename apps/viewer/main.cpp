@@ -235,6 +235,7 @@ void init() {
     if (cache.empty()) cache = otk::defaultCacheDirectory();
     if (!cache.empty()) {
         std::error_code ec;
+        if (state->clearCache) std::filesystem::remove_all(cache, ec);
         std::filesystem::create_directories(cache, ec);
         state->engine.setCacheDirectory(cache);
     }
