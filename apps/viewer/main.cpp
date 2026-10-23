@@ -429,8 +429,9 @@ void writeSummary() {
                       T.incomplete, T.jank25, T.jank50, T.worst, T.revealFrames, T.reveals, T.reveal);
         text += line;
     }
-    std::snprintf(line, sizeof(line), "settled_after_input=%.2f fade_misses=%lld\n",
-                  state->settledAt >= 0 && state->inputEnd >= 0 ? state->settledAt - state->inputEnd : -1.0, state->engine.stats().fadeMisses);
+    std::snprintf(line, sizeof(line), "settled_after_input=%.2f fade_misses=%lld imagery_loads=%lld imagery_wasted=%lld\n",
+                  state->settledAt >= 0 && state->inputEnd >= 0 ? state->settledAt - state->inputEnd : -1.0, state->engine.stats().fadeMisses,
+                  state->engine.stats().imageryLoads, state->engine.stats().imageryWasted);
     text += line;
     if (FILE* f = std::fopen((state->framesPath + ".txt").c_str(), "w")) {
         std::fputs(text.c_str(), f);
