@@ -204,6 +204,7 @@ private:
         double lineDeg = 0.0;
         bool overlaysOmitted = false;
         bool presentable = false;
+        std::uint64_t shown = 0;
     };
     struct ImageryTexture {
         sg_image image{};
