@@ -766,6 +766,7 @@ void Controls::draw(int width, int height, double dpi) {
     if (!flags_ || width <= 0 || height <= 0 || !ready()) return;
     const float d = static_cast<float>(std::clamp(dpi, 0.5, 4.0));
     if (!font_ || font_->dpi != d) {
+        fits_.clear();
         if (!font_) font_ = std::make_unique<Font>();
         if (!font_->build(d) && !font_->image.id) {
             failed_ = true;
