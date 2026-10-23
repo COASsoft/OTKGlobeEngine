@@ -110,6 +110,7 @@ struct Stats {
     double blurArea2 = 0;
     double blurDepth = 0;
     double fadeArea = 0;
+    double coverArea = 0;
     int pops = 0;
 };
 
