@@ -264,6 +264,7 @@ private:
         bool held = false;
         double heldSince = -1.0;
         char why = 0;
+        bool finishing = false;
     };
     struct Merge {
         double start = 0.0;
@@ -284,8 +285,12 @@ private:
     int heldPrev_ = 0;
     double oldestHeldPrev_ = 0.0;
     int waitingPrev_ = 0;
+    int tilesPrev_ = 0;
+    double revealHoldLong_ = 1.5;
+    double revealShare_ = 0.03;
     int refineWaiting_ = 0;
     double mergeSeconds_ = 0.35;
+    double mergeGap_ = 0.3;
     struct SurfaceDraw {
         sg_view texture{};
         float opacity = 1.0f;
