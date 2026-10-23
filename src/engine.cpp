@@ -697,11 +697,15 @@ void Engine::shutdown() {
 }
 
 void Engine::setViewport(int width, int height, float dpiScale) {
-    impl_->camera.width = std::max(width, 1);
-    impl_->camera.height = std::max(height, 1);
+    width = std::max(width, 1);
+    height = std::max(height, 1);
+    const bool changed = width != impl_->camera.width || height != impl_->camera.height || dpiScale != impl_->dpiScale;
+    impl_->input->setViewport(width, height, dpiScale);
+    if (!changed) return;
+    impl_->camera.width = width;
+    impl_->camera.height = height;
     impl_->dpiScale = dpiScale;
     impl_->globe.setDpiScale(dpiScale);
-    impl_->input->setViewport(width, height, dpiScale);
     impl_->camera.update();
     impl_->dirty = true;
 }
