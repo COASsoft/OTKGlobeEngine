@@ -277,7 +277,7 @@ private:
     double revealGap_ = 0.3;
     double lastReveal_ = -1.0e9;
     double motionHold_ = 2.0;
-    double uniformShare_ = 0.9;
+    double uniformShare_ = 1.0;
     int uniformDepth_ = 0;
     double lastMotion_ = -1.0e9;
     double motionKey_[5] = {};
@@ -287,9 +287,6 @@ private:
     int heldPrev_ = 0;
     double oldestHeldPrev_ = 0.0;
     int waitingPrev_ = 0;
-    int tilesPrev_ = 0;
-    double revealHoldLong_ = 1.5;
-    double revealShare_ = 0.03;
     int refineWaiting_ = 0;
     double mergeSeconds_ = 0.35;
     double mergeGap_ = 0.3;
