@@ -4165,14 +4165,15 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     };
     if (skyVisible_ && !xray) drawSky(dc);
     if (!xray) drawObjects();
-    if (!capture && snapshotShown_ && settleSnapshot_) {
+    auto drawSettle = [&]() {
+        if (capture || !snapshotShown_ || !settleSnapshot_) return;
         float warp[12];
         bool steered = false;
         for (int i = 0; i < 5; ++i) steered = steered || std::abs(motionKey_[i] - snapshotKey_[i]) > 1.0e-9;
         if (!steered) drawSnapshot(snapshotAlpha());
         else if (snapshotWarp(dc, warp)) drawSnapshot(snapshotAlpha(), warp);
         else snapshotShown_ = false;
-    }
+    };
     profileSub(0);
     std::vector<FeatureLayer::ExternalLabel> vectorLabels;
     if (!vectorLayers_.empty() && !labelsOn_) {
