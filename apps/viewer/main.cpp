@@ -175,18 +175,6 @@ void init() {
     }
     otk::configureGfx(desc);
     if (const char* wd = std::getenv("OTK_WATCHDOG")) watchdogStart(wd);
-    sg_setup(&desc);
-    state->engine.init();
-    state->engine.input().onTap([](double x, double y, int taps, otk::PointerType) {
-        if (taps != 1) return;
-        otk::Feature f;
-        std::uint64_t id = state->engine.hitTest(x, y, 16.0 * sapp_dpi_scale());
-        state->selected = id && state->engine.feature(id, f) ? (f.name.empty() ? "feature " + std::to_string(id) : f.name) : "";
-    });
-#if defined(_WIN32)
-    installPointerInput(sapp_win32_get_hwnd(), &state->engine.input());
-#endif
-    state->engine.setViewport(sapp_width(), sapp_height(), sapp_dpi_scale());
 #if defined(__ANDROID__)
     {
         auto* activity = static_cast<const ANativeActivity*>(sapp_android_get_native_activity());
@@ -207,6 +195,18 @@ void init() {
         }
     }
 #endif
+    sg_setup(&desc);
+    state->engine.init();
+    state->engine.input().onTap([](double x, double y, int taps, otk::PointerType) {
+        if (taps != 1) return;
+        otk::Feature f;
+        std::uint64_t id = state->engine.hitTest(x, y, 16.0 * sapp_dpi_scale());
+        state->selected = id && state->engine.feature(id, f) ? (f.name.empty() ? "feature " + std::to_string(id) : f.name) : "";
+    });
+#if defined(_WIN32)
+    installPointerInput(sapp_win32_get_hwnd(), &state->engine.input());
+#endif
+    state->engine.setViewport(sapp_width(), sapp_height(), sapp_dpi_scale());
     std::string cache = state->cacheDir;
     if (cache.empty()) cache = otk::defaultCacheDirectory();
     if (!cache.empty()) {
