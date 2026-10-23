@@ -47,6 +47,7 @@ constexpr int kIconSize = 64;
 constexpr int kIcons = 4;
 constexpr int kAtlas = 1024;
 constexpr float kFadeIn = 0.25f;
+constexpr double kPlacementSeconds = 0.1;
 constexpr float kFadeOut = 0.2f;
 
 enum Tier { Fine = 0, Coarse = 1, Overview = 2 };
@@ -512,6 +513,12 @@ struct LabelLayer::Text {
     std::chrono::steady_clock::time_point last{};
     bool animating = false;
     std::unordered_map<std::uint64_t, std::pair<std::uint64_t, bool>> hidden;
+    std::vector<Item> lastPlaced;
+    std::uint64_t placedFrame = 0;
+    std::chrono::steady_clock::time_point placedAt{};
+    double placedAzimuth = 0.0;
+    double placedTilt = 0.0;
+    std::uint64_t placedData = 0;
 };
 
 LabelLayer::LabelLayer() : text_(std::make_unique<Text>()) {}
@@ -941,161 +948,6 @@ void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dp
         return it->second.height + (h - it->second.height) * std::min(1.0, dt * 6.0);
     };
 
-    struct Candidate {
-        const labels::Place* place = nullptr;
-        const TileMark* mark = nullptr;
-        std::uint64_t key = 0;
-        double height = 0.0;
-        float x = 0, y = 0, zoom = 0, priority = 0;
-        bool held = false;
-    };
-    std::vector<Candidate> candidates;
-    std::unordered_set<std::string_view> names;
-
-    if (bundled && !visible.empty()) {
-        std::vector<int> cells;
-        for (const GeoRect& r : visible) {
-            const int c0 = std::clamp(static_cast<int>(std::floor((r.west + 180.0) / labels::kPlaceCell)), 0, labels::kPlaceCols - 1);
-            const int c1 = std::clamp(static_cast<int>(std::floor((r.east + 180.0) / labels::kPlaceCell)), 0, labels::kPlaceCols - 1);
-            const int r0 = std::clamp(static_cast<int>(std::floor((r.south + 90.0) / labels::kPlaceCell)), 0, labels::kPlaceRows - 1);
-            const int r1 = std::clamp(static_cast<int>(std::floor((r.north + 90.0) / labels::kPlaceCell)), 0, labels::kPlaceRows - 1);
-            for (int row = r0; row <= r1; ++row)
-                for (int col = c0; col <= c1; ++col) cells.push_back(row * labels::kPlaceCols + col);
-        }
-        std::sort(cells.begin(), cells.end());
-        cells.erase(std::unique(cells.begin(), cells.end()), cells.end());
-        for (int cell : cells) {
-            const double south = -90.0 + (cell / labels::kPlaceCols) * labels::kPlaceCell;
-            const double west = -180.0 + (cell % labels::kPlaceCols) * labels::kPlaceCell;
-            const double plat = std::clamp(eyeGeo.lat, south, south + labels::kPlaceCell);
-            const double plon = std::clamp(eyeGeo.lon, west, west + labels::kPlaceCell);
-            const double cellZoom = zoomAt(plat, length(geodeticToEcef(plat, plon, 0.0) - eye)) + 0.5;
-            const int band = static_cast<int>(std::floor(cellZoom));
-            for (std::uint32_t i = data->cellBegin(cell); i < data->cellEnd(cell) && candidates.size() < kMaxCandidates; ++i) {
-                const labels::Place& p = data->places()[i];
-                if (p.minZoom / 10 > band) break;
-                const double minz = p.minZoom * 0.1;
-                if (minz > cellZoom) continue;
-                Vec3 e = geodeticToEcef(p.lat, p.lon, 0.0);
-                if (dot(normalize(e), eye - e) <= 0.0) continue;
-                double sx, sy;
-                if (!project(e, sx, sy) || sx < -200 || sy < -100 || sx > W + 200 || sy > H + 100) continue;
-                const std::uint64_t key = 0x8000000000000000ull | i;
-                const bool held = recent(key);
-                const double h = height(key, p.lat, p.lon);
-                e = geodeticToEcef(p.lat, p.lon, h);
-                if (!project(e, sx, sy) || sx < -40 || sy < -20 || sx > W + 40 || sy > H + 20) continue;
-                const double z = zoomAt(p.lat, length(e - eye));
-                const double slack = held ? 0.3 : 0.0;
-                if (z < minz - slack || (p.maxZoom != 255 && z >= p.maxZoom * 0.1 + slack)) continue;
-                float base = 0.8f;
-                switch (p.kind) {
-                case labels::Kind::Country: base = 0.0f; break;
-                case labels::Kind::State: base = 1.4f; break;
-                case labels::Kind::Suburb: base = 3.0f; break;
-                case labels::Kind::County: base = 4.0f; break;
-                default: break;
-                }
-                Candidate c;
-                c.place = &p;
-                c.key = key;
-                c.height = h;
-                c.x = static_cast<float>(sx);
-                c.y = static_cast<float>(sy);
-                c.zoom = static_cast<float>(z);
-                c.priority = base + static_cast<float>(minz) - (held ? 1.5f : 0.0f);
-                c.held = held;
-                candidates.push_back(c);
-                names.insert(data->name(p));
-            }
-        }
-    }
-
-    struct Cover {
-        int z;
-        double west, south, east, north;
-    };
-    std::vector<Cover> covers;
-    for (const VectorTile* tile : overlay) {
-        if (!tile->overlay || tile->z <= 0) continue;
-        const double n = std::ldexp(1.0, tile->z);
-        auto latOf = [&](double y) { return std::atan(std::sinh(kPi * (1.0 - 2.0 * y / n))) * 180.0 / kPi; };
-        covers.push_back({tile->z, tile->x / n * 360.0 - 180.0, latOf(tile->y + 1.0), (tile->x + 1.0) / n * 360.0 - 180.0, latOf(tile->y)});
-    }
-    auto finer = [&](const VectorTile* tile, const std::array<double, 2>& p) {
-        for (const Cover& c : covers)
-            if (c.z > tile->z && p[0] >= c.west && p[0] < c.east && p[1] >= c.south && p[1] < c.north) return true;
-        return false;
-    };
-    for (const VectorTile* tile : overlay) {
-        if (candidates.size() >= kMaxCandidates) break;
-        for (const TileMark& m : tile->marks) {
-            if (m.points.empty() || m.text.empty()) continue;
-            if (m.type != MarkType::Contour && finer(tile, m.points[m.points.size() / 2])) continue;
-            if (m.type == MarkType::Place && m.rank == 1 && names.count(m.text)) continue;
-            const auto& anchor = m.points[m.points.size() / 2];
-            Vec3 e = geodeticToEcef(anchor[1], anchor[0], 0.0);
-            if (dot(normalize(e), eye - e) <= 0.0) continue;
-            double sx, sy;
-            if (!project(e, sx, sy) || sx < -400 || sy < -300 || sx > W + 400 || sy > H + 300) continue;
-            const std::uint64_t key = markKey(m);
-            const bool held = recent(key);
-            const float minz = markZoom(m);
-            const double z = zoomAt(anchor[1], length(e - eye));
-            if (z < minz - (held ? 0.3 : 0.0)) continue;
-            const double h = height(key, anchor[1], anchor[0]);
-            e = geodeticToEcef(anchor[1], anchor[0], h);
-            if (!project(e, sx, sy)) continue;
-            const bool line = m.type == MarkType::Road || m.type == MarkType::Waterway || m.type == MarkType::Shield || m.type == MarkType::Contour;
-            if (!line && (sx < -40 || sy < -20 || sx > W + 40 || sy > H + 20)) continue;
-            Candidate c;
-            c.mark = &m;
-            c.key = key;
-            c.height = h;
-            c.x = static_cast<float>(sx);
-            c.y = static_cast<float>(sy);
-            c.zoom = static_cast<float>(z);
-            c.priority = markBase(m) + minz - (held ? 1.5f : 0.0f);
-            c.held = held;
-            candidates.push_back(c);
-        }
-    }
-    std::sort(candidates.begin(), candidates.end(), [](const Candidate& a, const Candidate& b) {
-        return a.priority != b.priority ? a.priority < b.priority : a.key < b.key;
-    });
-
-    constexpr int kGrid = 64;
-    const int gw = static_cast<int>(W / kGrid) + 1, gh = static_cast<int>(H / kGrid) + 1;
-    std::vector<std::vector<std::array<float, 4>>> grid(static_cast<size_t>(gw) * gh);
-    auto cellsOf = [&](const std::array<float, 4>& b, auto&& fn) {
-        const int x0 = std::clamp(static_cast<int>(b[0] / kGrid), 0, gw - 1), x1 = std::clamp(static_cast<int>(b[2] / kGrid), 0, gw - 1);
-        const int y0 = std::clamp(static_cast<int>(b[1] / kGrid), 0, gh - 1), y1 = std::clamp(static_cast<int>(b[3] / kGrid), 0, gh - 1);
-        for (int y = y0; y <= y1; ++y)
-            for (int x = x0; x <= x1; ++x)
-                if (fn(grid[static_cast<size_t>(y) * gw + x])) return true;
-        return false;
-    };
-    auto free = [&](const std::array<float, 4>& b) {
-        return !cellsOf(b, [&](const std::vector<std::array<float, 4>>& list) {
-            for (const auto& o : list)
-                if (b[0] < o[2] && o[0] < b[2] && b[1] < o[3] && o[1] < b[3]) return true;
-            return false;
-        });
-    };
-    auto take = [&](const std::array<float, 4>& b) {
-        cellsOf(b, [&](std::vector<std::array<float, 4>>& list) {
-            list.push_back(b);
-            return false;
-        });
-    };
-    std::unordered_map<std::string, std::vector<std::array<float, 2>>> placedText;
-    auto repeated = [&](const std::string& key, float x, float y, float spacing) {
-        auto it = placedText.find(key);
-        if (it == placedText.end()) return false;
-        for (const auto& q : it->second)
-            if (std::hypot(q[0] - x, q[1] - y) < spacing) return true;
-        return false;
-    };
     auto splitLines = [](std::string_view text, std::vector<std::string_view>& out) {
         out.clear();
         for (size_t start = 0;;) {
@@ -1105,219 +957,390 @@ void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dp
             start = end + 1;
         }
     };
-
+    std::uint64_t dataKey = static_cast<std::uint64_t>(visible.size()) * 1315423911ull + (places ? 7ull : 0ull);
+    for (const VectorTile* tile : overlay) dataKey = dataKey * 1099511628211ull + reinterpret_cast<std::uintptr_t>(tile);
+    const bool turned = std::abs(cam.azimuth - T.placedAzimuth) > 0.5 || std::abs(cam.tilt - T.placedTilt) > 0.5;
+    const bool full = !primary || T.placedFrame == 0 || turned || dataKey != T.placedData ||
+                      std::chrono::duration<double>(now - T.placedAt).count() >= kPlacementSeconds;
     std::vector<Item> placed;
-    std::vector<std::string_view> lines;
-    std::vector<std::array<double, 3>> screen;
-    const bool checkTerrain = cam.firstPerson || cam.tilt > 25.0;
-    int terrainChecks = 0;
-    if (T.hidden.size() > 30000) T.hidden.clear();
-    auto hiddenByTerrain = [&](std::uint64_t key, double lat, double lon, double h) {
-        if (!checkTerrain) return false;
-        auto cached = T.hidden.find(key);
-        if (cached != T.hidden.end() && cached->second.first + 12 > frame_) return cached->second.second;
-        if (++terrainChecks > kOcclusionChecks) return cached != T.hidden.end() && cached->second.second;
-        const Vec3 a = geodeticToEcef(lat, lon, h + 2.0);
-        const Vec3 d = a - eye;
-        const double dist = length(d);
-        if (dist < 200.0) return false;
-        const int steps = above ? std::clamp(static_cast<int>(dist / 18.0), 6, 160) : std::clamp(static_cast<int>(dist / 500.0), 6, 16);
-        for (int i = 1; i < steps; ++i) {
-            const double t = static_cast<double>(i) / steps;
-            const GeoPoint g = ecefToGeodetic(eye + d * t);
-            const double top = ground(g.lat, g.lon) + (above && dist * (1.0 - t) > 25.0 ? above(g.lat, g.lon) : 0.0);
-            if (g.alt < top - 3.0) {
-                T.hidden[key] = {frame_ + (key % 12), true};
-                return true;
+    if (!full) {
+        placed = T.lastPlaced;
+    } else {
+        struct Candidate {
+            const labels::Place* place = nullptr;
+            const TileMark* mark = nullptr;
+            std::uint64_t key = 0;
+            double height = 0.0;
+            float x = 0, y = 0, zoom = 0, priority = 0;
+            bool held = false;
+        };
+        std::vector<Candidate> candidates;
+        std::unordered_set<std::string_view> names;
+
+        if (bundled && !visible.empty()) {
+            std::vector<int> cells;
+            for (const GeoRect& r : visible) {
+                const int c0 = std::clamp(static_cast<int>(std::floor((r.west + 180.0) / labels::kPlaceCell)), 0, labels::kPlaceCols - 1);
+                const int c1 = std::clamp(static_cast<int>(std::floor((r.east + 180.0) / labels::kPlaceCell)), 0, labels::kPlaceCols - 1);
+                const int r0 = std::clamp(static_cast<int>(std::floor((r.south + 90.0) / labels::kPlaceCell)), 0, labels::kPlaceRows - 1);
+                const int r1 = std::clamp(static_cast<int>(std::floor((r.north + 90.0) / labels::kPlaceCell)), 0, labels::kPlaceRows - 1);
+                for (int row = r0; row <= r1; ++row)
+                    for (int col = c0; col <= c1; ++col) cells.push_back(row * labels::kPlaceCols + col);
+            }
+            std::sort(cells.begin(), cells.end());
+            cells.erase(std::unique(cells.begin(), cells.end()), cells.end());
+            for (int cell : cells) {
+                const double south = -90.0 + (cell / labels::kPlaceCols) * labels::kPlaceCell;
+                const double west = -180.0 + (cell % labels::kPlaceCols) * labels::kPlaceCell;
+                const double plat = std::clamp(eyeGeo.lat, south, south + labels::kPlaceCell);
+                const double plon = std::clamp(eyeGeo.lon, west, west + labels::kPlaceCell);
+                const double cellZoom = zoomAt(plat, length(geodeticToEcef(plat, plon, 0.0) - eye)) + 0.5;
+                const int band = static_cast<int>(std::floor(cellZoom));
+                for (std::uint32_t i = data->cellBegin(cell); i < data->cellEnd(cell) && candidates.size() < kMaxCandidates; ++i) {
+                    const labels::Place& p = data->places()[i];
+                    if (p.minZoom / 10 > band) break;
+                    const double minz = p.minZoom * 0.1;
+                    if (minz > cellZoom) continue;
+                    Vec3 e = geodeticToEcef(p.lat, p.lon, 0.0);
+                    if (dot(normalize(e), eye - e) <= 0.0) continue;
+                    double sx, sy;
+                    if (!project(e, sx, sy) || sx < -200 || sy < -100 || sx > W + 200 || sy > H + 100) continue;
+                    const std::uint64_t key = 0x8000000000000000ull | i;
+                    const bool held = recent(key);
+                    const double h = height(key, p.lat, p.lon);
+                    e = geodeticToEcef(p.lat, p.lon, h);
+                    if (!project(e, sx, sy) || sx < -40 || sy < -20 || sx > W + 40 || sy > H + 20) continue;
+                    const double z = zoomAt(p.lat, length(e - eye));
+                    const double slack = held ? 0.3 : 0.0;
+                    if (z < minz - slack || (p.maxZoom != 255 && z >= p.maxZoom * 0.1 + slack)) continue;
+                    float base = 0.8f;
+                    switch (p.kind) {
+                    case labels::Kind::Country: base = 0.0f; break;
+                    case labels::Kind::State: base = 1.4f; break;
+                    case labels::Kind::Suburb: base = 3.0f; break;
+                    case labels::Kind::County: base = 4.0f; break;
+                    default: break;
+                    }
+                    Candidate c;
+                    c.place = &p;
+                    c.key = key;
+                    c.height = h;
+                    c.x = static_cast<float>(sx);
+                    c.y = static_cast<float>(sy);
+                    c.zoom = static_cast<float>(z);
+                    c.priority = base + static_cast<float>(minz) - (held ? 1.5f : 0.0f);
+                    c.held = held;
+                    candidates.push_back(c);
+                    names.insert(data->name(p));
+                }
             }
         }
-        T.hidden[key] = {frame_ + (key % 12), false};
-        return false;
-    };
-    for (const Candidate& c : candidates) {
-        if (static_cast<int>(placed.size()) >= kMaxLabels) break;
-        const TileMark* m = c.mark;
-        if (m && !glyphs.covers(m->text)) continue;
-        if (c.place && hiddenByTerrain(c.key, c.place->lat, c.place->lon, c.height)) continue;
-        if (m && m->type != MarkType::Contour && !m->points.empty()) {
-            const auto& mid = m->points[m->points.size() / 2];
-            if (hiddenByTerrain(c.key, mid[1], mid[0], c.height)) continue;
-        }
-        const TextStyle s = m ? markStyle(*m, dpi) : styleFor(*c.place, c.zoom, dpi);
-        const float em = s.size;
-        Item item;
-        item.key = c.key;
-        item.style = s;
 
-        if (m && (m->type == MarkType::Road || m->type == MarkType::Waterway || m->type == MarkType::Contour)) {
-            if (repeated(m->text, c.x, c.y, (m->type == MarkType::Contour ? 220.0f : 260.0f) * static_cast<float>(dpi))) continue;
-            screen.clear();
-            bool ok = true;
-            for (const auto& p : m->points) {
+        struct Cover {
+            int z;
+            double west, south, east, north;
+        };
+        std::vector<Cover> covers;
+        for (const VectorTile* tile : overlay) {
+            if (!tile->overlay || tile->z <= 0) continue;
+            const double n = std::ldexp(1.0, tile->z);
+            auto latOf = [&](double y) { return std::atan(std::sinh(kPi * (1.0 - 2.0 * y / n))) * 180.0 / kPi; };
+            covers.push_back({tile->z, tile->x / n * 360.0 - 180.0, latOf(tile->y + 1.0), (tile->x + 1.0) / n * 360.0 - 180.0, latOf(tile->y)});
+        }
+        auto finer = [&](const VectorTile* tile, const std::array<double, 2>& p) {
+            for (const Cover& c : covers)
+                if (c.z > tile->z && p[0] >= c.west && p[0] < c.east && p[1] >= c.south && p[1] < c.north) return true;
+            return false;
+        };
+        for (const VectorTile* tile : overlay) {
+            if (candidates.size() >= kMaxCandidates) break;
+            for (const TileMark& m : tile->marks) {
+                if (m.points.empty() || m.text.empty()) continue;
+                if (m.type != MarkType::Contour && finer(tile, m.points[m.points.size() / 2])) continue;
+                if (m.type == MarkType::Place && m.rank == 1 && names.count(m.text)) continue;
+                const auto& anchor = m.points[m.points.size() / 2];
+                Vec3 e = geodeticToEcef(anchor[1], anchor[0], 0.0);
+                if (dot(normalize(e), eye - e) <= 0.0) continue;
                 double sx, sy;
-                if (!project(geodeticToEcef(p[1], p[0], c.height), sx, sy)) {
-                    ok = false;
-                    break;
-                }
-                screen.push_back({sx, sy, 0.0});
+                if (!project(e, sx, sy) || sx < -400 || sy < -300 || sx > W + 400 || sy > H + 300) continue;
+                const std::uint64_t key = markKey(m);
+                const bool held = recent(key);
+                const float minz = markZoom(m);
+                const double z = zoomAt(anchor[1], length(e - eye));
+                if (z < minz - (held ? 0.3 : 0.0)) continue;
+                const double h = height(key, anchor[1], anchor[0]);
+                e = geodeticToEcef(anchor[1], anchor[0], h);
+                if (!project(e, sx, sy)) continue;
+                const bool line = m.type == MarkType::Road || m.type == MarkType::Waterway || m.type == MarkType::Shield || m.type == MarkType::Contour;
+                if (!line && (sx < -40 || sy < -20 || sx > W + 40 || sy > H + 20)) continue;
+                Candidate c;
+                c.mark = &m;
+                c.key = key;
+                c.height = h;
+                c.x = static_cast<float>(sx);
+                c.y = static_cast<float>(sy);
+                c.zoom = static_cast<float>(z);
+                c.priority = markBase(m) + minz - (held ? 1.5f : 0.0f);
+                c.held = held;
+                candidates.push_back(c);
             }
-            if (!ok || screen.size() < 2) continue;
-            for (size_t i = 1; i < screen.size(); ++i)
-                screen[i][2] = screen[i - 1][2] + std::hypot(screen[i][0] - screen[i - 1][0], screen[i][1] - screen[i - 1][1]);
-            const float w = glyphs.width(m->text, s);
-            const double total = screen.back()[2];
-            const double need = w + 8.0 * dpi;
-            if (total < need) continue;
-            auto at = [&](double d, double& x, double& y, size_t& seg, double& t) {
-                size_t i = 1;
-                while (i + 1 < screen.size() && screen[i][2] < d) ++i;
-                const double len = std::max(screen[i][2] - screen[i - 1][2], 1e-9);
-                t = std::clamp((d - screen[i - 1][2]) / len, 0.0, 1.0);
-                x = screen[i - 1][0] + (screen[i][0] - screen[i - 1][0]) * t;
-                y = screen[i - 1][1] + (screen[i][1] - screen[i - 1][1]) * t;
-                seg = i;
-            };
-            bool found = false;
-            double cx = 0, cy = 0, angle = 0, mid = 0;
-            const float hh = em * 1.25f;
-            std::vector<std::array<float, 4>> boxes;
-            for (int k = 0; k < 7 && !found; ++k) {
-                const double offset = k == 0 ? 0.0 : ((k + 1) / 2) * need * 0.6 * (k % 2 ? 1.0 : -1.0);
-                mid = total * 0.5 + offset;
-                const double d0 = mid - need * 0.5, d1 = mid + need * 0.5;
-                if (d0 < 0.0 || d1 > total) continue;
-                double x0, y0, x1, y1, t;
+        }
+        std::sort(candidates.begin(), candidates.end(), [](const Candidate& a, const Candidate& b) {
+            return a.priority != b.priority ? a.priority < b.priority : a.key < b.key;
+        });
+
+        constexpr int kGrid = 64;
+        const int gw = static_cast<int>(W / kGrid) + 1, gh = static_cast<int>(H / kGrid) + 1;
+        std::vector<std::vector<std::array<float, 4>>> grid(static_cast<size_t>(gw) * gh);
+        auto cellsOf = [&](const std::array<float, 4>& b, auto&& fn) {
+            const int x0 = std::clamp(static_cast<int>(b[0] / kGrid), 0, gw - 1), x1 = std::clamp(static_cast<int>(b[2] / kGrid), 0, gw - 1);
+            const int y0 = std::clamp(static_cast<int>(b[1] / kGrid), 0, gh - 1), y1 = std::clamp(static_cast<int>(b[3] / kGrid), 0, gh - 1);
+            for (int y = y0; y <= y1; ++y)
+                for (int x = x0; x <= x1; ++x)
+                    if (fn(grid[static_cast<size_t>(y) * gw + x])) return true;
+            return false;
+        };
+        auto free = [&](const std::array<float, 4>& b) {
+            return !cellsOf(b, [&](const std::vector<std::array<float, 4>>& list) {
+                for (const auto& o : list)
+                    if (b[0] < o[2] && o[0] < b[2] && b[1] < o[3] && o[1] < b[3]) return true;
+                return false;
+            });
+        };
+        auto take = [&](const std::array<float, 4>& b) {
+            cellsOf(b, [&](std::vector<std::array<float, 4>>& list) {
+                list.push_back(b);
+                return false;
+            });
+        };
+        std::unordered_map<std::string, std::vector<std::array<float, 2>>> placedText;
+        auto repeated = [&](const std::string& key, float x, float y, float spacing) {
+            auto it = placedText.find(key);
+            if (it == placedText.end()) return false;
+            for (const auto& q : it->second)
+                if (std::hypot(q[0] - x, q[1] - y) < spacing) return true;
+            return false;
+        };
+        std::vector<std::string_view> lines;
+        std::vector<std::array<double, 3>> screen;
+        const bool checkTerrain = cam.firstPerson || cam.tilt > 25.0;
+        int terrainChecks = 0;
+        if (T.hidden.size() > 30000) T.hidden.clear();
+        auto hiddenByTerrain = [&](std::uint64_t key, double lat, double lon, double h) {
+            if (!checkTerrain) return false;
+            auto cached = T.hidden.find(key);
+            if (cached != T.hidden.end() && cached->second.first + 12 > frame_) return cached->second.second;
+            if (++terrainChecks > kOcclusionChecks) return cached != T.hidden.end() && cached->second.second;
+            const Vec3 a = geodeticToEcef(lat, lon, h + 2.0);
+            const Vec3 d = a - eye;
+            const double dist = length(d);
+            if (dist < 200.0) return false;
+            const int steps = above ? std::clamp(static_cast<int>(dist / 18.0), 6, 160) : std::clamp(static_cast<int>(dist / 500.0), 6, 16);
+            for (int i = 1; i < steps; ++i) {
+                const double t = static_cast<double>(i) / steps;
+                const GeoPoint g = ecefToGeodetic(eye + d * t);
+                const double top = ground(g.lat, g.lon) + (above && dist * (1.0 - t) > 25.0 ? above(g.lat, g.lon) : 0.0);
+                if (g.alt < top - 3.0) {
+                    T.hidden[key] = {frame_ + (key % 12), true};
+                    return true;
+                }
+            }
+            T.hidden[key] = {frame_ + (key % 12), false};
+            return false;
+        };
+        for (const Candidate& c : candidates) {
+            if (static_cast<int>(placed.size()) >= kMaxLabels) break;
+            const TileMark* m = c.mark;
+            if (m && !glyphs.covers(m->text)) continue;
+            if (c.place && hiddenByTerrain(c.key, c.place->lat, c.place->lon, c.height)) continue;
+            if (m && m->type != MarkType::Contour && !m->points.empty()) {
+                const auto& mid = m->points[m->points.size() / 2];
+                if (hiddenByTerrain(c.key, mid[1], mid[0], c.height)) continue;
+            }
+            const TextStyle s = m ? markStyle(*m, dpi) : styleFor(*c.place, c.zoom, dpi);
+            const float em = s.size;
+            Item item;
+            item.key = c.key;
+            item.style = s;
+
+            if (m && (m->type == MarkType::Road || m->type == MarkType::Waterway || m->type == MarkType::Contour)) {
+                if (repeated(m->text, c.x, c.y, (m->type == MarkType::Contour ? 220.0f : 260.0f) * static_cast<float>(dpi))) continue;
+                screen.clear();
+                bool ok = true;
+                for (const auto& p : m->points) {
+                    double sx, sy;
+                    if (!project(geodeticToEcef(p[1], p[0], c.height), sx, sy)) {
+                        ok = false;
+                        break;
+                    }
+                    screen.push_back({sx, sy, 0.0});
+                }
+                if (!ok || screen.size() < 2) continue;
+                for (size_t i = 1; i < screen.size(); ++i)
+                    screen[i][2] = screen[i - 1][2] + std::hypot(screen[i][0] - screen[i - 1][0], screen[i][1] - screen[i - 1][1]);
+                const float w = glyphs.width(m->text, s);
+                const double total = screen.back()[2];
+                const double need = w + 8.0 * dpi;
+                if (total < need) continue;
+                auto at = [&](double d, double& x, double& y, size_t& seg, double& t) {
+                    size_t i = 1;
+                    while (i + 1 < screen.size() && screen[i][2] < d) ++i;
+                    const double len = std::max(screen[i][2] - screen[i - 1][2], 1e-9);
+                    t = std::clamp((d - screen[i - 1][2]) / len, 0.0, 1.0);
+                    x = screen[i - 1][0] + (screen[i][0] - screen[i - 1][0]) * t;
+                    y = screen[i - 1][1] + (screen[i][1] - screen[i - 1][1]) * t;
+                    seg = i;
+                };
+                bool found = false;
+                double cx = 0, cy = 0, angle = 0, mid = 0;
+                const float hh = em * 1.25f;
+                std::vector<std::array<float, 4>> boxes;
+                for (int k = 0; k < 7 && !found; ++k) {
+                    const double offset = k == 0 ? 0.0 : ((k + 1) / 2) * need * 0.6 * (k % 2 ? 1.0 : -1.0);
+                    mid = total * 0.5 + offset;
+                    const double d0 = mid - need * 0.5, d1 = mid + need * 0.5;
+                    if (d0 < 0.0 || d1 > total) continue;
+                    double x0, y0, x1, y1, t;
+                    size_t seg;
+                    at(d0, x0, y0, seg, t);
+                    at(d1, x1, y1, seg, t);
+                    const double cl = std::hypot(x1 - x0, y1 - y0);
+                    if (cl < need * (c.held ? 0.75 : 0.9)) continue;
+                    double worst = 0.0;
+                    for (const auto& q : screen) {
+                        if (q[2] <= d0 || q[2] >= d1) continue;
+                        worst = std::max(worst, std::abs((x1 - x0) * (y0 - q[1]) - (x0 - q[0]) * (y1 - y0)) / cl);
+                    }
+                    if (worst > (m->type == MarkType::Contour ? 4.0 : 3.0) * (c.held ? 2.0 : 1.0) * dpi) continue;
+                    const double ax = (x0 + x1) * 0.5, ay = (y0 + y1) * 0.5;
+                    if (ax < 0 || ay < 0 || ax > W || ay > H) continue;
+                    double turn = std::atan2(y1 - y0, x1 - x0);
+                    if (turn > kPi * 0.5) turn -= kPi;
+                    if (turn < -kPi * 0.5) turn += kPi;
+                    const float ca = static_cast<float>(std::cos(turn)), sa = static_cast<float>(std::sin(turn));
+                    const int pieces = std::max(1, static_cast<int>(std::ceil(w / hh)));
+                    boxes.clear();
+                    for (int i = 0; i < pieces; ++i) {
+                        const float along = -w * 0.5f + (i + 0.5f) * w / pieces;
+                        const float px = static_cast<float>(ax) + along * ca, py = static_cast<float>(ay) + along * sa;
+                        const float r = std::max(w / pieces, hh) * 0.5f + s.padding;
+                        boxes.push_back({px - r, py - r, px + r, py + r});
+                    }
+                    bool clear = true;
+                    for (const auto& b : boxes) clear = clear && free(b);
+                    if (!clear) continue;
+                    cx = ax;
+                    cy = ay;
+                    angle = turn;
+                    found = true;
+                }
+                if (!found) continue;
+                for (const auto& b : boxes) take(b);
+                placedText[m->text].push_back({static_cast<float>(cx), static_cast<float>(cy)});
+                double seg_t, px, py;
                 size_t seg;
-                at(d0, x0, y0, seg, t);
-                at(d1, x1, y1, seg, t);
-                const double cl = std::hypot(x1 - x0, y1 - y0);
-                if (cl < need * (c.held ? 0.75 : 0.9)) continue;
-                double worst = 0.0;
-                for (const auto& q : screen) {
-                    if (q[2] <= d0 || q[2] >= d1) continue;
-                    worst = std::max(worst, std::abs((x1 - x0) * (y0 - q[1]) - (x0 - q[0]) * (y1 - y0)) / cl);
-                }
-                if (worst > (m->type == MarkType::Contour ? 4.0 : 3.0) * (c.held ? 2.0 : 1.0) * dpi) continue;
-                const double ax = (x0 + x1) * 0.5, ay = (y0 + y1) * 0.5;
-                if (ax < 0 || ay < 0 || ax > W || ay > H) continue;
-                double turn = std::atan2(y1 - y0, x1 - x0);
-                if (turn > kPi * 0.5) turn -= kPi;
-                if (turn < -kPi * 0.5) turn += kPi;
-                const float ca = static_cast<float>(std::cos(turn)), sa = static_cast<float>(std::sin(turn));
-                const int pieces = std::max(1, static_cast<int>(std::ceil(w / hh)));
-                boxes.clear();
-                for (int i = 0; i < pieces; ++i) {
-                    const float along = -w * 0.5f + (i + 0.5f) * w / pieces;
-                    const float px = static_cast<float>(ax) + along * ca, py = static_cast<float>(ay) + along * sa;
-                    const float r = std::max(w / pieces, hh) * 0.5f + s.padding;
-                    boxes.push_back({px - r, py - r, px + r, py + r});
-                }
-                bool clear = true;
-                for (const auto& b : boxes) clear = clear && free(b);
-                if (!clear) continue;
-                cx = ax;
-                cy = ay;
-                angle = turn;
-                found = true;
+                at(mid, px, py, seg, seg_t);
+                const auto& a = m->points[seg - 1];
+                const auto& b = m->points[seg];
+                item.anchor = geodeticToEcef(a[1] + (b[1] - a[1]) * seg_t, a[0] + (b[0] - a[0]) * seg_t, c.height);
+                item.text = m->text;
+                item.layout = Layout::Along;
+                item.angle = static_cast<float>(angle);
+                item.ox = static_cast<float>(cx - px);
+                item.oy = static_cast<float>(cy - py);
+                placed.push_back(std::move(item));
+                continue;
             }
-            if (!found) continue;
-            for (const auto& b : boxes) take(b);
-            placedText[m->text].push_back({static_cast<float>(cx), static_cast<float>(cy)});
-            double seg_t, px, py;
-            size_t seg;
-            at(mid, px, py, seg, seg_t);
-            const auto& a = m->points[seg - 1];
-            const auto& b = m->points[seg];
-            item.anchor = geodeticToEcef(a[1] + (b[1] - a[1]) * seg_t, a[0] + (b[0] - a[0]) * seg_t, c.height);
-            item.text = m->text;
-            item.layout = Layout::Along;
-            item.angle = static_cast<float>(angle);
-            item.ox = static_cast<float>(cx - px);
-            item.oy = static_cast<float>(cy - py);
-            placed.push_back(std::move(item));
-            continue;
-        }
 
-        if (m && m->type == MarkType::Shield) {
-            const std::string key = "#" + m->network + m->text;
-            if (repeated(key, c.x, c.y, 220.0f * static_cast<float>(dpi))) continue;
-            if (c.x < 0 || c.y < 0 || c.x > W || c.y > H) continue;
-            const int type = shieldType(m->network);
-            const float h = 20.0f * static_cast<float>(dpi);
-            const float tw = glyphs.width(m->text, s);
-            const float w = std::max(h * (type <= 1 ? 1.0f : 1.15f), tw + 7.0f * static_cast<float>(dpi));
-            const std::array<float, 4> box{c.x - w * 0.5f - s.padding, c.y - h * 0.5f - s.padding, c.x + w * 0.5f + s.padding, c.y + h * 0.5f + s.padding};
-            if (!free(box)) continue;
+            if (m && m->type == MarkType::Shield) {
+                const std::string key = "#" + m->network + m->text;
+                if (repeated(key, c.x, c.y, 220.0f * static_cast<float>(dpi))) continue;
+                if (c.x < 0 || c.y < 0 || c.x > W || c.y > H) continue;
+                const int type = shieldType(m->network);
+                const float h = 20.0f * static_cast<float>(dpi);
+                const float tw = glyphs.width(m->text, s);
+                const float w = std::max(h * (type <= 1 ? 1.0f : 1.15f), tw + 7.0f * static_cast<float>(dpi));
+                const std::array<float, 4> box{c.x - w * 0.5f - s.padding, c.y - h * 0.5f - s.padding, c.x + w * 0.5f + s.padding, c.y + h * 0.5f + s.padding};
+                if (!free(box)) continue;
+                take(box);
+                placedText[key].push_back({c.x, c.y});
+                const auto& p = m->points[m->points.size() / 2];
+                item.anchor = geodeticToEcef(p[1], p[0], c.height);
+                item.text = m->text;
+                item.layout = Layout::Shield;
+                item.shield = type;
+                item.shieldW = w;
+                item.shieldH = h;
+                placed.push_back(std::move(item));
+                continue;
+            }
+
+            std::string text;
+            if (m) {
+                text = m->type == MarkType::Park ? wrapName(m->text, 14) : m->text;
+                if (repeated(text, c.x, c.y, 500.0f * static_cast<float>(dpi))) continue;
+            } else {
+                text = std::string(data->name(*c.place));
+            }
+            splitLines(text, lines);
+            float w = 0.0f;
+            for (std::string_view l : lines) w = std::max(w, glyphs.width(l, s));
+            const float pitch = em * 1.2f;
+            const float n = static_cast<float>(lines.size());
+            const float top = -(n - 1.0f) * pitch * 0.5f - em * 0.72f;
+            const float bottom = (n - 1.0f) * pitch * 0.5f + em * 0.24f;
+            std::array<float, 4> box{};
+            bool ok = false;
+            if (s.dot > 0.0f) {
+                const float gap = s.dot + 3.5f * static_cast<float>(dpi);
+                const std::array<float, 4> dotBox{c.x - s.dot - 1, c.y - s.dot - 1, c.x + s.dot + 1, c.y + s.dot + 1};
+                for (int side = 0; side < 2 && !ok; ++side) {
+                    const float textX = side == 0 ? c.x + gap : c.x - gap - w;
+                    box = {std::min(textX, dotBox[0]) - s.padding, c.y + top - s.padding, std::max(textX + w, dotBox[2]) + s.padding,
+                           c.y + bottom + s.padding};
+                    ok = box[0] >= 0 && box[2] <= W && box[1] >= 0 && box[3] <= H && free(box);
+                    if (ok) {
+                        item.layout = Layout::Side;
+                        item.ox = textX - c.x;
+                        item.oy = 0.0f;
+                    }
+                }
+            } else {
+                const bool area = c.place && (c.place->kind == labels::Kind::Country || c.place->kind == labels::Kind::State ||
+                                              c.place->kind == labels::Kind::County);
+                const float h = bottom - top;
+                const float shifts[5][2] = {{0.0f, 0.0f}, {0.0f, -0.9f * h}, {0.0f, 0.9f * h}, {-0.3f * w, 0.0f}, {0.3f * w, 0.0f}};
+                for (int k = 0; k < (area ? 5 : 1) && !ok; ++k) {
+                    const float cx = c.x + shifts[k][0], cy = c.y + shifts[k][1];
+                    box = {cx - w * 0.5f - s.padding, cy + top - s.padding, cx + w * 0.5f + s.padding, cy + bottom + s.padding};
+                    ok = box[0] >= -w * 0.25f && box[2] <= W + w * 0.25f && box[1] >= 0 && box[3] <= H && free(box);
+                    if (ok) {
+                        item.layout = Layout::Center;
+                        item.ox = shifts[k][0];
+                        item.oy = shifts[k][1];
+                    }
+                }
+            }
+            if (!ok) continue;
             take(box);
-            placedText[key].push_back({c.x, c.y});
-            const auto& p = m->points[m->points.size() / 2];
-            item.anchor = geodeticToEcef(p[1], p[0], c.height);
-            item.text = m->text;
-            item.layout = Layout::Shield;
-            item.shield = type;
-            item.shieldW = w;
-            item.shieldH = h;
+            if (m) placedText[text].push_back({c.x, c.y});
+            if (m) {
+                const auto& p = m->points[m->points.size() / 2];
+                item.anchor = geodeticToEcef(p[1], p[0], c.height);
+            } else {
+                item.anchor = geodeticToEcef(c.place->lat, c.place->lon, c.height);
+            }
+            item.text = std::move(text);
             placed.push_back(std::move(item));
-            continue;
         }
-
-        std::string text;
-        if (m) {
-            text = m->type == MarkType::Park ? wrapName(m->text, 14) : m->text;
-            if (repeated(text, c.x, c.y, 500.0f * static_cast<float>(dpi))) continue;
-        } else {
-            text = std::string(data->name(*c.place));
+        if (primary) {
+            T.lastPlaced = placed;
+            T.placedFrame = frame_;
+            T.placedAt = now;
+            T.placedAzimuth = cam.azimuth;
+            T.placedTilt = cam.tilt;
+            T.placedData = dataKey;
         }
-        splitLines(text, lines);
-        float w = 0.0f;
-        for (std::string_view l : lines) w = std::max(w, glyphs.width(l, s));
-        const float pitch = em * 1.2f;
-        const float n = static_cast<float>(lines.size());
-        const float top = -(n - 1.0f) * pitch * 0.5f - em * 0.72f;
-        const float bottom = (n - 1.0f) * pitch * 0.5f + em * 0.24f;
-        std::array<float, 4> box{};
-        bool ok = false;
-        if (s.dot > 0.0f) {
-            const float gap = s.dot + 3.5f * static_cast<float>(dpi);
-            const std::array<float, 4> dotBox{c.x - s.dot - 1, c.y - s.dot - 1, c.x + s.dot + 1, c.y + s.dot + 1};
-            for (int side = 0; side < 2 && !ok; ++side) {
-                const float textX = side == 0 ? c.x + gap : c.x - gap - w;
-                box = {std::min(textX, dotBox[0]) - s.padding, c.y + top - s.padding, std::max(textX + w, dotBox[2]) + s.padding,
-                       c.y + bottom + s.padding};
-                ok = box[0] >= 0 && box[2] <= W && box[1] >= 0 && box[3] <= H && free(box);
-                if (ok) {
-                    item.layout = Layout::Side;
-                    item.ox = textX - c.x;
-                    item.oy = 0.0f;
-                }
-            }
-        } else {
-            const bool area = c.place && (c.place->kind == labels::Kind::Country || c.place->kind == labels::Kind::State ||
-                                          c.place->kind == labels::Kind::County);
-            const float h = bottom - top;
-            const float shifts[5][2] = {{0.0f, 0.0f}, {0.0f, -0.9f * h}, {0.0f, 0.9f * h}, {-0.3f * w, 0.0f}, {0.3f * w, 0.0f}};
-            for (int k = 0; k < (area ? 5 : 1) && !ok; ++k) {
-                const float cx = c.x + shifts[k][0], cy = c.y + shifts[k][1];
-                box = {cx - w * 0.5f - s.padding, cy + top - s.padding, cx + w * 0.5f + s.padding, cy + bottom + s.padding};
-                ok = box[0] >= -w * 0.25f && box[2] <= W + w * 0.25f && box[1] >= 0 && box[3] <= H && free(box);
-                if (ok) {
-                    item.layout = Layout::Center;
-                    item.ox = shifts[k][0];
-                    item.oy = shifts[k][1];
-                }
-            }
-        }
-        if (!ok) continue;
-        take(box);
-        if (m) placedText[text].push_back({c.x, c.y});
-        if (m) {
-            const auto& p = m->points[m->points.size() / 2];
-            item.anchor = geodeticToEcef(p[1], p[0], c.height);
-        } else {
-            item.anchor = geodeticToEcef(c.place->lat, c.place->lon, c.height);
-        }
-        item.text = std::move(text);
-        placed.push_back(std::move(item));
     }
 
     std::vector<std::pair<const Item*, float>> draw;
