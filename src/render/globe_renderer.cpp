@@ -1691,6 +1691,12 @@ bool GlobeRenderer::finished(const QuadKey& k) const {
     return true;
 }
 
+int GlobeRenderer::surfaceZ(const QuadKey& q) const {
+    auto st = q.level >= 0 ? surface_.find(q) : surface_.end();
+    if (st == surface_.end()) return -1;
+    return st->second.complete ? std::max(st->second.sourceZ, st->second.imageryZ) : st->second.sourceZ;
+}
+
 bool GlobeRenderer::retrying(const QuadKey& k) const {
     auto s = surface_.find(k);
     if (s == surface_.end() || s->second.complete) return false;
@@ -1853,7 +1859,14 @@ void GlobeRenderer::traverse(const Camera& cam, const QuadKey& k, std::vector<Dr
             if (kt != transitions_.end() && kt->second.frame + 1 >= frame_ && kt->second.start >= 0.0 && t - kt->second.start < kFadeSeconds)
                 m.start = tick;
         }
-        const double p = settleFrozen_ ? 1.0 : std::max(0.0, (t - m.start) / (mergeSeconds_ / std::max(1.0, zoomRate_)));
+        if (uniformMix_ >= 0.5 && uniformZ_ < 99 && !settleFrozen_) {
+            const int zk = surfaceZ(k);
+            if (zk >= 0 && uniformZ_ > zk && uniformZ_ - zk <= kMaxUniformDrop) {
+                pendingMergeZ_ = std::min(pendingMergeZ_, zk);
+                m.start = t;
+            }
+        }
+        const double p = settleFrozen_ || stepInstant_ ? 1.0 : std::max(0.0, (t - m.start) / (mergeSeconds_ / std::max(1.0, zoomRate_)));
         if (p < 1.0) {
             mergeActive_ = true;
             bool drawable = true;
@@ -2530,15 +2543,18 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     ++frame_;
     labels_.beginFrame();
     settleFrozen_ = snapshotShown_ && settleSnapshot_ && snapshotFade_ < 0.0;
+    stepInstant_ = snapshotShown_ && stepSnapshot_;
     const bool switchCapture = snapshotWanted_ && !views && lastIncompleteFraction_ < 0.3 && ensureSnapshotTarget(width, height);
     bool settleCapture = false;
-    if (!switchCapture && settleWanted_ && !views && !snapshotShown_) {
+    if (!switchCapture && (settleWanted_ || stepWanted_) && !views && !snapshotShown_) {
         settleCapture = ensureSnapshotTarget(width, height);
         if (!settleCapture) settleBroken_ = true;
     }
+    const bool stepCapture = settleCapture && !settleWanted_;
     const bool capture = switchCapture || settleCapture;
     snapshotWanted_ = false;
     settleWanted_ = false;
+    stepWanted_ = false;
     if (std::uint64_t epoch = net::reachabilityEpoch(); epoch != netEpoch_) {
         netEpoch_ = epoch;
         retryUnavailable();
@@ -2627,6 +2643,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     mergeActive_ = false;
     refineWaiting_ = 0;
     setUniform(cam);
+    pendingMergeZ_ = 99;
     traverse(cam, {0, 0, 0}, tiles);
     traverse(cam, {0, 1, 0}, tiles);
     profileMark(1);
@@ -3482,7 +3499,13 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     }
     const bool frozenNow = snapshotShown_ && settleSnapshot_ && snapshotFade_ < 0.0;
     const bool settleStill = settleFreeze_ && !settleBroken_ && !views && terrainAlpha_ >= 0.999f && tnow - lastMotion_ >= 0.15;
-    revealOpen_ = frozenNow || (!settleStill && revealGate(tnow));
+    bool gateOpen = !settleStill && revealGate(tnow);
+    const bool stepping = settleFreeze_ && !settleBroken_ && !views && uniformMix_ >= 0.5 && tnow - lastMotion_ < 0.15;
+    if (gateOpen && stepping && !stepInstant_) {
+        gateOpen = false;
+        if (!snapshotShown_ && !stepCapture) stepWanted_ = true;
+    }
+    revealOpen_ = frozenNow || gateOpen;
     if (revealOpen_ && heldPrev_ > 0) lastReveal_ = tnow;
     int heldNow = 0;
     int waitingNow = refineWaiting_;
@@ -3548,8 +3571,15 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             }
             if (z >= 0) available = std::min(available, z);
         }
+        if (pendingMergeZ_ < 99) available = std::min(available, pendingMergeZ_);
         if (available < 99 && ideal >= 0) available = std::max(available, ideal - kMaxUniformDrop);
-        zCap = available >= 99 ? 99 : reveal ? available : std::max(std::min(uniformZ_, available), ideal - kMaxUniformDrop);
+        const int target = available >= 99 ? 99 : reveal ? available : std::max(std::min(uniformZ_, available), ideal - kMaxUniformDrop);
+        if (stepping && !frozenNow && !stepInstant_ && target != uniformZ_ && target < 99 && uniformZ_ < 99) {
+            zCap = uniformZ_;
+            if (!snapshotShown_ && !stepCapture) stepWanted_ = true;
+        } else {
+            zCap = target;
+        }
         if (visualLog_ && zCap != uniformZ_)
             std::fprintf(visualLog_, "zcap frame %llu t %.3f z %d -> %d available %d tiles %zu\n", static_cast<unsigned long long>(frame_), tnow, uniformZ_,
                          zCap, available, tiles.size());
@@ -3813,7 +3843,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             }
             tr.merge = {-1, 0, 0};
         }
-        if (frozenNow && tr.start >= 0.0 && tnow - tr.start < kFadeSeconds) tr.start = tnow - kFadeSeconds;
+        if ((frozenNow || stepInstant_) && tr.start >= 0.0 && tnow - tr.start < kFadeSeconds) tr.start = tnow - kFadeSeconds;
         if (lines3d_ && labelsOn_) lineTiles.push_back({dt.key, tr.held && tr.from.level >= 0 ? tr.from : src});
         if (visualLog_) {
             const QuadKey shownKey = tr.held && tr.from.level >= 0 ? tr.from : src;
@@ -4004,7 +4034,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             view2 = view;
         }
         {
-            const double step = continuing && tr.edgeTime >= 0.0 && !frozenNow ? std::clamp(tnow - tr.edgeTime, 0.0, 0.1) / kFadeSeconds : 1.0;
+            const double step = continuing && tr.edgeTime >= 0.0 && !frozenNow && !stepInstant_ ? std::clamp(tnow - tr.edgeTime, 0.0, 0.1) / kFadeSeconds : 1.0;
             tr.edgeTime = tnow;
             bool any = false;
             for (int e = 0; e < 4; ++e) {
@@ -4050,7 +4080,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         if (spatial) {
             auto& since = morphSince_[dt.key];
             if (since.second + 1 < frame_) since.first = fadingFrom ? tnow - 1.0 : tnow;
-            if (frozenNow) since.first = std::min(since.first, tnow - 1.0);
+            if (frozenNow || stepInstant_) since.first = std::min(since.first, tnow - 1.0);
             since.second = frame_;
             const double t = (tnow - since.first) / 0.3;
             vsp.morph[3] = t >= 1.0 ? 1.0f : static_cast<float>(t * t * (3 - 2 * t));
@@ -4337,9 +4367,15 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         sg_end_pass();
         snapshotShown_ = true;
         settleSnapshot_ = settleCapture;
+        stepSnapshot_ = stepCapture;
         settleQuiet_ = 0;
         snapshotStart_ = tnow;
         snapshotFade_ = -1.0;
+        if (stepCapture) {
+            snapshotFade_ = tnow;
+            snapshotFadeLength_ = settleMoveFade_;
+            if (visualLog_) std::fprintf(visualLog_, "settle frame %llu t %.3f step capture\n", static_cast<unsigned long long>(frame_), tnow);
+        }
         if (visualLog_ && settleCapture)
             std::fprintf(visualLog_, "settle frame %llu t %.3f capture held %d waiting %d tiles%s\n", static_cast<unsigned long long>(frame_), tnow,
                          heldPrev_, waitingPrev_, levelMixText().c_str());
@@ -4503,7 +4539,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             std::fprintf(visualLog_, "settle frame %llu t %.3f want held %d merging %d fades %d edges %d morphs %d\n", static_cast<unsigned long long>(frame_),
                          tnow, heldNow, mergeActive_ ? 1 : 0, fadeKinds[0], fadeKinds[1], fadeKinds[2]);
     }
-    busy_ = settleWanted_ || !bordersReady_ || !roadBuildQueue_.empty() || fading || mergeActive_ || snapshotShown_ || tilesBusy || renders > 0 || builds > 0 || deferred > 0 || loadsTaken > 0 || elevationChanged ||
+    busy_ = settleWanted_ || stepWanted_ || !bordersReady_ || !roadBuildQueue_.empty() || fading || mergeActive_ || snapshotShown_ || tilesBusy || renders > 0 || builds > 0 || deferred > 0 || loadsTaken > 0 || elevationChanged ||
             ((labelsOn_ || contours_) && labels_.animating()) || (buildingsOn_ && buildings_.busy());
     stats_.loading = pending || stats_.pendingRequests > 0 || heldNow > 0 ? 1 : 0;
     stats_.renderedFrames = static_cast<long long>(frame_);
