@@ -103,6 +103,7 @@ struct Stats {
     double renderMsP99 = 0;
     int drawCalls = 0;
     double cpuMs = 0;
+    double cpuThreadMs = 0;
     double popArea = 0;
     double mergeArea = 0;
     double terrainPopArea = 0;
