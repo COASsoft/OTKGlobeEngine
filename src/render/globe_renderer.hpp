@@ -275,7 +275,7 @@ private:
     std::unordered_map<QuadKey, Merge, QuadKeyHash> merges_;
     int mergeDepth_ = 0;
     bool mergeActive_ = false;
-    double revealHold_ = 0.6;
+    double revealHold_ = 3.0;
     double revealGap_ = 0.3;
     double lastReveal_ = -1.0e9;
     double motionHold_ = 2.0;
