@@ -257,6 +257,7 @@ private:
     };
     std::unordered_map<QuadKey, Merge, QuadKeyHash> merges_;
     int mergeDepth_ = 0;
+    bool mergeActive_ = false;
     double mergeSeconds_ = 0.35;
     struct SurfaceDraw {
         sg_view texture{};
