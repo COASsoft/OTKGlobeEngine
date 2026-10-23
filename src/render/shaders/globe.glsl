@@ -37,8 +37,8 @@ void main() {
     if (morph.x > 0.0 && morph.w > 0.0) {
         vec3 rel = position + eyerel.xyz;
         float len = max(length(rel), 1.0);
-        float facing = max(abs(dot(rel / len, normalize(center.xyz + position))), 0.35);
-        float d = max(len - eyerel.w, 1.0);
+        float facing = eyerel.w < 0.0 ? 1.0 : max(abs(dot(rel / len, normalize(center.xyz + position))), 0.35);
+        float d = eyerel.w < 0.0 ? -eyerel.w : max(len - eyerel.w, 1.0);
         mw = clamp((morph.y - morph.x * facing / d) / morph.z, 0.0, 1.0) * morph.w;
     }
     morphw = mw;
