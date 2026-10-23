@@ -1100,6 +1100,8 @@ void parseArgs(int argc, char** argv) {
             std::sscanf(argv[++i], "%dx%d", &state->width, &state->height);
         } else if (a == "--cache") {
             state->cacheDir = argv[++i];
+        } else if (a == "--clear-cache") {
+            state->clearCache = std::atoi(argv[++i]) != 0;
         } else if (a == "--offline") {
             state->offline = std::atoi(argv[++i]) != 0;
         } else if (a == "--mbtiles" || a == "--gpkg" || a == "--osmdroid") {
