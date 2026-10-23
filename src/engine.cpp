@@ -2120,8 +2120,9 @@ bool Engine::needsRedraw() const { return impl_->active() || impl_->globe.waitin
 
 double Engine::nextFrameDelay() const {
     if (impl_->active() || impl_->globe.wakeDue()) return 0.0;
-    if (impl_->globe.waiting()) return std::clamp(impl_->globe.wakeIn(), 0.0, 0.05);
-    return std::numeric_limits<double>::infinity();
+    if (!impl_->globe.waiting()) return std::numeric_limits<double>::infinity();
+    const double wake = std::max(impl_->globe.wakeIn(), 0.0);
+    return impl_->globe.fetching() ? std::min(wake, 0.05) : wake;
 }
 
 Stats Engine::stats() const { return impl_->globe.stats(); }
