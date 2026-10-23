@@ -167,6 +167,7 @@ public:
     void render(Camera& cam, const sg_swapchain* swapchain, const sg_attachments* attachments, int width, int height,
                 const std::vector<RenderView>* views = nullptr);
     bool busy() const { return busy_; }
+    bool wakeDue() const;
     bool presentIdle(Camera& cam, const sg_swapchain& swapchain);
     Stats stats() const { return stats_; }
     void setCpuMs(double ms, double threadMs = 0) {
@@ -339,7 +340,7 @@ private:
     void dropSnapshotTarget();
     void drawSnapshot(float alpha);
     static void dropSurface(SurfaceTile& s);
-    void processLoads();
+    int processLoads();
     void evict();
     bool buildSurfaceJob(const QuadKey& k, double priority, SurfaceJob* job, std::vector<float>* verts,
                          std::vector<float>* fverts = nullptr, double texelDeg = 0, bool standIn = false);
@@ -351,6 +352,7 @@ private:
     void invalidateTerrain();
     void markDirty(const GeoRect& rect);
     double now() const;
+    bool revealGate(double t) const;
     std::chrono::steady_clock::time_point frameStart_;
     std::chrono::steady_clock::time_point lastFrameStart_;
     std::array<float, 240> frameSamples_{};
@@ -601,6 +603,9 @@ private:
     float heatOpacity_ = 0.55f;
     bool flipSurface_ = false;
     bool busy_ = true;
+    bool waiting_ = false;
+    double wakeAt_ = 0.0;
+    double pollGap_ = 0.25;
     bool ready_ = false;
     Stats stats_;
     int invalidResources_ = 0;
