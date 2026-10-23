@@ -55,7 +55,8 @@ public:
     void drawSurface(const GeoRect& tile, double unitDeg, double dpi);
     void drawBorders3D(const Camera& cam, const GroundFn& ground, double dpi, const std::vector<GeoRect>& visible, int version);
     void beginRoads3D(const Camera& cam, double dpi);
-    void drawRoads3D(sg_buffer buffer, int count, const Vec3& origin, const float clip[4], int pass);
+    void warmLines3D();
+    void drawRoads3D(sg_buffer buffer, int first, int count, const Vec3& origin, const float clip[4], int pass);
     static void buildLines3D(const std::vector<float>& inst, double originLat, double originLon, const GroundFn& ground, std::vector<float>& out);
     void setContours(std::shared_ptr<const ContourSet> set);
     void drawContours(const GeoRect& tile, double unitDeg, double dpi);
@@ -69,10 +70,11 @@ private:
         double west = 0, south = 0, east = 0, north = 0;
         std::uint64_t used = 0;
         std::vector<float> inst;
-        sg_buffer buffer3d{};
-        int count3d = 0;
-        int version3d = -1;
-        std::chrono::steady_clock::time_point built3d{};
+        int levelFirst[5] = {};
+        sg_buffer buffer3d[4] = {};
+        int count3d[4] = {};
+        int version3d[4] = {-1, -1, -1, -1};
+        std::chrono::steady_clock::time_point built3d[4]{};
     };
     struct Text;
 
@@ -105,6 +107,7 @@ private:
     sg_pipeline labelPipeline_{};
     sg_pipeline iconPipeline_{};
     sg_buffer quad_{};
+    sg_buffer warmLine_{};
     std::array<sg_buffer, 4> labelBuffers_{};
     std::array<sg_buffer, 4> iconBuffers_{};
     sg_image atlasImage_{};
