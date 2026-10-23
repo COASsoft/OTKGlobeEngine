@@ -205,6 +205,7 @@ private:
         bool overlaysOmitted = false;
         bool presentable = false;
         std::uint64_t shown = 0;
+        double renderedAt = -1.0;
     };
     struct ImageryTexture {
         sg_image image{};
