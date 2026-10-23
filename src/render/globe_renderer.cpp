@@ -1777,30 +1777,37 @@ int GlobeRenderer::processLoads() {
             failCount_.erase(t.id);
         } else if (t.ok) {
             float tileMean[3] = {-1.0f, -1.0f, -1.0f};
-            float tileSpread[3] = {0.0f, 0.0f, 0.0f};
+            std::shared_ptr<std::array<float, 192>> tileCells;
             if (t.id.layer >= 0 && t.id.layer < static_cast<int>(layerOpacity_.size()) && !t.rgba.empty()) {
                 size_t samples = 0, opaque = 0;
-                double sum[3] = {0.0, 0.0, 0.0}, sq[3] = {0.0, 0.0, 0.0};
+                double sum[3] = {0.0, 0.0, 0.0};
                 for (size_t a = 3; a < t.rgba.size(); a += 4 * 61) {
                     ++samples;
                     if (t.rgba[a] >= 128) {
                         ++opaque;
-                        for (int c = 0; c < 3; ++c) {
-                            const double v = t.rgba[a - 3 + c];
-                            sum[c] += v;
-                            sq[c] += v * v;
-                        }
+                        for (int c = 0; c < 3; ++c) sum[c] += t.rgba[a - 3 + c];
                     }
                 }
                 const float f = samples ? static_cast<float>(opaque) / static_cast<float>(samples) : 1.0f;
                 float& o = layerOpacity_[t.id.layer];
                 o = o < 0.0f ? f : o * 0.8f + f * 0.2f;
-                if (opaque * 2 > samples)
-                    for (int c = 0; c < 3; ++c) {
-                        const double m = sum[c] / static_cast<double>(opaque);
-                        tileMean[c] = static_cast<float>(m);
-                        tileSpread[c] = static_cast<float>(std::sqrt(std::max(0.0, sq[c] / static_cast<double>(opaque) - m * m)));
-                    }
+                if (opaque * 10 > samples * 9 && t.width >= 64 && t.height >= 64) {
+                    for (int c = 0; c < 3; ++c) tileMean[c] = static_cast<float>(sum[c] / static_cast<double>(opaque));
+                    tileCells = std::make_shared<std::array<float, 192>>();
+                    const int cw = t.width / 8, ch = t.height / 8;
+                    for (int cy = 0; cy < 8; ++cy)
+                        for (int cx = 0; cx < 8; ++cx) {
+                            double acc[3] = {0.0, 0.0, 0.0};
+                            int n = 0;
+                            for (int y = cy * ch; y < (cy + 1) * ch; y += 4)
+                                for (int x = cx * cw; x < (cx + 1) * cw; x += 4) {
+                                    const size_t a = (static_cast<size_t>(y) * t.width + x) * 4;
+                                    for (int c = 0; c < 3; ++c) acc[c] += t.rgba[a + c];
+                                    ++n;
+                                }
+                            for (int c = 0; c < 3; ++c) (*tileCells)[(cy * 8 + cx) * 3 + c] = static_cast<float>(acc[c] / std::max(n, 1));
+                        }
+                }
             }
             sg_image_desc d{};
             d.width = t.width;
@@ -1821,7 +1828,7 @@ int GlobeRenderer::processLoads() {
                 continue;
             }
             std::copy(tileMean, tileMean + 3, tex.mean);
-            std::copy(tileSpread, tileSpread + 3, tex.spread);
+            tex.cells = tileCells;
             auto old = imagery_.find(t.id);
             if (old != imagery_.end()) dropImagery(old->second);
             imagery_[t.id] = tex;
@@ -1861,30 +1868,42 @@ void GlobeRenderer::learnColour(const TileId& id) {
         const TileId p = pass == 0 ? TileId{id.layer, id.z - 1, id.x / 2, id.y / 2} : id;
         if (p.z < 0 || colourLearned_.count(p)) continue;
         auto parent = imagery_.find(p);
-        if (parent == imagery_.end() || parent->second.mean[0] < 0.0f) continue;
-        float sum[3] = {0.0f, 0.0f, 0.0f}, sq[3] = {0.0f, 0.0f, 0.0f};
+        if (parent == imagery_.end() || !parent->second.cells) continue;
+        double ps[3] = {0.0, 0.0, 0.0}, pq[3] = {0.0, 0.0, 0.0}, cs[3] = {0.0, 0.0, 0.0}, cq[3] = {0.0, 0.0, 0.0};
         bool all = true;
         for (int i = 0; i < 4 && all; ++i) {
             auto child = imagery_.find(TileId{p.layer, p.z + 1, p.x * 2 + (i & 1), p.y * 2 + (i >> 1)});
-            if (child == imagery_.end() || child->second.mean[0] < 0.0f) {
+            if (child == imagery_.end() || !child->second.cells) {
                 all = false;
                 break;
             }
-            for (int c = 0; c < 3; ++c) {
-                sum[c] += child->second.mean[c];
-                sq[c] += child->second.spread[c] * child->second.spread[c] + child->second.mean[c] * child->second.mean[c];
-            }
+            const auto& pc = *parent->second.cells;
+            const auto& cc = *child->second.cells;
+            for (int gy = 0; gy < 4; ++gy)
+                for (int gx = 0; gx < 4; ++gx) {
+                    const int pcell = ((i >> 1) * 4 + gy) * 8 + (i & 1) * 4 + gx;
+                    for (int c = 0; c < 3; ++c) {
+                        const double pv = pc[pcell * 3 + c];
+                        double cv = 0.0;
+                        for (int k = 0; k < 4; ++k) cv += cc[((gy * 2 + (k >> 1)) * 8 + gx * 2 + (k & 1)) * 3 + c];
+                        cv *= 0.25;
+                        ps[c] += pv;
+                        pq[c] += pv * pv;
+                        cs[c] += cv;
+                        cq[c] += cv * cv;
+                    }
+                }
         }
         if (!all) continue;
         colourLearned_.insert(p);
         LevelColour& lc = levelColour_[p.layer * 64 + p.z];
         for (int c = 0; c < 3; ++c) {
-            const float mean = sum[c] * 0.25f;
-            const float spread = std::sqrt(std::max(0.0f, sq[c] * 0.25f - mean * mean));
-            const float gain = std::clamp(spread / std::max(parent->second.spread[c], 2.0f), 0.4f, 3.0f);
-            const float bias = std::clamp(mean - gain * parent->second.mean[c], -160.0f, 160.0f);
-            lc.gain[c] = lc.count == 0 ? gain : lc.gain[c] + (gain - lc.gain[c]) * 0.2f;
-            lc.bias[c] = lc.count == 0 ? bias : lc.bias[c] + (bias - lc.bias[c]) * 0.2f;
+            const double pm = ps[c] / 64.0, cm = cs[c] / 64.0;
+            const double psd = std::sqrt(std::max(0.0, pq[c] / 64.0 - pm * pm)), csd = std::sqrt(std::max(0.0, cq[c] / 64.0 - cm * cm));
+            const float gain = static_cast<float>(std::clamp(csd / std::max(psd, 3.0), 0.5, 2.5));
+            const float bias = static_cast<float>(std::clamp(cm - gain * pm, -160.0, 160.0));
+            lc.gain[c] = lc.count == 0 ? gain : lc.gain[c] + (gain - lc.gain[c]) * 0.15f;
+            lc.bias[c] = lc.count == 0 ? bias : lc.bias[c] + (bias - lc.bias[c]) * 0.15f;
         }
         ++lc.count;
         for (int z = 0; z <= p.z; ++z) {
@@ -1892,7 +1911,7 @@ void GlobeRenderer::learnColour(const TileId& id) {
             colourGain(p.layer, z, g, b);
             auto& applied = colourApplied_[p.layer * 64 + z];
             for (int c = 0; c < 3; ++c)
-                if (std::abs(g[c] - (applied[c] > 0.0f ? applied[c] : 1.0f)) > 0.05f || std::abs(b[c] - applied[3 + c]) > 6.0f) colourChanged_ = true;
+                if (std::abs(g[c] - (applied[c] > 0.0f ? applied[c] : 1.0f)) > 0.08f || std::abs(b[c] - applied[3 + c]) > 10.0f) colourChanged_ = true;
         }
     }
 }
@@ -1909,7 +1928,9 @@ void GlobeRenderer::colourGain(int layer, int z, float gain[3], float bias[3]) c
         const LevelColour& lc = it->second;
         if (lc.count < 3) continue;
         bool significant = false;
-        for (int c = 0; c < 3; ++c) significant = significant || std::abs(lc.gain[c] - 1.0f) > 0.08f || std::abs(lc.bias[c]) > 8.0f;
+        float shift = 0.0f;
+        for (int c = 0; c < 3; ++c) shift = std::max(shift, std::abs((lc.gain[c] - 1.0f) * 110.0f + lc.bias[c]));
+        significant = shift > 12.0f;
         if (!significant) continue;
         for (int c = 0; c < 3; ++c) {
             gain[c] = std::clamp(lc.gain[c] * gain[c], 0.4f, 3.0f);
@@ -2460,9 +2481,10 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     for (const auto& [bk, bp] : blendParents_) need(bk, bp);
     blendParents_.clear();
     elevation_.beginFrame();
-    if (colourChanged_ && now() - colourDirtyAt_ > 2.0) {
+    if (colourChanged_ && now() - colourDirtyAt_ > (colourRenders_ < 2 ? 2.0 : 15.0)) {
         colourChanged_ = false;
         colourDirtyAt_ = now();
+        ++colourRenders_;
         for (auto& [key, applied] : colourApplied_) {
             float g[3], b[3];
             colourGain(key / 64, key % 64, g, b);
