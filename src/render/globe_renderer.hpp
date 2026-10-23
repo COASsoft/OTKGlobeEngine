@@ -270,6 +270,9 @@ private:
     double revealHold_ = 0.6;
     double revealGap_ = 0.3;
     double lastReveal_ = -1.0e9;
+    double motionHold_ = 2.0;
+    double lastMotion_ = -1.0e9;
+    double motionKey_[5] = {};
     bool revealOpen_ = true;
     int heldPrev_ = 0;
     double oldestHeldPrev_ = 0.0;
