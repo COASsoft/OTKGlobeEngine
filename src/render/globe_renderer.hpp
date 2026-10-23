@@ -289,7 +289,7 @@ private:
     int waitingPrev_ = 0;
     int refineWaiting_ = 0;
     double mergeSeconds_ = 0.35;
-    double mergeGap_ = 0.3;
+    double mergeGap_ = 0.6;
     struct SurfaceDraw {
         sg_view texture{};
         float opacity = 1.0f;
@@ -325,6 +325,7 @@ private:
                      int coarser[4]) const;
     bool ready(const QuadKey& k) const;
     bool presentable(const QuadKey& k) const;
+    bool finished(const QuadKey& k) const;
     int readyGap(const QuadKey& k) const;
     bool sparseLayer(int l) const;
     bool progressed(const SurfaceTile& s) const;
