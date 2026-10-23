@@ -73,6 +73,106 @@ void main() {
 
 @program bline bline_vs bline_fs
 
+@vs bline3d_vs
+layout(binding=0) uniform bline3d_params {
+    mat4 mvp;
+    vec4 view;
+    vec4 shade;
+    vec4 lift;
+    vec4 clip;
+    vec4 dashk;
+    vec4 styles[16];
+    vec4 colors[16];
+};
+
+in vec2 corner;
+in vec3 pa;
+in vec3 pb;
+in vec4 geo;
+in vec2 info;
+
+out vec4 tint;
+out vec4 edge;
+out vec4 dist;
+out vec4 dash;
+out vec2 gpos;
+out vec4 rect;
+
+void main() {
+    int s = int(clamp(floor(info.y + 0.5), 0.0, 15.0));
+    vec4 style = styles[s];
+    float w = style.x * view.z;
+    float c = style.y * view.z;
+    vec3 la = pa + (lift.xyz - pa) * lift.w;
+    vec3 lb = pb + (lift.xyz - pb) * lift.w;
+    vec4 ca = mvp * vec4(la, 1.0);
+    vec4 cb = mvp * vec4(lb, 1.0);
+    tint = colors[s];
+    edge = shade;
+    gpos = mix(geo.xy, geo.zw, corner.x);
+    rect = clip;
+    if (w <= 0.0 || ca.w <= 1.0e-3 || cb.w <= 1.0e-3) {
+        gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+        dist = vec4(0.0);
+        dash = vec4(0.0, 0.0, view.w, 1.0);
+        return;
+    }
+    vec2 halfvp = view.xy * 0.5;
+    vec2 sa = ca.xy / ca.w * halfvp;
+    vec2 sb = cb.xy / cb.w * halfvp;
+    vec2 d = sb - sa;
+    float len = length(d);
+    vec2 dir = len > 1.0e-4 ? d / len : vec2(1.0, 0.0);
+    vec2 n = vec2(-dir.y, dir.x);
+    float halfpx = w * 0.5 + c + 1.0;
+    vec4 p = mix(ca, cb, corner.x);
+    p.xy += n * (corner.y * halfpx) / halfvp * p.w;
+    gl_Position = p;
+    float along = (info.x + corner.x * length(pb - pa)) * dashk.x;
+    dist = vec4(corner.y * halfpx * p.w, along * p.w, w * 0.5, c);
+    dash = vec4(style.z * view.z, style.w * view.z, view.w, p.w);
+}
+@end
+
+@fs bline3d_fs
+in vec4 tint;
+in vec4 edge;
+in vec4 dist;
+in vec4 dash;
+in vec2 gpos;
+in vec4 rect;
+out vec4 frag_color;
+
+void main() {
+    if (rect.x <= rect.z && (gpos.x < rect.x || gpos.x > rect.z || gpos.y < rect.y || gpos.y > rect.w)) discard;
+    float across = abs(dist.x / dash.w);
+    float along = dist.y / dash.w;
+    float inner = clamp(dist.z + 0.5 - across, 0.0, 1.0);
+    float outer = dist.w > 0.0 ? clamp(dist.z + dist.w + 0.5 - across, 0.0, 1.0) : 0.0;
+    vec3 rgb;
+    float a;
+    if (dash.z < 0.5) {
+        rgb = edge.rgb;
+        a = edge.a * outer;
+    } else if (dash.z < 1.5) {
+        rgb = tint.rgb;
+        a = tint.a * inner;
+    } else {
+        float fill = tint.a * inner;
+        float ring = edge.a * outer;
+        a = fill + ring * (1.0 - fill);
+        rgb = a > 0.0 ? (tint.rgb * fill + edge.rgb * ring * (1.0 - fill)) / a : tint.rgb;
+    }
+    if (dash.x > 0.0) {
+        float t = mod(along, dash.x + dash.y);
+        a *= clamp(min(t, dash.x - t) + 0.5, 0.0, 1.0);
+    }
+    frag_color = vec4(rgb, a);
+}
+@end
+
+@program bline3d bline3d_vs bline3d_fs
+
 @vs label_vs
 in vec2 position;
 in vec2 texcoord0;
