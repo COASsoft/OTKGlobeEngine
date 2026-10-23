@@ -3496,7 +3496,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         for (const DrawTile& d : tiles) {
             int z = idealImageryZ(d.key);
             ideal = std::max(ideal, z);
-            if (expecting(d.key)) {
+            if (expecting(d.key) || retrying(d.key)) {
                 sg_view v{};
                 float u[4];
                 const QuadKey s = source(d.key, 0, v, u);
