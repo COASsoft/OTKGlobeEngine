@@ -947,7 +947,7 @@ void GlobeRenderer::buildTerrain(const QuadKey& k, TerrainTile& t, double priori
     for (int j = 0; j < kPosts; ++j) {
         double lat = b.south + span * j / kGrid;
         double dy = 111132.954 * cell;
-        double dx = std::max(111319.49 * std::cos(lat * kDegToRad) * cell, 1e-3);
+        double dx = std::max(111319.49 * std::cos(lat * kDegToRad) * cell, dy * 0.25);
         for (int i = 0; i < kPosts; ++i) {
             double lon = b.west + span * i / kGrid;
             size_t c = static_cast<size_t>(j + 1) * n + (i + 1);
