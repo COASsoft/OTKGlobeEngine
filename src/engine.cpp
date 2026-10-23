@@ -2116,7 +2116,13 @@ void Engine::frameOffscreen(const sg_attachments& attachments, int width, int he
     impl_->dirty = false;
 }
 
-bool Engine::needsRedraw() const { return impl_->active() || impl_->globe.wakeDue(); }
+bool Engine::needsRedraw() const { return impl_->active() || impl_->globe.waiting(); }
+
+double Engine::nextFrameDelay() const {
+    if (impl_->active() || impl_->globe.wakeDue()) return 0.0;
+    if (impl_->globe.waiting()) return std::clamp(impl_->globe.wakeIn(), 0.0, 0.05);
+    return std::numeric_limits<double>::infinity();
+}
 
 Stats Engine::stats() const { return impl_->globe.stats(); }
 
