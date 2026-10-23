@@ -2,8 +2,10 @@
 #include <android/configuration.h>
 #include <android/log.h>
 #include <android/native_activity.h>
+#include <android/input.h>
 #include <android/native_window.h>
 #include <dlfcn.h>
+#include <poll.h>
 #include <pthread.h>
 #endif
 #if defined(_WIN32)
@@ -63,7 +65,11 @@ struct ViewerState {
     std::string cacheDir;
     bool clearCache = false;
     int fps = 60;
+#if defined(__ANDROID__) || defined(_WIN32)
+    int idleFps = 5;
+#else
     int idleFps = 20;
+#endif
     bool offline = false;
     std::vector<otk::ImageryLayer> customLayers;
     bool hasDownload = false;
@@ -619,12 +625,46 @@ void androidFrameRate() {
 }
 #endif
 
+double frameSeconds() {
+    static auto last = std::chrono::steady_clock::now();
+    const auto now = std::chrono::steady_clock::now();
+    const double dt = std::chrono::duration<double>(now - last).count();
+    last = now;
+    return dt;
+}
+
+bool inputWaiting() {
+#if defined(__ANDROID__)
+    if (_sapp.android.current.input && AInputQueue_hasEvents(_sapp.android.current.input) > 0) return true;
+    pollfd p{_sapp.android.pt.read_from_main_fd, POLLIN, 0};
+    return poll(&p, 1, 0) > 0;
+#else
+    return false;
+#endif
+}
+
+void idleWait(double seconds) {
+    const auto until = std::chrono::steady_clock::now() + std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<double>(seconds));
+    for (;;) {
+        const auto now = std::chrono::steady_clock::now();
+        if (now >= until || state->engine.nextFrameDelay() <= 0.0 || inputWaiting()) return;
+        const auto slice = std::min<std::chrono::steady_clock::duration>(until - now, std::chrono::milliseconds(8));
+#if defined(_WIN32)
+        const DWORD ms = static_cast<DWORD>(std::max<long long>(1, std::chrono::duration_cast<std::chrono::milliseconds>(slice).count()));
+        if (MsgWaitForMultipleObjects(0, nullptr, FALSE, ms, QS_ALLINPUT) == WAIT_OBJECT_0) return;
+#else
+        std::this_thread::sleep_for(slice);
+#endif
+    }
+}
+
 void frame() {
 #if defined(__ANDROID__)
     androidInsets();
     androidFrameRate();
 #endif
     watchdogBeat();
+    const double dt = frameSeconds();
     if (!state->shotPath.empty()) {
         state->engine.setViewport(state->width, state->height, 1.0f);
         sg_attachments att{};
@@ -636,7 +676,7 @@ void frame() {
         sg_commit();
         double benchMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - benchStart).count();
         ++state->frames;
-        state->shotElapsed += sapp_frame_duration();
+        state->shotElapsed += dt;
         if (state->holes && state->frames % 3 == 0) checkHoles();
         if (!state->filmDir.empty() && state->shotElapsed >= state->filmNext) {
             state->filmNext = state->shotElapsed + state->filmEvery;
@@ -693,7 +733,7 @@ void frame() {
             }
         }
         bool scripting = runScript();
-        logFrame(sapp_frame_duration());
+        logFrame(dt);
         if (scripting && state->scriptNext > 0) {
             otk::Stats ss = state->engine.stats();
             if (state->scriptLoads0 < 0) state->scriptLoads0 = ss.imageryLoads;
@@ -791,21 +831,24 @@ void frame() {
         return;
     }
     if (!state->script.empty() || state->framesFile) {
-        state->shotElapsed += sapp_frame_duration();
+        state->shotElapsed += dt;
         runScript();
     }
     state->engine.setViewport(sapp_width(), sapp_height(), viewerDpi());
     if (state->stereo >= 0) state->engine.frameStereo(sglue_swapchain(), state->stereo);
     else state->engine.frame(sglue_swapchain());
     sg_commit();
-    logFrame(sapp_frame_duration());
+    logFrame(dt);
     {
         static double idleFor = 0.0;
-        idleFor = state->engine.needsRedraw() ? 0.0 : idleFor + sapp_frame_duration();
-        if (state->idleFps > 0 && idleFor > 0.5) {
-            const double pause = 1.0 / state->idleFps - 1.0 / 60.0;
-            if (pause > 0.0) std::this_thread::sleep_for(std::chrono::duration<double>(pause));
-        }
+        double delay = state->engine.nextFrameDelay();
+        idleFor = delay > 0.0 ? idleFor + dt : 0.0;
+        if (state->scriptNext < state->script.size()) delay = std::min(delay, state->script[state->scriptNext].at - state->shotElapsed);
+#if defined(__ANDROID__) || defined(_WIN32)
+        if (state->idleFps > 0 && delay > 0.0) idleWait(std::min(delay, 1.0 / state->idleFps));
+#else
+        if (state->idleFps > 0 && idleFor > 0.5 && delay > 0.0) idleWait(std::min(delay, 1.0 / state->idleFps) - 1.0 / 60.0);
+#endif
     }
     {
         otk::Stats ps = state->engine.stats();
