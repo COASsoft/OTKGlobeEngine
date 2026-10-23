@@ -2971,34 +2971,74 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             auto shown = surface_.find(src);
             if (shown != surface_.end()) shownVersion = shown->second.version;
         }
-        bool retiringShown = false;
-        auto rt = retiring_.find(dt.key);
-        if (rt != retiring_.end()) {
-            double t = std::max(0.0, (tnow - rt->second.second) / 0.35);
-            if (t < 1.0 && sg_query_view_state(rt->second.first.texture) == SG_RESOURCESTATE_VALID) {
-                view2 = rt->second.first.texture;
-                uvx2[0] = 1.0f;
-                uvx2[1] = 1.0f;
-                uvx2[2] = 0.0f;
-                uvx2[3] = 0.0f;
-                blend = static_cast<float>(t * t * (3 - 2 * t));
-                fading = true;
-                retiringShown = true;
+        bool fadingFrom = false;
+        int fromVersion = -1;
+        Transition& tr = transitions_[dt.key];
+        if (tr.frame + 1 == frame_) {
+            if (!(tr.src == src) || tr.version != shownVersion) {
+                const bool early = tr.start >= 0.0 && (tnow - tr.start) / kFadeSeconds < 0.5 && tr.from.level != -1;
+                if (!early) {
+                    tr.from = tr.src.level >= 0 ? tr.src : QuadKey{-2, 0, 0};
+                    tr.fromVersion = tr.version;
+                }
+                tr.start = tnow;
+            }
+        } else {
+            tr.from = {-1, 0, 0};
+            tr.start = -1.0;
+            for (int up = 1; up <= 8 && up <= dt.key.level; ++up) {
+                auto a = transitions_.find({dt.key.level - up, dt.key.x >> up, dt.key.y >> up});
+                if (a == transitions_.end() || a->second.frame + 1 != frame_) continue;
+                if (!(a->second.src == src) || a->second.version != shownVersion) {
+                    tr.from = a->second.src.level >= 0 ? a->second.src : QuadKey{-2, 0, 0};
+                    tr.fromVersion = a->second.version;
+                    tr.start = tnow;
+                }
+                break;
             }
         }
-        auto fd = fades_.find(dt.key);
-        if (fd != fades_.end()) {
-            double t = (tnow - fd->second.start) / 0.35;
-            if (t >= 1.0 || src.level < 0) {
-                fades_.erase(fd);
-            } else if (!retiringShown) {
-                QuadKey from = fd->second.from;
-                int up = dt.key.level - from.level;
-                QuadKey got = source(dt.key, up, view2, uvx2);
-                if (got.level >= 0 && got.level < src.level) {
-                    blend = static_cast<float>(t * t * (3 - 2 * t));
-                    fading = true;
+        tr.src = src;
+        tr.version = shownVersion;
+        tr.frame = frame_;
+        if (tr.start >= 0.0) {
+            const double t = (tnow - tr.start) / kFadeSeconds;
+            sg_view fv{};
+            float fu[4] = {1.0f, 1.0f, 0.0f, 0.0f};
+            if (t < 1.0 && src.level >= 0) {
+                const QuadKey f = tr.from;
+                const int k = dt.key.level - f.level;
+                if (f.level == -2) {
+                    fv = fallbackView_;
+                } else if (f.level >= 0 && k >= 0 && (dt.key.x >> k) == f.x && (dt.key.y >> k) == f.y) {
+                    auto fs = surface_.find(f);
+                    if (fs != surface_.end() && fs->second.version == tr.fromVersion) {
+                        fv = fs->second.texture;
+                        fs->second.used = frame_;
+                        fs->second.shown = frame_;
+                    } else {
+                        auto rs = retiring_.find(f);
+                        if (rs != retiring_.end() && rs->second.first.version == tr.fromVersion) {
+                            fv = rs->second.first.texture;
+                            rs->second.second = std::max(rs->second.second, tnow - 0.4 + kFadeSeconds * (1.0 - t) + 0.05);
+                        }
+                    }
+                    const double sc = 1.0 / static_cast<double>(1 << k);
+                    const int rx = dt.key.x - (f.x << k), ry = dt.key.y - (f.y << k);
+                    fu[0] = static_cast<float>(sc);
+                    fu[1] = static_cast<float>(sc);
+                    fu[2] = static_cast<float>(rx * sc);
+                    fu[3] = static_cast<float>(((1 << k) - 1 - ry) * sc);
                 }
+            }
+            if (fv.id && sg_query_view_state(fv) == SG_RESOURCESTATE_VALID) {
+                view2 = fv;
+                std::memcpy(uvx2, fu, sizeof(fu));
+                blend = static_cast<float>(t * t * (3 - 2 * t));
+                fading = true;
+                fadingFrom = true;
+                fromVersion = tr.fromVersion;
+            } else {
+                tr.start = -1.0;
             }
         }
         int coarser[4];
