@@ -236,9 +236,13 @@ private:
         double distance = 0;
         double ratio = 0;
     };
-    struct Fade {
-        double start = 0;
-        QuadKey from;
+    struct Transition {
+        QuadKey src{-1, 0, 0};
+        int version = -1;
+        QuadKey from{-1, 0, 0};
+        int fromVersion = -1;
+        double start = -1.0;
+        std::uint64_t frame = 0;
     };
     struct SurfaceDraw {
         sg_view texture{};
