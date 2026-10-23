@@ -1524,6 +1524,19 @@ int GlobeRenderer::readyGap(const QuadKey& k) const {
     return k.level + 1;
 }
 
+bool GlobeRenderer::finished(const QuadKey& k) const {
+    auto s = surface_.find(k);
+    if (s == surface_.end() || s->second.version < 0) return false;
+    if (s->second.complete) return true;
+    if (s->second.missing.empty()) return false;
+    const double t = now();
+    for (const TileId& id : s->second.missing) {
+        auto f = failed_.find(id);
+        if (f == failed_.end() || f->second <= t) return false;
+    }
+    return true;
+}
+
 bool GlobeRenderer::presentable(const QuadKey& k) const {
     auto s = surface_.find(k);
     if (s == surface_.end() || !(s->second.complete || (s->second.version >= 0 && s->second.presentable)))
@@ -1622,7 +1635,7 @@ void GlobeRenderer::traverse(const Camera& cam, const QuadKey& k, std::vector<Dr
                     if (gi.visible) prefetch(g, gi.distance * 2.5);
                 }
             }
-    } else if (!presentable(k) && k.level < maxRefine()) {
+    } else if ((!presentable(k) || (wasRefined(k) && !finished(k))) && k.level < maxRefine()) {
         if (!prefetching_ && wasRefined(k)) {
             bool drawable = true;
             NodeInfo kin[4];
@@ -3258,18 +3271,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         if (ideal >= 0 && effective < 99) return std::max(0, ideal - effective);
         return key.level - s.level + (st->second.complete ? 0 : 1);
     };
-    const double expectNow = now();
-    auto expecting = [&](const QuadKey& key) {
-        auto s = surface_.find(key);
-        if (s == surface_.end() || s->second.version < 0) return true;
-        if (s->second.complete) return false;
-        if (s->second.missing.empty()) return true;
-        for (const TileId& id : s->second.missing) {
-            auto f = failed_.find(id);
-            if (f == failed_.end() || f->second <= expectNow) return true;
-        }
-        return false;
-    };
+    auto expecting = [&](const QuadKey& key) { return !finished(key); };
     int capDepth = 0;
     if (uniformShare_ > 0.0 && revealHold_ > 0.0 && !tiles.empty()) {
         int hist[17] = {};
