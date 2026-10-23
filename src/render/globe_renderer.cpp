@@ -3213,10 +3213,10 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             if (shownDepth >= 1) visBlur += area;
             if (shownDepth >= 2) visBlur2 += area;
             visDepth += area * shownDepth;
-            const bool faded = blend < 0.999f || (mergeMix > 0.0f && mergeMix < 0.999f);
+            const bool faded = blend < 0.999f || dt.merge.level >= 0;
             if (faded) visFade += area;
             const bool held = snapshotShown_ && snapshotFade_ < 0.0;
-            const bool merged = dt.merge.level >= 0 && mergeMix >= 0.999f;
+            const bool merged = dt.merge.level >= 0 && mergeMix >= 0.5f;
             const QuadKey shownKey = merged ? dt.merge : src;
             const int shownVer = merged ? tr.mergeVersion : shownVersion;
             Shown& sh = shown_[dt.key];
