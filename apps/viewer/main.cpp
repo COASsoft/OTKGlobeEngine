@@ -382,6 +382,81 @@ void checkHoles() {
 
 void showStatus(const std::string& s);
 
+void writeSummary() {
+    if (state->framesPath.empty()) return;
+    if (state->framesFile) {
+        std::fclose(state->framesFile);
+        state->framesFile = nullptr;
+    }
+    std::string text;
+    char line[512];
+    for (int pass = 0; pass < 2; ++pass) {
+        const ViewerState::Totals& T = pass == 0 ? state->during : state->after;
+        std::snprintf(line, sizeof(line),
+                      "%s frames=%lld seconds=%.2f pop_screens=%.4f pops=%lld merge_screens=%.4f terrain_pop_screens=%.4f blur_seconds=%.4f "
+                      "blur2_seconds=%.4f depth_seconds=%.4f fade_seconds=%.4f incomplete_frames=%lld jank25=%lld jank50=%lld worst_ms=%.1f\n",
+                      pass == 0 ? "input" : "settle", T.frames, T.seconds, T.pop, T.pops, T.merge, T.terrain, T.blur, T.blur2, T.depth, T.fade,
+                      T.incomplete, T.jank25, T.jank50, T.worst);
+        text += line;
+    }
+    std::snprintf(line, sizeof(line), "settled_after_input=%.2f\n",
+                  state->settledAt >= 0 && state->inputEnd >= 0 ? state->settledAt - state->inputEnd : -1.0);
+    text += line;
+    if (FILE* f = std::fopen((state->framesPath + ".txt").c_str(), "w")) {
+        std::fputs(text.c_str(), f);
+        std::fclose(f);
+    }
+#if defined(__ANDROID__)
+    __android_log_write(ANDROID_LOG_INFO, "OTKGlobeEngine", text.c_str());
+#else
+    std::fputs(text.c_str(), stdout);
+    std::fflush(stdout);
+#endif
+}
+
+void logFrame(double dt) {
+    if (!state->framesFile) return;
+    const otk::Stats s = state->engine.stats();
+    const otk::View v = state->engine.view();
+    const bool busy = state->engine.needsRedraw();
+    const bool input = state->scriptNext < state->script.size() || state->gesturing || state->engine.input().active() || state->engine.animating();
+    const double t = state->shotElapsed;
+    std::fprintf(state->framesFile,
+                 "%.4f,%.2f,%.2f,%.6f,%.6f,%.4f,%.1f,%.1f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%.5f,%d,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%d,%d\n", t,
+                 dt * 1000.0, s.cpuMs, v.lat, v.lon, v.gsd, v.tilt, v.azimuth, s.terrainTiles, s.maxLevel, s.incompleteTiles, s.coarseTiles,
+                 s.maxFallbackDepth, s.blankTiles, s.surfaceRenders, s.uploads, s.terrainBuilds, s.pendingRequests, s.popArea, s.pops, s.mergeArea,
+                 s.terrainPopArea, s.blurArea, s.blurArea2, s.blurDepth, s.fadeArea, busy ? 1 : 0, input ? 1 : 0);
+    if (state->scriptNext == 0) return;
+    if (input) {
+        state->inputEnd = -1.0;
+        state->settledAt = -1.0;
+    } else if (state->inputEnd < 0) {
+        state->inputEnd = t;
+    }
+    ViewerState::Totals& T = input ? state->during : state->after;
+    ++T.frames;
+    T.seconds += dt;
+    T.pop += s.popArea;
+    T.pops += s.pops;
+    T.merge += s.mergeArea;
+    T.terrain += s.terrainPopArea;
+    T.blur += s.blurArea * dt;
+    T.blur2 += s.blurArea2 * dt;
+    T.depth += s.blurDepth * dt;
+    T.fade += s.fadeArea * dt;
+    if (s.incompleteTiles > 0) ++T.incomplete;
+    if (dt > 0.025) ++T.jank25;
+    if (dt > 0.050) ++T.jank50;
+    T.worst = std::max(T.worst, dt * 1000.0);
+    if (!input && !busy && state->settledAt < 0) state->settledAt = t;
+    if (busy && !input) state->settledAt = -1.0;
+    if (!input && state->exitAfter >= 0 && !state->quitting && t - state->inputEnd >= state->exitAfter) {
+        state->quitting = true;
+        writeSummary();
+        sapp_quit();
+    }
+}
+
 #if defined(__ANDROID__)
 void androidInsets() {
     static std::chrono::steady_clock::time_point last;
