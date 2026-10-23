@@ -103,6 +103,14 @@ struct Stats {
     double renderMsP99 = 0;
     int drawCalls = 0;
     double cpuMs = 0;
+    double popArea = 0;
+    double mergeArea = 0;
+    double terrainPopArea = 0;
+    double blurArea = 0;
+    double blurArea2 = 0;
+    double blurDepth = 0;
+    double fadeArea = 0;
+    int pops = 0;
 };
 
 struct DownloadStatus {
