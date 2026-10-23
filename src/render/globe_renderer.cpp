@@ -2711,7 +2711,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             overview(2.0, zoomingOut ? 1.2 : 3.0, 1.0);
             overview(4.0, zoomingOut ? 2.0 : 6.0, 1.0);
             if (hasLookahead_) overview(1.0, lookaheadPriority_, 1.2, &lookahead_);
-            if (zoomRate_ > 1.5) overview(8.0, 3.0, 1.0);
+            if (zoomingOut) overview(8.0, zoomRate_ > 1.5 ? 3.0 : 4.0, 1.0);
 
             overviewCache_.assign(prefetch_.begin() + static_cast<std::ptrdiff_t>(own), prefetch_.end());
             for (int i = 0; i < 6; ++i) lastOverviewKey_[i] = camKey[i];
