@@ -2927,26 +2927,31 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         }
     }
     {
-        std::sort(fadeRefs_.begin(), fadeRefs_.end(), [](const auto& a, const auto& b) {
-            if (a.first.level != b.first.level) return a.first.level < b.first.level;
-            if (a.first.x != b.first.x) return a.first.x < b.first.x;
-            if (a.first.y != b.first.y) return a.first.y < b.first.y;
-            return a.second < b.second;
-        });
-        auto referenced = [&](const QuadKey& k, int version) {
-            return std::binary_search(fadeRefs_.begin(), fadeRefs_.end(), std::make_pair(k, version), [](const auto& a, const auto& b) {
-                if (a.first.level != b.first.level) return a.first.level < b.first.level;
-                if (a.first.x != b.first.x) return a.first.x < b.first.x;
-                if (a.first.y != b.first.y) return a.first.y < b.first.y;
-                return a.second < b.second;
-            });
+        auto refLess = [](const FadeRef& a, const FadeRef& b) {
+            if (a.key.level != b.key.level) return a.key.level < b.key.level;
+            if (a.key.x != b.key.x) return a.key.x < b.key.x;
+            if (a.key.y != b.key.y) return a.key.y < b.key.y;
+            return a.version < b.version;
         };
-        const size_t cap = std::max<size_t>(32, freeSurfacePool_ * 2);
+        std::sort(fadeRefs_.begin(), fadeRefs_.end(), refLess);
+        auto progressOf = [&](const QuadKey& k, int version) {
+            auto r = std::lower_bound(fadeRefs_.begin(), fadeRefs_.end(), FadeRef{k, version, 0.0}, refLess);
+            double p = -1.0;
+            for (; r != fadeRefs_.end() && r->key == k && r->version == version; ++r) p = std::max(p, r->progress);
+            return p;
+        };
+        struct Held {
+            double progress;
+            QuadKey key;
+            int version;
+        };
+        std::vector<Held> held;
         for (auto it = retiring_.begin(); it != retiring_.end();) {
             auto& list = it->second;
             for (size_t i = 0; i < list.size();) {
-                const bool keep = list[i].frame == frame_ || (referenced(it->first, list[i].surface.version) && retiredCount_ <= cap);
-                if (keep) {
+                const double p = list[i].frame == frame_ ? -1.0 : progressOf(it->first, list[i].surface.version);
+                if (list[i].frame == frame_ || p >= 0.0) {
+                    if (p >= 0.0) held.push_back({p, it->first, list[i].surface.version});
                     ++i;
                     continue;
                 }
@@ -2955,6 +2960,24 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 --retiredCount_;
             }
             it = list.empty() ? retiring_.erase(it) : std::next(it);
+        }
+        const size_t cap = std::max<size_t>(64, freeSurfacePool_ * 3);
+        if (retiredCount_ > cap) {
+            std::sort(held.begin(), held.end(), [](const Held& a, const Held& b) { return a.progress > b.progress; });
+            for (const Held& h : held) {
+                if (retiredCount_ <= cap) break;
+                auto it = retiring_.find(h.key);
+                if (it == retiring_.end()) continue;
+                auto& list = it->second;
+                for (size_t i = 0; i < list.size(); ++i)
+                    if (list[i].surface.version == h.version && list[i].frame != frame_) {
+                        recycleSurface(list[i].surface);
+                        list.erase(list.begin() + static_cast<std::ptrdiff_t>(i));
+                        --retiredCount_;
+                        break;
+                    }
+                if (list.empty()) retiring_.erase(it);
+            }
         }
         fadeRefs_.clear();
     }
@@ -2975,6 +2998,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         globe_vs_params_t vsp;
         Vec3 center;
         float blend;
+        float merge;
     };
     std::vector<TerrainDraw> terrainDraws;
     if (views && views->size() > 1) terrainDraws.reserve(tiles.size());
@@ -3038,7 +3062,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         }
         bool fadingFrom = false;
         int fromVersion = -1;
-        auto fadeTexture = [&](const QuadKey& tile, const QuadKey& f, int version, sg_view& out, float uv[4]) {
+        auto fadeTexture = [&](const QuadKey& tile, const QuadKey& f, int version, sg_view& out, float uv[4], double progress = 0.0) {
             uv[0] = uv[1] = 1.0f;
             uv[2] = uv[3] = 0.0f;
             if (f.level == -2) {
@@ -3059,7 +3083,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 for (const Retired& r : rs->second)
                     if (r.surface.version == version) out = r.surface.texture;
                 if (!out.id) return false;
-                fadeRefs_.push_back({f, version});
+                fadeRefs_.push_back({f, version, progress});
             }
             if (!out.id || sg_query_view_state(out) != SG_RESOURCESTATE_VALID) return false;
             const double sc = 1.0 / static_cast<double>(1 << k);
@@ -3076,7 +3100,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         if (tr.frame + 1 == frame_) {
             if (!(tr.src == src) || tr.version != shownVersion) {
                 const bool early = tr.start >= 0.0 && (tnow - tr.start) / kFadeSeconds < 0.5 && tr.from.level != -1 &&
-                                   fadeTexture(dt.key, tr.from, tr.fromVersion, fv, fu);
+                                   fadeTexture(dt.key, tr.from, tr.fromVersion, fv, fu, (tnow - tr.start) / kFadeSeconds);
                 if (!early) {
                     tr.from = tr.src.level >= 0 ? tr.src : QuadKey{-2, 0, 0};
                     tr.fromVersion = tr.version;
@@ -3110,7 +3134,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         }
         if (tr.start >= 0.0) {
             const double t = (tnow - tr.start) / kFadeSeconds;
-            if (t < 1.0 && src.level >= 0 && fadeTexture(dt.key, tr.from, tr.fromVersion, fv, fu)) {
+            if (t < 1.0 && src.level >= 0 && fadeTexture(dt.key, tr.from, tr.fromVersion, fv, fu, t)) {
                 view2 = fv;
                 std::memcpy(uvx2, fu, sizeof(fu));
                 blend = static_cast<float>(t * t * (3 - 2 * t));
@@ -3132,21 +3156,20 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 tr.start = -1.0;
             }
         }
+        float mergeMix = 0.0f;
+        sg_view mergeView{};
+        float mergeUv[4] = {1.0f, 1.0f, 0.0f, 0.0f};
         if (dt.merge.level >= 0 && src.level >= 0) {
             auto target = surface_.find(dt.merge);
-            if (target != surface_.end() && target->second.version >= 0 && fadeTexture(dt.key, dt.merge, target->second.version, fv, fu)) {
-                view2 = fv;
-                std::memcpy(uvx2, fu, sizeof(fu));
+            if (target != surface_.end() && target->second.version >= 0 &&
+                fadeTexture(dt.key, dt.merge, target->second.version, mergeView, mergeUv)) {
                 const double m = std::clamp(static_cast<double>(dt.mergeT), 0.0, 1.0);
-                blend = static_cast<float>(1.0 - m * m * (3.0 - 2.0 * m));
+                mergeMix = static_cast<float>(m * m * (3.0 - 2.0 * m));
                 fading = true;
-                fadingFrom = true;
-                fromVersion = target->second.version;
                 tr.merge = dt.merge;
                 tr.mergeVersion = target->second.version;
                 tr.mergeT = dt.mergeT;
                 tr.mergeFrame = frame_;
-                tr.start = -1.0;
             }
         }
         int coarser[4];
@@ -3225,9 +3248,9 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                     }
                 }
             }
-            const bool merged = dt.merge.level >= 0 && blend < 0.01f;
+            const bool merged = dt.merge.level >= 0 && mergeMix > 0.99f;
             sh.src = merged ? dt.merge : src;
-            sh.version = merged ? fromVersion : shownVersion;
+            sh.version = merged ? tr.mergeVersion : shownVersion;
             sh.terrain = tt.version;
             sh.frame = frame_;
         }
@@ -3243,9 +3266,17 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             ++invalidResources_;
             view2 = view;
         }
+        if (mergeMix > 0.0f && mergeView.id) {
+            view3 = mergeView;
+            std::memcpy(uvx3, mergeUv, sizeof(mergeUv));
+            morphing = false;
+            spatial = false;
+            for (float& e : lodEdges) e = 0.0f;
+        }
         if (sg_query_view_state(view3) != SG_RESOURCESTATE_VALID) {
             ++invalidResources_;
             view3 = view;
+            mergeMix = 0.0f;
             morphing = false;
             spatial = false;
             for (float& e : lodEdges) e = 0.0f;
@@ -3284,7 +3315,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             vsp.morph[2] = static_cast<float>(0.5 * lodMorph_);
         }
         gfs.flags[2] = blend;
-        if (views && views->size() > 1) terrainDraws.push_back({tt.vbuf, view, view2, view3, vsp, tt.center, blend});
+        gfs.heat[3] = mergeMix;
+        if (views && views->size() > 1) terrainDraws.push_back({tt.vbuf, view, view2, view3, vsp, tt.center, blend, mergeMix});
         sg_apply_uniforms(UB_globe_fs_params, SG_RANGE(gfs));
         sg_bindings bind{};
         bind.vertex_buffers[0] = tt.vbuf;
@@ -3429,6 +3461,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 globe_vs_params_t vsp = td.vsp;
                 toFloat(vc.viewProjRel() * translation(td.center - vc.eye()), vsp.mvp);
                 gfs.flags[2] = td.blend;
+                gfs.heat[3] = td.merge;
                 sg_apply_uniforms(UB_globe_fs_params, SG_RANGE(gfs));
                 sg_bindings bind{};
                 bind.vertex_buffers[0] = td.vbuf;
