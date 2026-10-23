@@ -44,6 +44,7 @@ public final class OTKGlobeEngine {
     static native void nativeDestroy(long h);
     static native void nativeFrame(long h, int width, int height, float dpi);
     static native boolean nativeNeedsRedraw(long h);
+    static native double nativeNextFrameDelay(long h);
     static native void nativeSetCacheDirectory(long h, String dir);
     static native void nativeSetOffline(long h, boolean offline);
     static native void nativeSetMemoryBudget(long h, int megabytes);
