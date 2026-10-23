@@ -137,6 +137,7 @@ bool GlobeRenderer::init() {
     if (const char* v = std::getenv("OTK_UPGRADE_FADE")) fadeUpgrades_ = std::atoi(v) != 0;
     busyLog_ = std::getenv("OTK_BUSY_LOG") != nullptr;
     if (const char* v = std::getenv("OTK_VISUAL")) visualStats_ = std::atoi(v) != 0;
+    if (const char* v = std::getenv("OTK_VISUAL_LOG")) visualLog_ = std::fopen(v, "w");
     if (const char* v = std::getenv("OTK_RERENDER_GAP")) rerenderGap_ = std::max(0.0, std::atof(v));
     if (const char* v = std::getenv("OTK_MERGE_FADE")) mergeSeconds_ = std::max(0.0, std::atof(v));
     if (const char* v = std::getenv("OTK_MAX_DIVE")) maxDive_ = std::atoi(v);
@@ -1530,6 +1531,11 @@ void GlobeRenderer::traverse(const Camera& cam, const QuadKey& k, std::vector<Dr
         const double t = now();
         if (m.frame + 1 != frame_) m.start = t;
         m.frame = frame_;
+        for (int i = 0; i < 4; ++i) {
+            auto kt = transitions_.find(kids[i]);
+            if (kt != transitions_.end() && kt->second.frame + 1 >= frame_ && kt->second.start >= 0.0 && t - kt->second.start < kFadeSeconds)
+                m.start = t;
+        }
         const double p = (t - m.start) / (mergeSeconds_ / std::max(1.0, zoomRate_));
         if (p < 1.0) {
             bool drawable = true;
@@ -3112,7 +3118,17 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 fadingFrom = true;
                 fromVersion = tr.fromVersion;
             } else {
-                if (t < 1.0 && src.level >= 0) ++fadeMisses_;
+                if (t < 1.0 && src.level >= 0) {
+                    ++fadeMisses_;
+                    if (visualLog_) {
+                        auto rs = retiring_.find(tr.from);
+                        auto fs = surface_.find(tr.from);
+                        std::fprintf(visualLog_, "miss frame %llu tile L%d/%d/%d from L%d/%d/%d v%d surface %s v%d retired %zu count %zu\n",
+                                     static_cast<unsigned long long>(frame_), dt.key.level, dt.key.x, dt.key.y, tr.from.level, tr.from.x, tr.from.y,
+                                     tr.fromVersion, fs == surface_.end() ? "gone" : "here", fs == surface_.end() ? -9 : fs->second.version,
+                                     rs == retiring_.end() ? size_t(0) : rs->second.size(), retiredCount_);
+                    }
+                }
                 tr.start = -1.0;
             }
         }
@@ -3181,6 +3197,10 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 if (!held && !faded && (!(sh.src == src) || sh.version != shownVersion)) {
                     visPop += area;
                     ++visPops;
+                    if (visualLog_)
+                        std::fprintf(visualLog_, "pop frame %llu tile L%d/%d/%d src L%d v%d -> L%d v%d merge L%d t %.2f area %.4f\n",
+                                     static_cast<unsigned long long>(frame_), dt.key.level, dt.key.x, dt.key.y, sh.src.level, sh.version, src.level,
+                                     shownVersion, dt.merge.level, dt.mergeT, area);
                 }
                 if (!held && sh.terrain >= 0 && sh.terrain != tt.version) visTerrain += area;
             } else if (!held && !faded) {
@@ -3192,6 +3212,9 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 if (before >= 0 && src.level > before) {
                     visPop += area;
                     ++visPops;
+                    if (visualLog_)
+                        std::fprintf(visualLog_, "newpop frame %llu tile L%d/%d/%d before L%d now L%d v%d kind %d area %.4f\n",
+                                     static_cast<unsigned long long>(frame_), dt.key.level, dt.key.x, dt.key.y, before, src.level, shownVersion, dt.kind, area);
                 } else if (before < 0) {
                     for (int i = 0; i < 4; ++i) {
                         auto c = shown_.find({dt.key.level + 1, dt.key.x * 2 + (i & 1), dt.key.y * 2 + (i >> 1)});
