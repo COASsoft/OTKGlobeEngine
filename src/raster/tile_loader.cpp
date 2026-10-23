@@ -1,5 +1,7 @@
 #include "raster/tile_loader.hpp"
 
+#include "core/thread_name.hpp"
+
 #include <map>
 
 #if defined(__ANDROID__)
@@ -54,9 +56,17 @@ std::vector<TileRange> regionRanges(const TileMatrix& m, const Region& r, int mi
 }
 
 TileLoader::TileLoader(int localThreads, int networkThreads) {
-    for (int i = 0; i < localThreads; ++i) workers_.emplace_back([this] { runLocal(); });
+    for (int i = 0; i < localThreads; ++i)
+        workers_.emplace_back([this] {
+            setThreadName("otk-local");
+            runLocal();
+        });
     netLayerCap_ = std::max(2, networkThreads * 2 / 3);
-    for (int i = 0; i < networkThreads; ++i) workers_.emplace_back([this] { runNetwork(); });
+    for (int i = 0; i < networkThreads; ++i)
+        workers_.emplace_back([this] {
+            setThreadName("otk-net");
+            runNetwork();
+        });
 }
 
 TileLoader::~TileLoader() {
