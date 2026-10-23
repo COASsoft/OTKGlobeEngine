@@ -3556,7 +3556,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     if (uniformMix_ >= 0.5 && uniformShare_ > 0.0) {
         int available = 99;
         int ideal = -1;
-        const bool reveal = frozenNow || revealOpen_ || uniformZ_ >= 99;
+        const bool reveal = frozenNow || (revealOpen_ && !stepping) || uniformZ_ >= 99;
         for (const DrawTile& d : tiles) {
             int z = idealImageryZ(d.key);
             ideal = std::max(ideal, z);
@@ -3881,12 +3881,12 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             }
             tr.merge = {-1, 0, 0};
         }
-        if ((frozenNow || stepInstant_) && tr.start >= 0.0 && tnow - tr.start < kFadeSeconds) tr.start = tnow - kFadeSeconds;
+        if ((frozenNow || stepInstant_) && tr.start >= 0.0 && tnow - tr.start < kFadeSeconds) tr.start = tnow - kFadeSeconds * 1.01;
         if (zCap < 99 && tr.from.level >= 0 && zOf(tr.from) > zCap) {
-            if (tr.start >= 0.0 && tnow - tr.start < kFadeSeconds) tr.start = tnow - kFadeSeconds;
+            if (tr.start >= 0.0 && tnow - tr.start < kFadeSeconds) tr.start = tnow - kFadeSeconds * 1.01;
             if (tr.held) {
                 tr.held = false;
-                tr.start = tnow - kFadeSeconds;
+                tr.start = tnow - kFadeSeconds * 1.01;
                 tr.why = 'c';
             }
         }
