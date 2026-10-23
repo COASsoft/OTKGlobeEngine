@@ -2915,6 +2915,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         sg_view view = fallbackView_;
         float uvx[4] = {1, 1, 0, 0};
         QuadKey src = source(dt.key, 0, view, uvx);
+        int shownDepth = 0;
         if (src.level < 0) ++blank;
         else {
             auto ownSurface = surface_.find(src);
@@ -2926,6 +2927,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 if (ideal >= 0 && effective < 99) depth = std::max(0, ideal - effective);
                 else depth = dt.key.level - src.level + (st.complete ? 0 : 1);
             }
+            shownDepth = depth;
             if (depth >= 2) ++coarse;
             maxDepth = std::max(maxDepth, depth);
             if (diagnostics_ && depth >= 3 && frame_ % 90 == 0 && deepLogged < 6) {
