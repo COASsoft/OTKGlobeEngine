@@ -142,8 +142,6 @@ bool GlobeRenderer::init() {
     if (const char* v = std::getenv("OTK_MERGE_FADE")) mergeSeconds_ = std::max(0.0, std::atof(v));
     if (const char* v = std::getenv("OTK_MERGE_GAP")) mergeGap_ = std::max(0.0, std::atof(v));
     if (const char* v = std::getenv("OTK_UNIFORM_SHARE")) uniformShare_ = std::clamp(std::atof(v), 0.0, 1.0);
-    if (const char* v = std::getenv("OTK_REVEAL_HOLD_LONG")) revealHoldLong_ = std::max(0.0, std::atof(v));
-    if (const char* v = std::getenv("OTK_REVEAL_SHARE")) revealShare_ = std::clamp(std::atof(v), 0.0, 1.0);
     if (const char* v = std::getenv("OTK_REVEAL_HOLD")) revealHold_ = std::max(0.0, std::atof(v));
     if (const char* v = std::getenv("OTK_REVEAL_GAP")) revealGap_ = std::max(0.0, std::atof(v));
     if (const char* v = std::getenv("OTK_MOTION_HOLD")) motionHold_ = std::max(0.0, std::atof(v));
@@ -1240,10 +1238,7 @@ bool GlobeRenderer::revealGate(double t) const {
     const double still = t - lastMotion_;
     const double heldAge = t - oldestHeldPrev_;
     if (still < 0.15) return motionHold_ > 0.0 && heldAge >= motionHold_;
-    const double share = tilesPrev_ > 0 ? static_cast<double>(waitingPrev_) / tilesPrev_ : 0.0;
-    if (waitingPrev_ == 0 || share <= revealShare_) return true;
-    const double hold = share > 0.1 ? std::max(revealHold_, revealHoldLong_) : revealHold_;
-    return std::min(heldAge, still) >= hold;
+    return waitingPrev_ == 0 || std::min(heldAge, still) >= revealHold_;
 }
 
 bool GlobeRenderer::wakeDue() const {
@@ -3263,17 +3258,32 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         if (ideal >= 0 && effective < 99) return std::max(0, ideal - effective);
         return key.level - s.level + (st->second.complete ? 0 : 1);
     };
+    const double expectNow = now();
+    auto expecting = [&](const QuadKey& key) {
+        auto s = surface_.find(key);
+        if (s == surface_.end() || s->second.version < 0) return true;
+        if (s->second.complete) return false;
+        if (s->second.missing.empty()) return true;
+        for (const TileId& id : s->second.missing) {
+            auto f = failed_.find(id);
+            if (f == failed_.end() || f->second <= expectNow) return true;
+        }
+        return false;
+    };
     int capDepth = 0;
     if (uniformShare_ > 0.0 && revealHold_ > 0.0 && !tiles.empty()) {
         int hist[17] = {};
+        int counted = 0;
         for (const DrawTile& d : tiles) {
+            if (!expecting(d.key)) continue;
             sg_view v{};
             float u[4];
             ++hist[std::min(depthOf(d.key, source(d.key, 0, v, u)), 16)];
+            ++counted;
         }
-        const double need = uniformShare_ * static_cast<double>(tiles.size());
+        const double need = uniformShare_ * static_cast<double>(counted);
         double acc = 0.0;
-        while (capDepth < 16 && acc + hist[capDepth] < need) acc += hist[capDepth++];
+        while (counted > 0 && capDepth < 16 && acc + hist[capDepth] < need) acc += hist[capDepth++];
     }
     if (visualLog_ && capDepth != uniformDepth_)
         std::fprintf(visualLog_, "cap frame %llu t %.3f depth %d -> %d tiles %zu\n", static_cast<unsigned long long>(frame_), tnow, uniformDepth_, capDepth,
@@ -3320,7 +3330,6 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                      loader_.pending());
             }
         }
-        const int availDepth = src.level < 0 ? 99 : shownDepth;
         if (capDepth > 0 && src.level >= 0 && shownDepth < capDepth) {
             int prev = 0;
             auto pt = transitions_.find(dt.key);
@@ -3352,7 +3361,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         }
         auto own = surface_.find(dt.key);
         if (own == surface_.end() || !own->second.complete) ++incomplete;
-        if (src.level >= 0 && (capDepth > 0 ? availDepth > capDepth : (src.level < dt.key.level || shownDepth >= 1))) ++waitingNow;
+        if (src.level >= 0 && (uniformShare_ > 0.0 ? expecting(dt.key) : (src.level < dt.key.level || shownDepth >= 1))) ++waitingNow;
         sg_view view2 = view;
         float uvx2[4] = {uvx[0], uvx[1], uvx[2], uvx[3]};
         float blend = 1.0f;
@@ -3941,7 +3950,6 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     heldPrev_ = heldNow;
     oldestHeldPrev_ = oldestHeld;
     waitingPrev_ = waitingNow;
-    tilesPrev_ = static_cast<int>(tiles.size());
     stats_.heldTiles = heldNow;
     stats_.reveals = visReveals;
     stats_.revealArea = visReveal;
@@ -4001,8 +4009,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         pollGap_ = std::min(pollGap_ * 2.0, 4.0);
         if (heldNow > 0) {
             if (revealGate(tnow)) wake = tnow;
-            for (double d : {lastReveal_ + revealGap_, lastMotion_ + 0.15, std::max(oldestHeld, lastMotion_) + revealHold_,
-                             std::max(oldestHeld, lastMotion_) + revealHoldLong_, oldestHeld + motionHold_})
+            for (double d : {lastReveal_ + revealGap_, lastMotion_ + 0.15, std::max(oldestHeld, lastMotion_) + revealHold_, oldestHeld + motionHold_})
                 if (d > tnow) wake = std::min(wake, d);
         }
         wakeAt_ = wake;
