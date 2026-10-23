@@ -56,6 +56,7 @@ public:
     void submit();
     bool processResults(size_t max);
     int pending() const;
+    bool hasResults() const;
     void clearFailures();
 
 private:
