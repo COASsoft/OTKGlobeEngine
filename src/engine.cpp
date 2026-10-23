@@ -437,6 +437,11 @@ struct Engine::Impl {
 #endif
     }
 
+    bool active() const {
+        return dirty || flying || globe.busy() || input->active() || globe.reachabilityChanged() || contourDue ||
+               (downloadDue && std::chrono::steady_clock::now() - labelChecked >= std::chrono::milliseconds(500)) || controlsDirty();
+    }
+
     void updateDownloads() {
         if (labelDownloads.empty()) {
             downloadDue = false;
@@ -1982,7 +1987,7 @@ void Engine::frame(const sg_swapchain& swapchain) {
     impl_->updateContours();
     updateAutoDownload();
     impl_->updateDownloads();
-    if (!needsRedraw() && impl_->globe.presentIdle(impl_->camera, swapchain)) return;
+    if (!impl_->active() && impl_->globe.presentIdle(impl_->camera, swapchain)) return;
     impl_->globe.render(impl_->camera, &swapchain, nullptr, swapchain.width, swapchain.height);
     impl_->sanity();
     impl_->dirty = false;
@@ -2111,11 +2116,7 @@ void Engine::frameOffscreen(const sg_attachments& attachments, int width, int he
     impl_->dirty = false;
 }
 
-bool Engine::needsRedraw() const {
-    return impl_->dirty || impl_->flying || impl_->globe.busy() || impl_->input->active() || impl_->globe.reachabilityChanged() || impl_->contourDue ||
-           (impl_->downloadDue && std::chrono::steady_clock::now() - impl_->labelChecked >= std::chrono::milliseconds(500)) ||
-           impl_->controlsDirty();
-}
+bool Engine::needsRedraw() const { return impl_->active() || impl_->globe.wakeDue(); }
 
 Stats Engine::stats() const { return impl_->globe.stats(); }
 
