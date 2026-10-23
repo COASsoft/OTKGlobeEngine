@@ -2,6 +2,12 @@
 
 The engine never owns a window. A host app creates a GPU surface with its own toolkit, creates the engine once for that device, and calls a frame function whenever the surface needs drawing. `otk_needs_redraw` tells the host when tiles are still arriving, so a host can render on demand instead of continuously.
 
+To save battery, ask `otk_next_frame_delay` how long you can wait before the next frame:
+
+- `0`: draw now.
+- A small number of seconds: the engine is waiting for tiles or a timer. Draw again after that long. Frames while waiting are cheap, because the engine shows its last frame again.
+- Infinity: nothing changes until the next input or API call.
+
 Packages:
 
 - Android: `python scripts/android_aar.py` builds `build/otkglobeengine-<version>.aar` (arm64-v8a, armeabi-v7a, x86_64) containing `com.otkglobeengine.OTKGlobeView`, a ready-made `GLSurfaceView` with ATAK-style gestures, and `OTKGlobeEngine` with the full native API.
@@ -118,7 +124,9 @@ The back buffer must be `DXGI_FORMAT_B8G8R8A8_UNORM` and the depth view `DXGI_FO
 void initializeGL() override { engine = otk_create_gl(0, 1); }
 void paintGL() override {
     otk_frame_gl(engine, width() * devicePixelRatio(), height() * devicePixelRatio(), defaultFramebufferObject(), devicePixelRatio());
-    if (otk_needs_redraw(engine)) update();
+    const double delay = otk_next_frame_delay(engine);
+    if (delay <= 0.0) update();
+    else if (std::isfinite(delay)) QTimer::singleShot(int(delay * 1000.0) + 1, this, [this] { update(); });
 }
 ```
 
