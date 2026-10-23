@@ -590,6 +590,7 @@ void frame() {
             }
         }
         bool scripting = runScript();
+        logFrame(sapp_frame_duration());
         if (scripting && state->scriptNext > 0) {
             otk::Stats ss = state->engine.stats();
             if (state->scriptLoads0 < 0) state->scriptLoads0 = ss.imageryLoads;
