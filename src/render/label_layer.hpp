@@ -53,11 +53,14 @@ public:
     bool prepare(const GeoRect& tile, double unitDeg);
     void drawRoads(const std::vector<RoadBatch>& batches, const GeoRect& tile, double unitDeg, double dpi);
     void drawSurface(const GeoRect& tile, double unitDeg, double dpi);
-    void drawBorders3D(const Camera& cam, const GroundFn& ground, double dpi, const std::vector<GeoRect>& visible, int version);
+    bool drawBorders3D(const Camera& cam, const GroundFn& ground, double dpi, const std::vector<GeoRect>& visible, int version);
     void beginRoads3D(const Camera& cam, double dpi);
     void warmLines3D();
     void drawRoads3D(sg_buffer buffer, int first, int count, const Vec3& origin, const float clip[4], int pass);
-    static void buildLines3D(const std::vector<float>& inst, double originLat, double originLon, const GroundFn& ground, std::vector<float>& out);
+    static int roadRank(float style);
+    static int visibleRoadRanks(const Camera& cam, double dpi);
+    static void buildLines3D(const std::vector<float>& inst, double originLat, double originLon, const GroundFn& ground, std::vector<float>& out,
+                             double pieceDeg = 0.0);
     void setContours(std::shared_ptr<const ContourSet> set);
     void drawContours(const GeoRect& tile, double unitDeg, double dpi);
     void drawLabels(const Camera& cam, const GroundFn& ground, double dpi, const std::vector<GeoRect>& visible,
@@ -116,6 +119,7 @@ private:
     sg_view iconView_{};
     sg_sampler sampler_{};
     std::vector<std::pair<int, int>> scratchKeys_;
+    std::vector<std::pair<int, int>> lastBorderCells_;
     std::shared_ptr<const ContourSet> contours_;
     const ContourSet* contoursUploaded_ = nullptr;
     sg_buffer contourBuffer_{};
