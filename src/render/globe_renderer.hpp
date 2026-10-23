@@ -440,8 +440,8 @@ private:
     std::chrono::steady_clock::time_point profileStart_;
     double profileLast_ = 0;
     double profileAcc_[8] = {};
-    double profileSub_[4] = {};
-    double profileSubCpu_[4] = {};
+    double profileSub_[8] = {};
+    double profileSubCpu_[8] = {};
     double profileSubLast_ = 0;
     double profileSubCpuLast_ = 0;
     static double threadMs();
