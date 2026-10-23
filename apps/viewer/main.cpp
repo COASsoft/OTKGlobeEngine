@@ -721,9 +721,10 @@ void frame() {
                 std::snprintf(name, sizeof(name), "/frame-%04d.png", state->filmFrame);
                 writePng((state->filmDir + name).c_str(), w, h, half);
                 if (FILE* f = std::fopen((state->filmDir + "/film.csv").c_str(), state->filmFrame == 0 ? "w" : "a")) {
-                    if (state->filmFrame == 0) std::fprintf(f, "frame,ms,step,verb,pending,wants,settled\n");
-                    std::fprintf(f, "%d,%.0f,0,settle,%d,%d,0\n", state->filmFrame, state->shotElapsed * 1000.0,
-                                 state->engine.stats().pendingRequests, state->engine.needsRedraw() ? 1 : 0);
+                    if (state->filmFrame == 0) std::fprintf(f, "frame,ms,step,verb,pending,wants,settled,lat,lon,gsd,tilt,azimuth\n");
+                    const otk::View fv = state->engine.view();
+                    std::fprintf(f, "%d,%.1f,0,settle,%d,%d,0,%.9f,%.9f,%.6f,%.4f,%.4f\n", state->filmFrame, state->shotElapsed * 1000.0,
+                                 state->engine.stats().pendingRequests, state->engine.needsRedraw() ? 1 : 0, fv.lat, fv.lon, fv.gsd, fv.tilt, fv.azimuth);
                     std::fclose(f);
                 }
                 ++state->filmFrame;
