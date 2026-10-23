@@ -138,6 +138,7 @@ bool GlobeRenderer::init() {
     busyLog_ = std::getenv("OTK_BUSY_LOG") != nullptr;
     if (const char* v = std::getenv("OTK_VISUAL")) visualStats_ = std::atoi(v) != 0;
     if (const char* v = std::getenv("OTK_RERENDER_GAP")) rerenderGap_ = std::max(0.0, std::atof(v));
+    if (const char* v = std::getenv("OTK_MERGE_FADE")) mergeSeconds_ = std::max(0.0, std::atof(v));
     if (const char* v = std::getenv("OTK_MAX_DIVE")) maxDive_ = std::atoi(v);
     if (const char* v = std::getenv("OTK_LOD_MORPH")) lodMorph_ = std::clamp(std::atof(v), 0.0, 1.0);
     if (const char* v = std::getenv("OTK_MARGIN")) marginPrefetch_ = std::max(1.0, std::atof(v));
@@ -2955,6 +2956,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         for (auto it = drawn_.begin(); it != drawn_.end();) it = it->second + 2 < frame_ ? drawn_.erase(it) : std::next(it);
     if (transitions_.size() > 20000)
         for (auto it = transitions_.begin(); it != transitions_.end();) it = it->second.frame + 2 < frame_ ? transitions_.erase(it) : std::next(it);
+    if (merges_.size() > 20000)
+        for (auto it = merges_.begin(); it != merges_.end();) it = it->second.frame + 2 < frame_ ? merges_.erase(it) : std::next(it);
     if (morphSince_.size() > 20000)
         for (auto it = morphSince_.begin(); it != morphSince_.end();)
             it = it->second.second + 2 < frame_ ? morphSince_.erase(it) : std::next(it);
@@ -3091,6 +3094,14 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         tr.src = src;
         tr.version = shownVersion;
         tr.frame = frame_;
+        if (dt.merge.level < 0 && tr.merge.level >= 0) {
+            if (tr.mergeFrame + 1 == frame_) {
+                tr.from = tr.merge;
+                tr.fromVersion = tr.mergeVersion;
+                tr.start = tnow - (1.0 - tr.mergeT) * kFadeSeconds;
+            }
+            tr.merge = {-1, 0, 0};
+        }
         if (tr.start >= 0.0) {
             const double t = (tnow - tr.start) / kFadeSeconds;
             if (t < 1.0 && src.level >= 0 && fadeTexture(dt.key, tr.from, tr.fromVersion, fv, fu)) {
@@ -3102,6 +3113,23 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 fromVersion = tr.fromVersion;
             } else {
                 if (t < 1.0 && src.level >= 0) ++fadeMisses_;
+                tr.start = -1.0;
+            }
+        }
+        if (dt.merge.level >= 0 && src.level >= 0) {
+            auto target = surface_.find(dt.merge);
+            if (target != surface_.end() && target->second.version >= 0 && fadeTexture(dt.key, dt.merge, target->second.version, fv, fu)) {
+                view2 = fv;
+                std::memcpy(uvx2, fu, sizeof(fu));
+                const double m = std::clamp(static_cast<double>(dt.mergeT), 0.0, 1.0);
+                blend = static_cast<float>(1.0 - m * m * (3.0 - 2.0 * m));
+                fading = true;
+                fadingFrom = true;
+                fromVersion = target->second.version;
+                tr.merge = dt.merge;
+                tr.mergeVersion = target->second.version;
+                tr.mergeT = dt.mergeT;
+                tr.mergeFrame = frame_;
                 tr.start = -1.0;
             }
         }
@@ -3174,8 +3202,9 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                     }
                 }
             }
-            sh.src = src;
-            sh.version = shownVersion;
+            const bool merged = dt.merge.level >= 0 && blend < 0.01f;
+            sh.src = merged ? dt.merge : src;
+            sh.version = merged ? fromVersion : shownVersion;
             sh.terrain = tt.version;
             sh.frame = frame_;
         }
