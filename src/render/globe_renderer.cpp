@@ -3468,13 +3468,20 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             if (pt != transitions_.end() && pt->second.frame + 1 == frame_) {
                 prev = pt->second.held && pt->second.from.level >= 0 ? depthOf(dt.key, pt->second.from) : pt->second.depth;
             } else {
+                bool related = false;
                 for (int up = 1; up <= 8 && up <= dt.key.level; ++up) {
                     auto a = transitions_.find({dt.key.level - up, dt.key.x >> up, dt.key.y >> up});
                     if (a == transitions_.end() || a->second.frame + 1 != frame_) continue;
                     const QuadKey shown = a->second.held && a->second.from.level >= 0 ? a->second.from : a->second.src;
                     prev = depthOf(dt.key, shown);
+                    related = true;
                     break;
                 }
+                for (int i = 0; i < 4 && !related; ++i) {
+                    auto c = transitions_.find({dt.key.level + 1, dt.key.x * 2 + (i & 1), dt.key.y * 2 + (i >> 1)});
+                    related = c != transitions_.end() && c->second.frame + 1 == frame_;
+                }
+                if (!related) prev = 99;
             }
             const int target = std::min(capDepth, prev);
             for (int up = dt.key.level - src.level + 1; shownDepth < target && up <= dt.key.level; ++up) {
