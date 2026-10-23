@@ -1170,20 +1170,50 @@ void loadScript(const char* path) {
     std::fclose(f);
 }
 
+void gesturePoint(const ViewerState::Gesture& g, int p, double k, double& x, double& y) {
+    if (g.turn) {
+        const double a = (g.angle0 + (g.angle1 - g.angle0) * k) * 3.14159265358979323846 / 180.0 + (p == 0 ? 0.0 : 3.14159265358979323846);
+        x = g.cx + std::cos(a) * g.radius;
+        y = g.cy + std::sin(a) * g.radius;
+        return;
+    }
+    x = g.from[p][0] + (g.to[p][0] - g.from[p][0]) * k;
+    y = g.from[p][1] + (g.to[p][1] - g.from[p][1]) * k;
+}
+
+void beginGesture(ViewerState::Gesture g, double t) {
+    otk::InputController& in = state->engine.input();
+    g.start = t;
+    state->gesture = g;
+    state->gesturing = true;
+    for (int p = 0; p < g.count; ++p) {
+        double x, y;
+        gesturePoint(g, p, 0.0, x, y);
+        in.pointerDown(101 + p, x, y, g.type, g.button, 0);
+    }
+}
+
 bool runScript() {
     otk::InputController& in = state->engine.input();
     double t = state->shotElapsed;
-    if (state->dragging) {
-        const auto& d = state->drag;
-        double k = std::clamp((t - d.at) / std::max(d.v[4], 0.01), 0.0, 1.0);
-        double x = d.v[0] + (d.v[2] - d.v[0]) * k, y = d.v[1] + (d.v[3] - d.v[1]) * k;
-        in.pointerMove(77, x, y);
+    if (state->gesturing) {
+        const auto& g = state->gesture;
+        double k = std::clamp((t - g.start) / std::max(g.seconds, 0.01), 0.0, 1.0);
+        for (int p = 0; p < g.count; ++p) {
+            double x, y;
+            gesturePoint(g, p, k, x, y);
+            in.pointerMove(101 + p, x, y);
+        }
         if (k >= 1.0) {
-            in.pointerUp(77, x, y);
-            state->dragging = false;
+            for (int p = 0; p < g.count; ++p) {
+                double x, y;
+                gesturePoint(g, p, 1.0, x, y);
+                in.pointerUp(101 + p, x, y);
+            }
+            state->gesturing = false;
         }
     }
-    while (state->scriptNext < state->script.size() && state->script[state->scriptNext].at <= t && !state->dragging) {
+    while (state->scriptNext < state->script.size() && state->script[state->scriptNext].at <= t && !state->gesturing) {
         const auto& st = state->script[state->scriptNext++];
         if (const char* dp = std::getenv("OTK_DIAG"))
             if (FILE* df = std::fopen(dp, "a")) {
