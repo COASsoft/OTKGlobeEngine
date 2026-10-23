@@ -3573,7 +3573,37 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         }
         if (pendingMergeZ_ < 99) available = std::min(available, pendingMergeZ_);
         if (available < 99 && ideal >= 0) available = std::max(available, ideal - kMaxUniformDrop);
-        const int target = available >= 99 ? 99 : reveal ? available : std::max(std::min(uniformZ_, available), ideal - kMaxUniformDrop);
+        int target = available >= 99 ? 99 : reveal ? available : std::max(std::min(uniformZ_, available), ideal - kMaxUniformDrop);
+        if (target < uniformZ_ && target < 99 && uniformZ_ < 99) {
+            bool reachable = true;
+            for (const DrawTile& d : tiles) {
+                sg_view v{};
+                float u[4];
+                const QuadKey s = source(d.key, 0, v, u);
+                const int sz = s.level >= 0 ? zOf(s) : -1;
+                if (sz <= target) continue;
+                int found = -1;
+                for (int up = d.key.level - s.level + 1; up <= d.key.level && found < 0; ++up) {
+                    const QuadKey a{d.key.level - up, d.key.x >> up, d.key.y >> up};
+                    auto st = surface_.find(a);
+                    if (st == surface_.end() || st->second.version < 0 || !(st->second.complete || st->second.presentable)) continue;
+                    const int az = zOf(a);
+                    if (az >= 0 && az <= target) found = az;
+                }
+                if (found >= target - 1) continue;
+                reachable = false;
+                const int up = std::clamp(d.key.level - s.level + (sz - target), 1, d.key.level);
+                if (blendParents_.size() < 256) blendParents_.push_back({QuadKey{d.key.level - up, d.key.x >> up, d.key.y >> up}, d.distance * 0.25});
+            }
+            if (reachable) {
+                stepWait_ = -1.0;
+            } else {
+                if (stepWait_ < 0.0) stepWait_ = tnow;
+                if (tnow - stepWait_ < 0.6) target = uniformZ_;
+            }
+        } else {
+            stepWait_ = -1.0;
+        }
         if (stepping && !frozenNow && !stepInstant_ && target != uniformZ_ && target < 99 && uniformZ_ < 99) {
             zCap = uniformZ_;
             if (!snapshotShown_ && !stepCapture) stepWanted_ = true;
