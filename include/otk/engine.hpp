@@ -90,6 +90,7 @@ struct Stats {
     long long imageryEvictions = 0;
     long long terrainEvictions = 0;
     long long imageryLoads = 0;
+    long long imageryWasted = 0;
     int terrainBuilds = 0;
     int uploads = 0;
     int unreachableHosts = 0;
