@@ -538,6 +538,7 @@ private:
     bool backdropTried_ = false;
     bool backdropEnabled_ = true;
     sg_view backdrop();
+    bool backdropUv(const QuadKey& key, sg_view& view, float uv[4]);
     sg_sampler sampler_{};
     sg_sampler imagerySampler_{};
     sg_shader globeShader_{};
