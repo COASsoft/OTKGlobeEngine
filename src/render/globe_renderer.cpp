@@ -141,6 +141,7 @@ bool GlobeRenderer::init() {
     if (const char* v = std::getenv("OTK_RERENDER_GAP")) rerenderGap_ = std::max(0.0, std::atof(v));
     if (const char* v = std::getenv("OTK_MERGE_FADE")) mergeSeconds_ = std::max(0.0, std::atof(v));
     if (const char* v = std::getenv("OTK_MERGE_GAP")) mergeGap_ = std::max(0.0, std::atof(v));
+    if (const char* v = std::getenv("OTK_COLOUR_MATCH")) colourMatch_ = std::atoi(v) != 0;
     if (const char* v = std::getenv("OTK_UNIFORM_SHARE")) uniformShare_ = std::clamp(std::atof(v), 0.0, 1.0);
     if (const char* v = std::getenv("OTK_REVEAL_HOLD")) revealHold_ = std::max(0.0, std::atof(v));
     if (const char* v = std::getenv("OTK_REVEAL_GAP")) revealGap_ = std::max(0.0, std::atof(v));
@@ -1775,15 +1776,22 @@ int GlobeRenderer::processLoads() {
             failed_.erase(t.id);
             failCount_.erase(t.id);
         } else if (t.ok) {
+            float tileMean[3] = {-1.0f, -1.0f, -1.0f};
             if (t.id.layer >= 0 && t.id.layer < static_cast<int>(layerOpacity_.size()) && !t.rgba.empty()) {
                 size_t samples = 0, opaque = 0;
+                double sum[3] = {0.0, 0.0, 0.0};
                 for (size_t a = 3; a < t.rgba.size(); a += 4 * 61) {
                     ++samples;
-                    if (t.rgba[a] >= 128) ++opaque;
+                    if (t.rgba[a] >= 128) {
+                        ++opaque;
+                        for (int c = 0; c < 3; ++c) sum[c] += t.rgba[a - 3 + c];
+                    }
                 }
                 const float f = samples ? static_cast<float>(opaque) / static_cast<float>(samples) : 1.0f;
                 float& o = layerOpacity_[t.id.layer];
                 o = o < 0.0f ? f : o * 0.8f + f * 0.2f;
+                if (opaque * 2 > samples)
+                    for (int c = 0; c < 3; ++c) tileMean[c] = static_cast<float>(sum[c] / static_cast<double>(opaque));
             }
             sg_image_desc d{};
             d.width = t.width;
@@ -1803,11 +1811,13 @@ int GlobeRenderer::processLoads() {
                 failed_[t.id] = now() + 0.5;
                 continue;
             }
+            std::copy(tileMean, tileMean + 3, tex.mean);
             auto old = imagery_.find(t.id);
             if (old != imagery_.end()) dropImagery(old->second);
             imagery_[t.id] = tex;
             failed_.erase(t.id);
             failCount_.erase(t.id);
+            if (colourMatch_ && tex.mean[0] >= 0.0f) learnColour(t.id);
         } else {
             if (failCount_.size() > 50000) failCount_.clear();
             int attempts = ++failCount_[t.id];
@@ -1831,6 +1841,58 @@ int GlobeRenderer::processLoads() {
     stats_.uploads = uploaded;
     stats_.imageryLoads += uploaded;
     return uploaded;
+}
+
+void GlobeRenderer::learnColour(const TileId& id) {
+    if (id.layer < 0 || id.layer >= static_cast<int>(layers_.size()) || layers_[id.layer].polarFill || layers_[id.layer].labels) return;
+    if (id.layer < static_cast<int>(vectorLayers_.size()) && vectorLayers_[id.layer]) return;
+    if (colourLearned_.size() > 100000) colourLearned_.clear();
+    for (int pass = 0; pass < 2; ++pass) {
+        const TileId p = pass == 0 ? TileId{id.layer, id.z - 1, id.x / 2, id.y / 2} : id;
+        if (p.z < 0 || colourLearned_.count(p)) continue;
+        auto parent = imagery_.find(p);
+        if (parent == imagery_.end() || parent->second.mean[0] < 0.0f) continue;
+        float sum[3] = {0.0f, 0.0f, 0.0f};
+        bool all = true;
+        for (int i = 0; i < 4 && all; ++i) {
+            auto child = imagery_.find(TileId{p.layer, p.z + 1, p.x * 2 + (i & 1), p.y * 2 + (i >> 1)});
+            if (child == imagery_.end() || child->second.mean[0] < 0.0f) {
+                all = false;
+                break;
+            }
+            for (int c = 0; c < 3; ++c) sum[c] += child->second.mean[c];
+        }
+        if (!all) continue;
+        colourLearned_.insert(p);
+        LevelColour& lc = levelColour_[p.layer * 64 + p.z];
+        for (int c = 0; c < 3; ++c) {
+            const float ratio = std::clamp((sum[c] * 0.25f + 4.0f) / (parent->second.mean[c] + 4.0f), 0.4f, 3.0f);
+            lc.gain[c] = lc.count == 0 ? ratio : lc.gain[c] + (ratio - lc.gain[c]) * 0.2f;
+        }
+        ++lc.count;
+        for (int z = 0; z <= p.z; ++z) {
+            float g[3];
+            colourGain(p.layer, z, g);
+            auto& applied = colourApplied_[p.layer * 64 + z];
+            for (int c = 0; c < 3; ++c)
+                if (std::abs(g[c] - (applied[c] > 0.0f ? applied[c] : 1.0f)) > 0.05f) colourChanged_ = true;
+        }
+    }
+}
+
+void GlobeRenderer::colourGain(int layer, int z, float out[3]) const {
+    out[0] = out[1] = out[2] = 1.0f;
+    if (!colourMatch_) return;
+    for (int k = z; k < 40; ++k) {
+        auto it = levelColour_.find(layer * 64 + k);
+        if (it == levelColour_.end()) continue;
+        const LevelColour& lc = it->second;
+        if (lc.count < 3) continue;
+        bool significant = false;
+        for (int c = 0; c < 3; ++c) significant = significant || std::abs(lc.gain[c] - 1.0f) > 0.08f;
+        if (!significant) continue;
+        for (int c = 0; c < 3; ++c) out[c] = std::clamp(out[c] * lc.gain[c], 0.4f, 3.0f);
+    }
 }
 
 void GlobeRenderer::evict() {
@@ -2099,6 +2161,8 @@ bool GlobeRenderer::buildSurfaceJob(const QuadKey& k, double priority, SurfaceJo
                 if (layers_[l].polarFill) {
                     const float* t = north > 0 ? layers_[l].polarTintNorth : layers_[l].polarTintSouth;
                     for (int c = 0; c < 3; ++c) sd.tint[c] = t[c];
+                } else if (!layers_[l].labels) {
+                    colourGain(l, src.z, sd.tint);
                 }
                 job->draws.push_back(sd);
             }
@@ -2371,6 +2435,20 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     for (const auto& [bk, bp] : blendParents_) need(bk, bp);
     blendParents_.clear();
     elevation_.beginFrame();
+    if (colourChanged_ && now() - colourDirtyAt_ > 2.0) {
+        colourChanged_ = false;
+        colourDirtyAt_ = now();
+        for (auto& [key, applied] : colourApplied_) {
+            float g[3];
+            colourGain(key / 64, key % 64, g);
+            for (int c = 0; c < 3; ++c) applied[c] = g[c];
+            if (visualLog_ && (g[0] != 1.0f || g[1] != 1.0f || g[2] != 1.0f))
+                std::fprintf(visualLog_, "colour frame %llu t %.3f layer %d z %d gain %.3f %.3f %.3f
+", static_cast<unsigned long long>(frame_), now(),
+                             key / 64, key % 64, g[0], g[1], g[2]);
+        }
+        markDirty({-180.0, -90.0, 180.0, 90.0});
+    }
     profileSub(-1);
     const int loadsTaken = processLoads();
     profileSub(4);
