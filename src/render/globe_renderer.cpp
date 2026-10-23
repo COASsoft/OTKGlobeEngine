@@ -137,6 +137,7 @@ bool GlobeRenderer::init() {
     if (const char* v = std::getenv("OTK_UPGRADE_FADE")) fadeUpgrades_ = std::atoi(v) != 0;
     busyLog_ = std::getenv("OTK_BUSY_LOG") != nullptr;
     if (const char* v = std::getenv("OTK_VISUAL")) visualStats_ = std::atoi(v) != 0;
+    if (const char* v = std::getenv("OTK_RERENDER_GAP")) rerenderGap_ = std::max(0.0, std::atof(v));
     if (const char* v = std::getenv("OTK_MAX_DIVE")) maxDive_ = std::atoi(v);
     if (const char* v = std::getenv("OTK_LOD_MORPH")) lodMorph_ = std::clamp(std::atof(v), 0.0, 1.0);
     if (const char* v = std::getenv("OTK_MARGIN")) marginPrefetch_ = std::max(1.0, std::atof(v));
@@ -2445,7 +2446,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             if (it->second.complete && it->second.overlaysOmitted && !standIn(cam, needs_[i].key)) it->second.complete = false;
             if (it->second.complete && (labelsOn_ || contours_) && it->second.lineDeg > 0.0 && lineDegFor(needs_[i].key) * 2.0 < it->second.lineDeg)
                 it->second.complete = false;
-            const bool settled = it->second.version < 0 || it->second.renderedAt < 0.0 || renderClock - it->second.renderedAt >= kFadeSeconds;
+            const bool settled = it->second.version < 0 || it->second.renderedAt < 0.0 || renderClock - it->second.renderedAt >= rerenderGap_;
             if (!it->second.complete && settled && progressed(it->second)) work.push_back({needs_[i].priority * 1.5, i, true, pf});
             else if (!it->second.complete) work.push_back({needs_[i].priority, i, false, pf});
         }
