@@ -1,5 +1,7 @@
 #include "tiles3d/tileset.hpp"
 
+#include "core/thread_name.hpp"
+
 #include "core/geo.hpp"
 #include "net/http.hpp"
 #include "raster/tile_cache.hpp"
@@ -510,7 +512,11 @@ Tileset3D::Tileset3D(const std::string& uri, const TilesetOptions& options, Tile
     root_ = parse(&j["root"], Mat4::identity(), base, query, false);
     int cores = static_cast<int>(std::thread::hardware_concurrency());
     int threads = norm.find("://") != std::string::npos ? 6 : std::clamp(cores - 1, 2, 6);
-    for (int i = 0; i < threads; ++i) workers_.emplace_back([this] { run(); });
+    for (int i = 0; i < threads; ++i)
+        workers_.emplace_back([this] {
+            setThreadName("otk-3dtiles");
+            run();
+        });
 }
 
 Tileset3D::~Tileset3D() {
