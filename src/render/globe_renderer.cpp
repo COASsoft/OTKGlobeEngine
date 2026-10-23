@@ -1670,6 +1670,16 @@ bool GlobeRenderer::finished(const QuadKey& k) const {
     return true;
 }
 
+bool GlobeRenderer::retrying(const QuadKey& k) const {
+    auto s = surface_.find(k);
+    if (s == surface_.end() || s->second.complete) return false;
+    for (const TileId& id : s->second.missing) {
+        auto f = failed_.find(id);
+        if (f != failed_.end() && std::isfinite(f->second)) return true;
+    }
+    return false;
+}
+
 bool GlobeRenderer::presentable(const QuadKey& k) const {
     auto s = surface_.find(k);
     if (s == surface_.end() || !(s->second.complete || (s->second.version >= 0 && s->second.presentable)))
