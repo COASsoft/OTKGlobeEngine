@@ -3576,6 +3576,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         return st->second.complete ? std::max(st->second.sourceZ, st->second.imageryZ) : st->second.sourceZ;
     };
     int zCap = 99;
+    bool capBehind = false;
     if (uniformMix_ >= 0.5 && uniformShare_ > 0.0) {
         int available = 99;
         int ideal = -1;
