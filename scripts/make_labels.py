@@ -34,7 +34,7 @@ def load(path, geometry=True):
     return (shapely.from_wkb(wkb) if geometry else None), attrs
 
 
-def shared_segments(geoms):
+def shared_segments(geoms, sides=False):
     parts, pidx = shapely.get_parts(geoms, return_index=True)
     rings, ridx = shapely.get_rings(parts, return_index=True)
     ring_poly = pidx[ridx]
