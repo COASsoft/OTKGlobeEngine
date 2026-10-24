@@ -297,7 +297,7 @@ def encode_lines(items, with_class, place_of=None):
 def grid_runs(lines, size):
     ncols, nrows = int(round(360 / size)), int(round(180 / size))
     cells = collections.defaultdict(list)
-    for level, p, imp in lines:
+    for level, p, imp, side in lines:
         if len(p) < 2:
             continue
         mx = (p[:-1, 0] + p[1:, 0]) * 0.5
