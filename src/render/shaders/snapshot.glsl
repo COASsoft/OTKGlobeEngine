@@ -51,6 +51,9 @@ void main() {
         if (clip.w <= 0.0) inside = 0.0;
         t = clip.xy / max(abs(clip.w), 1.0e-9) * 0.5 + 0.5;
         if (t.x < 0.0 || t.x > 1.0 || t.y < 0.0 || t.y > 1.0) inside = 0.0;
+        float oldEdge = min(min(t.x, 1.0 - t.x), min(t.y, 1.0 - t.y));
+        float newEdge = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y));
+        inside *= max(smoothstep(0.0, 0.06, oldEdge), 1.0 - smoothstep(0.0, 0.06, newEdge));
     }
     vec2 s = vec2(t.x, params.y > 0.5 ? 1.0 - t.y : t.y);
     frag_color = vec4(texture(sampler2D(tex, smp), s).rgb, params.x * inside);
