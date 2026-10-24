@@ -22,6 +22,7 @@
 #include "raster/vector_tile.hpp"
 #include "feature/buildings.hpp"
 #include "formats/adapters.hpp"
+#include "labels/label_data.hpp"
 #include "core/astro.hpp"
 #include "model/gltf_codecs.hpp"
 #include "model/model_convert.hpp"
@@ -33,6 +34,7 @@
 #include <json.hpp>
 #include <miniz.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -1284,6 +1286,49 @@ int main() {
         FetchResult missing = provider->fetch(4, 1, 1);
         check(r.status == 200 && r.raw && r.width == 2 && r.data.size() == 16 && missing.status == 404, "host tile source");
         check(layerIdentity(host) != layerIdentity(ImageryLayer{}), "layer identity includes the host source");
+    }
+    {
+        const labels::Dataset& d = labels::Dataset::get();
+        if (d.available()) {
+            auto sideName = [&](std::int32_t idx) {
+                return idx >= 0 && static_cast<size_t>(idx) < d.places().size() ? std::string(d.name(d.places()[static_cast<size_t>(idx)])) : std::string();
+            };
+            auto isCounty = [&](std::int32_t idx) {
+                return idx >= 0 && static_cast<size_t>(idx) < d.places().size() && d.places()[static_cast<size_t>(idx)].kind == labels::Kind::County;
+            };
+            labels::Lines lines;
+            const int cell = static_cast<int>(std::floor((47.4 + 90.0) / labels::kFineCell)) * labels::kFineCols +
+                             static_cast<int>(std::floor((-122.6 + 180.0) / labels::kFineCell));
+            const bool decoded = d.fine(cell, lines);
+            int county = 0, named = 0;
+            double best = 1e9;
+            std::string north, south;
+            bool thurstonNorth = false;
+            for (const labels::Run& r : lines.runs) {
+                if (r.level != labels::Level::County) continue;
+                ++county;
+                if (isCounty(r.left) && isCounty(r.right)) ++named;
+                const bool thurston = sideName(r.left) == "Thurston County" || sideName(r.right) == "Thurston County";
+                for (std::uint32_t i = 0; i + 1 < r.count; ++i) {
+                    const std::uint32_t v = r.first + i;
+                    const double x0 = lines.xy[2 * v] * labels::kUnit, y0 = lines.xy[2 * v + 1] * labels::kUnit;
+                    const double x1 = lines.xy[2 * v + 2] * labels::kUnit, y1 = lines.xy[2 * v + 3] * labels::kUnit;
+                    if (thurston && std::max(y0, y1) > 47.25) thurstonNorth = true;
+                    const double ax = (x0 + 122.6) * 0.68, ay = y0 - 47.4034, dx = (x1 - x0) * 0.68, dy = y1 - y0;
+                    const double len2 = dx * dx + dy * dy;
+                    const double t = len2 > 0.0 ? std::clamp(-(ax * dx + ay * dy) / len2, 0.0, 1.0) : 0.0;
+                    const double dist = std::hypot(ax + dx * t, ay + dy * t);
+                    if (dist < best) {
+                        best = dist;
+                        north = sideName(x1 > x0 ? r.left : r.right);
+                        south = sideName(x1 > x0 ? r.right : r.left);
+                    }
+                }
+            }
+            check(decoded && county > 50 && named == county, "county lines carry the county on each side");
+            check(best < 0.01 && north == "Kitsap County" && south == "Pierce County", "county sides at the Kitsap and Pierce line near Gig Harbor");
+            check(!thurstonNorth, "no Thurston County side north of Thurston County");
+        }
     }
     std::printf("%d failure(s)\n", failures);
     return failures == 0 ? 0 : 1;
