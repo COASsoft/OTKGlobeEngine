@@ -498,6 +498,7 @@ def places(args, adm0, adm1, adm2, cmap):
     log('states', states)
 
     counties = 0
+    county_items = {}
     for i, g in enumerate(g2):
         group = a2['shapeGroup'][i]
         if count2[group] <= count1[group] or member[i] < 0:
