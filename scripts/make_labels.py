@@ -650,7 +650,7 @@ def encode_places(items):
     body = struct.pack('<I', len(items)) + struct.pack(f'<{len(starts)}I', *starts)
     for part in (kinds, flags, minz, maxz, lat_stream, lon_stream, pops, bytes(names)):
         body += struct.pack('<I', len(part)) + part
-    return body
+    return body, rank
 
 
 def main():
