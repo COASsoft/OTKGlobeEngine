@@ -196,17 +196,43 @@ def boundaries(cgaz):
     ia, ib = tree.query(shapely.point_on_surface(g2), predicate='within')
     member = np.full(len(g2), -1)
     member[ia] = ib
-    seg, pa, pb = shared_segments(g2)
+    seg, pa, pb, left = shared_segments(shapely.orient_polygons(g2), True)
     ma, mb = member[pa], member[pb]
     county = (ma == mb) & (ma >= 0) & (a2['shapeGroup'][pa] == a2['shapeGroup'][pb])
-    out[3] = chains(seg[county])
-    log('county chains', len(out[3]))
+    seg, pa, pb, left = seg[county], pa[county], pb[county], left[county]
+    pair = np.unique(np.stack([np.minimum(pa, pb), np.maximum(pa, pb)], axis=1), axis=0, return_inverse=True)[1].ravel()
+    out[3], starts = chains(seg, pair)
+    sides = []
+    for e, forward in starts:
+        lp = int(left[e])
+        rp = int(pb[e]) if lp == int(pa[e]) else int(pa[e])
+        sides.append((-1, -1) if lp < 0 else (lp, rp) if forward else (rp, lp))
+    log('county chains', len(out[3]), 'without sides', sum(s[0] < 0 for s in sides), 'sides checked', check_sides(g2, out[3], sides))
     lines = []
     for level, cs in out.items():
-        for c in cs:
-            lines.append((level, c, importance(c)))
+        for i, c in enumerate(cs):
+            lines.append((level, c, importance(c), sides[i] if level == 3 else None))
     log('importance done', len(lines))
     return lines, (g0, a0), (g1, a1), (g2, a2, member)
+
+
+def check_sides(geoms, paths, sides):
+    idx, xs, ys = [], [], []
+    for p, (lp, _) in zip(paths, sides):
+        if lp < 0:
+            continue
+        d = np.diff(p, axis=0)
+        length = np.hypot(d[:, 0], d[:, 1])
+        k = int(np.argmax(length))
+        if length[k] <= 0:
+            continue
+        step = min(1e-5, 0.25 * length[k]) / length[k]
+        mid = (p[k] + p[k + 1]) * 0.5
+        idx.append(lp)
+        xs.append(mid[0] - d[k, 1] * step)
+        ys.append(mid[1] + d[k, 0] * step)
+    inside = shapely.contains_xy(geoms[np.array(idx)], np.array(xs), np.array(ys))
+    return f'{int(inside.sum())}/{len(idx)}'
 
 
 def zigzag(v):
