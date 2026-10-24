@@ -939,18 +939,20 @@ void LabelLayer::buildLines3D(const std::vector<float>& inst, double originLat, 
     }
 }
 
-bool LabelLayer::drawBorders3D(const Camera& cam, const GroundFn& ground, double dpi, const std::vector<GeoRect>& visible, int version) {
+bool LabelLayer::drawBorders3D(const Camera& cam, const GroundFn& ground, double dpi, const std::vector<ViewRect>& visible, int version) {
     if (!available() || visible.empty() || cam.width <= 0 || cam.height <= 0) return true;
-    const double unitDeg = std::max(cam.gsd, 1e-3) / 111320.0;
-    std::vector<std::pair<int, int>> cells;
-    for (const GeoRect& r : visible) {
-        keys(r, unitDeg * 2.5, scratchKeys_);
-        cells.insert(cells.end(), scratchKeys_.begin(), scratchKeys_.end());
+    std::vector<BorderCell> cells;
+    for (const ViewRect& r : visible) {
+        const double meters = std::max(r.meters, 1e-3);
+        keys(r.rect, meters / 111320.0 * 2.5, scratchKeys_);
+        for (const auto& [tier, cell] : scratchKeys_) cells.push_back({tier, cell, meters});
     }
-    std::sort(cells.begin(), cells.end());
-    cells.erase(std::unique(cells.begin(), cells.end()), cells.end());
+    std::sort(cells.begin(), cells.end(), [](const BorderCell& a, const BorderCell& b) {
+        return a.tier != b.tier ? a.tier < b.tier : a.cell != b.cell ? a.cell < b.cell : a.meters < b.meters;
+    });
+    cells.erase(std::unique(cells.begin(), cells.end(), [](const BorderCell& a, const BorderCell& b) { return a.tier == b.tier && a.cell == b.cell; }),
+                cells.end());
     if (cells.empty()) return true;
-    const double meters = unitDeg * 111320.0;
     bline3d_params_t p{};
     p.view[0] = static_cast<float>(cam.width);
     p.view[1] = static_cast<float>(cam.height);
@@ -960,20 +962,24 @@ bool LabelLayer::drawBorders3D(const Camera& cam, const GroundFn& ground, double
     p.clip[0] = 1.0f;
     p.clip[2] = -1.0f;
     p.dashk[0] = static_cast<float>(1.0 / std::max(cam.gsd, 1e-3));
-    for (int l = 0; l < 4; ++l) {
-        const BorderStyle& st = kBorders[l];
-        const bool hidden = (l == 3 && meters > kCountyMeters) || (l == 2 && meters > kStateMeters);
-        p.styles[l][0] = hidden ? 0.0f : st.width;
-        p.styles[l][1] = st.casing;
-        p.styles[l][2] = st.on;
-        p.styles[l][3] = st.off;
-        std::memcpy(p.colors[l], st.color, sizeof(p.colors[l]));
-    }
+    auto style = [&](double meters) {
+        for (int l = 0; l < 4; ++l) {
+            const BorderStyle& st = kBorders[l];
+            const bool hidden = (l == 3 && meters > kCountyMeters) || (l == 2 && meters > kStateMeters);
+            p.styles[l][0] = hidden ? 0.0f : st.width;
+            p.styles[l][1] = st.casing;
+            p.styles[l][2] = st.on;
+            p.styles[l][3] = st.off;
+            std::memcpy(p.colors[l], st.color, sizeof(p.colors[l]));
+        }
+    };
     const auto start = std::chrono::steady_clock::now();
     bool forced = false;
     bool ready = true;
-    for (const auto& [tier, cell] : cells) {
-        Batch* b = batch(tier, cell, true);
+    for (const BorderCell& c : cells) {
+        const int tier = c.tier;
+        style(c.meters);
+        Batch* b = batch(tier, c.cell, true);
         if (!b) {
             ready = false;
             continue;
@@ -1010,9 +1016,10 @@ bool LabelLayer::drawBorders3D(const Camera& cam, const GroundFn& ground, double
     if (ready) lastBorderCells_ = cells;
     const Vec3 eye = cam.eye();
     bool applied = false;
-    for (const auto& [tier, cell] : lastBorderCells_) {
-        Batch* b = batch(tier, cell, false);
+    for (const BorderCell& c : lastBorderCells_) {
+        Batch* b = batch(c.tier, c.cell, false);
         if (!b || b->count <= 0) continue;
+        style(c.meters);
         const Vec3 origin = geodeticToEcef(b->south, b->west, 0.0);
         toFloat(cam.viewProjRel() * translation(origin - eye), p.mvp);
         const Vec3 local = eye - origin;
@@ -1219,7 +1226,7 @@ void LabelLayer::drawSurface(const GeoRect& tile, double unitDeg, double dpi) {
     }
 }
 
-void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dpi, const std::vector<GeoRect>& visible,
+void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dpi, const std::vector<ViewRect>& visible,
                             const std::vector<const VectorTile*>& overlay, int view, bool places, const GroundFn& above) {
     if (!ready_ || cam.width <= 0 || cam.height <= 0) return;
     Text& T = *text_;
@@ -1291,7 +1298,8 @@ void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dp
 
         if (bundled && !visible.empty()) {
             std::vector<int> cells;
-            for (const GeoRect& r : visible) {
+            for (const ViewRect& v : visible) {
+                const GeoRect& r = v.rect;
                 const int c0 = std::clamp(static_cast<int>(std::floor((r.west + 180.0) / labels::kPlaceCell)), 0, labels::kPlaceCols - 1);
                 const int c1 = std::clamp(static_cast<int>(std::floor((r.east + 180.0) / labels::kPlaceCell)), 0, labels::kPlaceCols - 1);
                 const int r0 = std::clamp(static_cast<int>(std::floor((r.south + 90.0) / labels::kPlaceCell)), 0, labels::kPlaceRows - 1);
@@ -1398,12 +1406,14 @@ void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dp
             }
         }
         borderMarks_.clear();
-        if (bundled && data && cam.gsd <= kCountyMeters * 0.6) {
+        if (bundled && data) {
             const TextStyle bs = markStyle(TileMark{MarkType::Border}, dpi);
             const int band = static_cast<int>(std::lround(std::log2(std::max(560.0 * dpi * cam.gsd, 1.0))));
             const double spacing = std::ldexp(1.0, band);
             std::vector<int> fineCells;
-            for (const GeoRect& r : visible) {
+            for (const ViewRect& v : visible) {
+                if (v.meters > kCountyMeters * 0.6) continue;
+                const GeoRect& r = v.rect;
                 const int c0 = std::clamp(static_cast<int>(std::floor((r.west + 180.0) / labels::kFineCell)), 0, labels::kFineCols - 1);
                 const int c1 = std::clamp(static_cast<int>(std::floor((r.east + 180.0) / labels::kFineCell)), 0, labels::kFineCols - 1);
                 const int r0 = std::clamp(static_cast<int>(std::floor((r.south + 90.0) / labels::kFineCell)), 0, labels::kFineRows - 1);
@@ -1443,6 +1453,7 @@ void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dp
                             if (dot(normalize(pe), eye - pe) <= 0.0 || !project(pe, sx, sy) || sx < -120 || sy < -120 || sx > W + 120 || sy > H + 120)
                                 continue;
                             const double mpp = cam.pixelSizeAt(std::max(length(pe - eye), 1.0));
+                            if (mpp > kCountyMeters * 0.6) continue;
                             for (int side = -1; side <= 1; side += 2) {
                                 const int idx = side > 0 ? cr.left : cr.right;
                                 if (idx < 0 || static_cast<size_t>(idx) >= placeCount) continue;
