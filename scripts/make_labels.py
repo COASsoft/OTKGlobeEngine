@@ -308,7 +308,7 @@ def grid_runs(lines, size):
         split = np.nonzero(np.diff(keys) != 0)[0] + 1
         bounds = np.concatenate([[0], split, [len(keys)]])
         for a, b in zip(bounds[:-1], bounds[1:]):
-            cells[int(keys[a])].append((level, p[a:b + 1], imp[a:b + 1]))
+            cells[int(keys[a])].append((level, p[a:b + 1], imp[a:b + 1], side))
     return cells
 
 
