@@ -1434,9 +1434,11 @@ void GlobeRenderer::drawSnapshot(float alpha, const Camera* now) {
         p.up[1] = static_cast<float>(es.y / r);
         p.up[2] = static_cast<float>(es.z / r);
         p.up[3] = static_cast<float>(r);
-        p.shape[0] = static_cast<float>(kWgs84A);
+        const double ground = std::isfinite(snapshotCam_.focus.alt) ? std::clamp(snapshotCam_.focus.alt, -500.0, 9000.0) : 0.0;
+        const double radius = kWgs84A + std::min(ground, std::max(r - kWgs84A - 1.0, 0.0));
+        p.shape[0] = static_cast<float>(radius);
         p.shape[1] = static_cast<float>(scale);
-        p.shape[2] = static_cast<float>(r - kWgs84A);
+        p.shape[2] = static_cast<float>(r - radius);
     }
     sg_apply_uniforms(UB_snapshot_params, SG_RANGE(p));
     sg_draw(0, 3, 1);
@@ -2880,6 +2882,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     profileMark(2);
     int builds = 0;
     int deferred = 0;
+    int visibleBuilds = 0;
+    int visibleDeferred = 0;
     int currentTerrain = elevation_.version() + terrainEpoch_ * 1000000;
     for (const Need& n : needs_) {
         auto it = terrain_.find(n.key);
@@ -2889,8 +2893,10 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 buildTerrain(n.key, t, n.priority);
                 t.used = frame_;
                 ++builds;
+                if (!n.prefetch) ++visibleBuilds;
             } else {
                 ++deferred;
+                if (!n.prefetch) ++visibleDeferred;
             }
             continue;
         }
@@ -2899,6 +2905,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             elapsedMs() < budgetMs * 0.6) {
             buildTerrain(n.key, it->second, n.priority);
             ++builds;
+            if (!n.prefetch) ++visibleBuilds;
         } else if (!it->second.complete && terrainEnabled_ && !elevation_.empty()) {
             std::vector<float> scratch;
             Bounds b = bounds(n.key);
@@ -2906,10 +2913,12 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             elevation_.gridFor(b.west - cell, std::max(b.south - cell, -90.0), b.east + cell,
                                std::min(b.north + cell, 90.0), kPosts + 2, n.priority, scratch, false);
         }
-        if (!it->second.complete && it->second.version != currentTerrain) ++deferred;
+        if (!it->second.complete && it->second.version != currentTerrain) {
+            ++deferred;
+            if (!n.prefetch) ++visibleDeferred;
+        }
     }
     elevation_.submit();
-    int visibleDeferred = deferred;
 
     profileMark(3);
     struct Work {
@@ -4261,6 +4270,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     }
     const GeoRect viewArea = viewFootprint(dc);
     const GeoPoint eyeGeo = ecefToGeodetic(dc.eye());
+    int roadsWaiting = 0;
     if (lines3d_ && labelsOn_ && !xray && !lineTiles.empty()) {
         const int lineVersion = elevation_.version() + terrainEpoch_ * 1000000;
         std::vector<GeoRect> rects;
@@ -4346,6 +4356,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 t.roads3dBuilt = tnow;
                 buildRoads3D(t, lineVersion);
             }
+            if (t.roads3dVersion < 0) ++roadsWaiting;
             if (!t.roads3d.id || t.roads3dCount <= 0) continue;
             const VectorTile& vt = *t.vector;
             const double n = std::ldexp(1.0, vt.z);
@@ -4660,8 +4671,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     }
     viewComplete_ = incomplete == 0;
     if (snapshotShown_ && settleSnapshot_ && snapshotFade_ < 0.0) {
-        const bool quiet = heldNow == 0 && waitingNow == 0 && !fading && !mergeActive_ && visibleRenders == 0 && visibleDeferred == 0 && builds == 0 &&
-                           bordersReady_ && roadBuildQueue_.empty();
+        const bool quiet = heldNow == 0 && waitingNow == 0 && !fading && !mergeActive_ && visibleRenders == 0 && visibleDeferred == 0 &&
+                           visibleBuilds == 0 && bordersReady_ && roadsWaiting == 0;
         settleQuiet_ = quiet ? settleQuiet_ + 1 : 0;
         if (settleQuiet_ >= 2 || tnow - snapshotStart_ >= (switchHold_ ? std::max(settleWait_, switchWait_) : settleWait_)) {
             snapshotFade_ = tnow;
