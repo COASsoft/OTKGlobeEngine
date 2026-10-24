@@ -6,11 +6,11 @@ It runs on Windows, macOS, Linux (including Raspberry Pi), Android, iOS and iPad
 
 Website and downloads: https://grangedevgroup-code.github.io/OTKGlobeEngine/
 
-| Globe | Terrain | First person |
+| Globe | Place names and borders | Streets |
 | --- | --- | --- |
-| ![](screenshots/otkglobeengine/01_globe.png) | ![](screenshots/otkglobeengine/05_rainier_terrain.png) | ![](screenshots/otkglobeengine/15_first_person.png) |
-| **Vector tiles** | **3D Tiles** | **Features and labels** |
-| ![](screenshots/otkglobeengine/14_vector_tiles.png) | ![](screenshots/otkglobeengine/16_3d_tiles.png) | ![](screenshots/otkglobeengine/08_features_kml_terrain.png) |
+| ![](screenshots/otkglobeengine/01_globe.png) | ![](screenshots/otkglobeengine/23_labels_puget_sound.png) | ![](screenshots/otkglobeengine/02_olympia_street.png) |
+| **Tilted city view** | **Terrain** | **3D Tiles** |
+| ![](screenshots/otkglobeengine/24_labels_tilted.png) | ![](screenshots/otkglobeengine/05_rainier_terrain.png) | ![](screenshots/otkglobeengine/16_3d_tiles.png) |
 
 ## Try it
 
