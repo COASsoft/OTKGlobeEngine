@@ -54,6 +54,8 @@
   - `loading`: 1 while the view is still loading.
 
 ### Performance
+- Tilted 3D views no longer stall. Labels and boundary lines only do work for the ground that is actually on screen, at the detail each part of the screen needs. Before, right after opening a tilted view they processed most of a continent every frame. On a 4 GB tablet, a tilted view now reaches full detail in about 2.4 s instead of 19 s, and gestures run at about 40 frames per second instead of 5.
+- Prefetching keeps room for the always-loaded world overview and some headroom, so in a still view it no longer pushes visible tiles out of memory and reloads them.
 - Smoother on phones and tablets:
   - The sky is only drawn where no terrain covers it.
   - The terrain shader skips texture reads it does not need.
