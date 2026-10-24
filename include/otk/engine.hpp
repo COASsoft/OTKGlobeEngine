@@ -58,7 +58,7 @@ struct View {
     double lat = 20.0;
     double lon = -40.0;
     double alt = 0.0;
-    double gsd = 20000.0;
+    double gsd = 1.0e9;
     double azimuth = 0.0;
     double tilt = 0.0;
     bool holdAltitude = false;
