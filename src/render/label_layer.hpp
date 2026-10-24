@@ -30,6 +30,11 @@ struct ContourBucket {
     GeoRect bounds;
 };
 
+struct ViewRect {
+    GeoRect rect;
+    double meters = 0.0;
+};
+
 struct ContourSet {
     GeoRect bounds;
     double meters = 0.0;
@@ -53,7 +58,7 @@ public:
     bool prepare(const GeoRect& tile, double unitDeg);
     void drawRoads(const std::vector<RoadBatch>& batches, const GeoRect& tile, double unitDeg, double dpi);
     void drawSurface(const GeoRect& tile, double unitDeg, double dpi);
-    bool drawBorders3D(const Camera& cam, const GroundFn& ground, double dpi, const std::vector<GeoRect>& visible, int version);
+    bool drawBorders3D(const Camera& cam, const GroundFn& ground, double dpi, const std::vector<ViewRect>& visible, int version);
     void beginRoads3D(const Camera& cam, double dpi);
     void warmLines3D();
     void drawRoads3D(sg_buffer buffer, int first, int count, const Vec3& origin, const float clip[4], int pass);
@@ -63,7 +68,7 @@ public:
                              double pieceDeg = 0.0);
     void setContours(std::shared_ptr<const ContourSet> set);
     void drawContours(const GeoRect& tile, double unitDeg, double dpi);
-    void drawLabels(const Camera& cam, const GroundFn& ground, double dpi, const std::vector<GeoRect>& visible,
+    void drawLabels(const Camera& cam, const GroundFn& ground, double dpi, const std::vector<ViewRect>& visible,
                     const std::vector<const VectorTile*>& overlay, int view, bool places, const GroundFn& above = {});
 
 private:
@@ -129,7 +134,12 @@ private:
     sg_view iconView_{};
     sg_sampler sampler_{};
     std::vector<std::pair<int, int>> scratchKeys_;
-    std::vector<std::pair<int, int>> lastBorderCells_;
+    struct BorderCell {
+        int tier = 0;
+        int cell = 0;
+        double meters = 0.0;
+    };
+    std::vector<BorderCell> lastBorderCells_;
     std::unordered_map<int, CountyCell> countyCells_;
     std::vector<TileMark> borderMarks_;
     std::shared_ptr<const ContourSet> contours_;
