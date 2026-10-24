@@ -85,14 +85,16 @@ private:
     Batch* batch(int tier, int cell, bool load);
     void uploadAtlas();
     void trim();
+    struct CountyRun {
+        std::vector<std::array<double, 2>> pts;
+        int left = -1;
+        int right = -1;
+    };
     struct CountyCell {
-        std::vector<std::vector<std::array<double, 2>>> runs;
-        std::unordered_map<int, std::vector<std::array<double, 4>>> buckets;
+        std::vector<CountyRun> runs;
         std::uint64_t used = 0;
     };
     const CountyCell* countyCell(int cell);
-    bool crossesBorder(double lat0, double lon0, double lat1, double lon1);
-    int countyAt(double lat, double lon);
 
     std::unordered_map<int, Batch> batches_;
     std::unique_ptr<Text> text_;
@@ -129,7 +131,6 @@ private:
     std::vector<std::pair<int, int>> scratchKeys_;
     std::vector<std::pair<int, int>> lastBorderCells_;
     std::unordered_map<int, CountyCell> countyCells_;
-    std::unordered_map<std::uint64_t, int> countySides_;
     std::vector<TileMark> borderMarks_;
     std::shared_ptr<const ContourSet> contours_;
     const ContourSet* contoursUploaded_ = nullptr;
