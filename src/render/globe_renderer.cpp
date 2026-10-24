@@ -97,6 +97,76 @@ constexpr double kFadeSeconds = 0.35;
 
 double spanDeg(int level) { return 180.0 / static_cast<double>(1 << level); }
 
+GeoRect viewFootprint(const Camera& cam) {
+    const Vec3 eye = cam.eye();
+    const Mat4& inv = cam.invViewProjRel();
+    const double k = kWgs84A / kWgs84B;
+    const Vec3 es{eye.x, eye.y, eye.z * k};
+    const double ee = dot(es, es) - kWgs84A * kWgs84A;
+    constexpr int kSteps = 12;
+    std::vector<double> lons;
+    lons.reserve((kSteps + 1) * (kSteps + 1));
+    double south = 90.0, north = -90.0;
+    for (int j = 0; j <= kSteps; ++j)
+        for (int i = 0; i <= kSteps; ++i) {
+            const double x = -1.0 + 2.0 * i / kSteps, y = -1.0 + 2.0 * j / kSteps;
+            const Vec4 a = inv * Vec4{x, y, 0.0, 1.0};
+            const Vec4 b = inv * Vec4{x, y, 1.0, 1.0};
+            const Vec3 dir = normalize(Vec3{b.x / b.w - a.x / a.w, b.y / b.w - a.y / a.w, b.z / b.w - a.z / a.w});
+            const Vec3 ds{dir.x, dir.y, dir.z * k};
+            const double qa = dot(ds, ds), qb = dot(es, ds);
+            const double disc = qb * qb - qa * ee;
+            Vec3 p;
+            if (disc >= 0.0 && -qb - std::sqrt(disc) > 0.0) {
+                p = eye + dir * ((-qb - std::sqrt(disc)) / qa);
+            } else {
+                const Vec3 c = normalize(es + ds * std::max(-qb / qa, 0.0)) * kWgs84A;
+                p = Vec3{c.x, c.y, c.z / k};
+            }
+            const GeoPoint g = ecefToGeodetic(p);
+            lons.push_back(g.lon);
+            south = std::min(south, g.lat);
+            north = std::max(north, g.lat);
+        }
+    bool full = false;
+    for (int pole = -1; pole <= 1; pole += 2) {
+        const Vec3 at{0.0, 0.0, pole * kWgs84B};
+        if (dot(Vec3{0.0, 0.0, static_cast<double>(pole)}, eye - at) <= 0.0) continue;
+        const Vec4 c = cam.viewProjRel() * Vec4{at.x - eye.x, at.y - eye.y, at.z - eye.z, 1.0};
+        if (c.w <= 0.0 || std::abs(c.x) > c.w || std::abs(c.y) > c.w) continue;
+        if (pole > 0) north = 90.0;
+        else south = -90.0;
+        full = true;
+    }
+    std::sort(lons.begin(), lons.end());
+    double gap = lons.front() + 360.0 - lons.back(), west = lons.front(), east = lons.back();
+    for (size_t i = 1; i < lons.size(); ++i)
+        if (lons[i] - lons[i - 1] > gap) {
+            gap = lons[i] - lons[i - 1];
+            west = lons[i];
+            east = lons[i - 1] + 360.0;
+        }
+    const double latPad = std::max(0.05, (north - south) * 0.05), lonPad = std::max(0.05, (east - west) * 0.05);
+    south = std::max(-90.0, south - latPad);
+    north = std::min(90.0, north + latPad);
+    if (full || gap < 30.0 || east - west + 2.0 * lonPad >= 360.0) return {-180.0, south, 180.0, north};
+    return {west - lonPad, south, east + lonPad, north};
+}
+
+void clipToView(const GeoRect& r, const GeoRect& view, const Camera& cam, const GeoPoint& eyeGeo, std::vector<ViewRect>& out) {
+    const double s = std::max(r.south, view.south), n = std::min(r.north, view.north);
+    if (s >= n) return;
+    for (double shift : {-360.0, 0.0, 360.0}) {
+        const double w = std::max(r.west, view.west + shift), e = std::min(r.east, view.east + shift);
+        if (w >= e) continue;
+        const double mid = (w + e) * 0.5;
+        const double lon = std::clamp(mid + std::remainder(eyeGeo.lon - mid, 360.0), w, e);
+        const double lat = std::clamp(eyeGeo.lat, s, n);
+        const double dist = length(geodeticToEcef(lat, lon, 0.0) - cam.eye());
+        out.push_back({GeoRect{w, s, e, n}, cam.pixelSizeAt(std::max(dist, 1.0))});
+    }
+}
+
 }
 
 GlobeRenderer::GlobeRenderer() = default;
@@ -4188,16 +4258,20 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                      static_cast<unsigned long long>(frame_), tnow, zCap, capFail[0], capFail[1], capFail[2], capFail[3], capExample.level, capExample.x,
                      capExample.y, capExampleZ, chain.c_str());
     }
+    const GeoRect viewArea = viewFootprint(dc);
+    const GeoPoint eyeGeo = ecefToGeodetic(dc.eye());
     if (lines3d_ && labelsOn_ && !xray && !lineTiles.empty()) {
         const int lineVersion = elevation_.version() + terrainEpoch_ * 1000000;
         std::vector<GeoRect> rects;
+        std::vector<ViewRect> borderRects;
         rects.reserve(lineTiles.size());
         for (const auto& lt : lineTiles) {
             const Bounds b = bounds(lt.first);
             rects.push_back({b.west, b.south, b.east, b.north});
+            clipToView(rects.back(), viewArea, dc, eyeGeo, borderRects);
         }
         labels_.warmLines3D();
-        bordersReady_ = labels_.drawBorders3D(dc, ground, dpiScale_, rects, lineVersion);
+        bordersReady_ = labels_.drawBorders3D(dc, ground, dpiScale_, borderRects, lineVersion);
         std::unordered_map<TileId, std::vector<size_t>, TileIdHash> users;
         for (size_t i = 0; i < lineTiles.size(); ++i) {
             auto s = lineTiles[i].second.level >= 0 ? surface_.find(lineTiles[i].second) : surface_.end();
@@ -4367,7 +4441,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             }
         }
     }
-    std::vector<GeoRect> visibleRects;
+    std::vector<ViewRect> visibleRects;
     std::vector<const VectorTile*> overlayTiles;
     GroundFn labelAbove;
     if (labelsOn_ || contours_) {
@@ -4375,7 +4449,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         std::unordered_set<const VectorTile*> seenOverlay;
         for (const auto& dt : tiles) {
             Bounds b = bounds(dt.key);
-            visibleRects.push_back({b.west, b.south, b.east, b.north});
+            clipToView({b.west, b.south, b.east, b.north}, viewArea, dc, eyeGeo, visibleRects);
             if (overlayLayer_ < 0 || overlayLayer_ >= static_cast<int>(matrices_.size())) continue;
             const TileMatrix& m = matrices_[overlayLayer_];
             const double target = (b.north - b.south) / kSurfaceSize * m.unitsPerDegree();
