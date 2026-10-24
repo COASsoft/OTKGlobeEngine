@@ -270,14 +270,18 @@ def importance_class(imp):
     return out
 
 
-def encode_lines(items, with_class):
+def encode_lines(items, with_class, place_of=None):
+    place_of = place_of or {}
     head = bytearray(varint(len(items)))
     xs, ys, cl = [], [], []
     px = py = 0
     total = 0
-    for level, p, imp in items:
+    for level, p, imp, side in items:
         q = np.round(p / UNIT).astype(np.int64)
         head += bytes([level]) + varint(len(q))
+        if level == 3:
+            lp, rp = side or (-1, -1)
+            head += varint(place_of.get(lp, -1) + 1) + varint(place_of.get(rp, -1) + 1)
         xs.append(np.diff(q[:, 0], prepend=px))
         ys.append(np.diff(q[:, 1], prepend=py))
         px, py = int(q[-1, 0]), int(q[-1, 1])
