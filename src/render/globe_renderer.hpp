@@ -366,8 +366,7 @@ private:
     bool ensureIdleTarget(int width, int height);
     void dropIdleTarget();
     void dropSnapshotTarget();
-    void drawSnapshot(float alpha, const float* warp = nullptr);
-    bool snapshotWarp(const Camera& cam, float out[12]) const;
+    void drawSnapshot(float alpha, const Camera* now = nullptr);
     static void dropSurface(SurfaceTile& s);
     int processLoads();
     void evict();
