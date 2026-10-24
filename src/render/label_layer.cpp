@@ -172,6 +172,7 @@ TextStyle markStyle(const TileMark& m, double dpi) {
         break;
     case MarkType::Waterway: s = {11.0f, 0.2f, blue, dark, 1.0f, 0.0f, 2.0f}; break;
     case MarkType::Contour: s = {10.5f, 0.0f, rgba(0, 0, 0, 1.0f), rgba(255, 255, 255, 0.92f), 1.5f, 0.0f, 2.0f}; break;
+    case MarkType::Border: s = {10.0f, 0.3f, rgba(218, 218, 218, 1.0f), rgba(20, 20, 20, 0.72f), 1.0f, 0.0f, 3.0f}; break;
     }
     return scaled(s, dpi);
 }
@@ -187,6 +188,7 @@ float markZoom(const TileMark& m) {
     case MarkType::Water: return r == 0 ? 2.5f : r == 1 ? 8.0f : m.zoom <= 10 ? std::max(8.0f, static_cast<float>(m.zoom)) : 12.0f;
     case MarkType::Waterway: return r == 0 ? 12.0f : r == 1 ? 13.5f : 14.5f;
     case MarkType::Contour: return m.zoom > 2 ? m.zoom - 1.5f : 0.0f;
+    case MarkType::Border: return 0.0f;
     }
     return 20.0f;
 }
@@ -199,6 +201,7 @@ float markBase(const TileMark& m) {
     case MarkType::Park: return 2.6f;
     case MarkType::Waterway: return 3.0f;
     case MarkType::Contour: return 20.0f;
+    case MarkType::Border: return 4.6f;
     default: return 3.2f;
     }
 }
@@ -797,6 +800,102 @@ void LabelLayer::keys(const GeoRect& tile, double unitDeg, std::vector<std::pair
         }
 }
 
+const LabelLayer::CountyCell* LabelLayer::countyCell(int cell) {
+    auto it = countyCells_.find(cell);
+    if (it != countyCells_.end()) {
+        it->second.used = frame_;
+        return &it->second;
+    }
+    const labels::Dataset& d = labels::Dataset::get();
+    CountyCell cc;
+    cc.used = frame_;
+    labels::Lines lines;
+    if (d.hasFine(cell) && d.fine(cell, lines)) {
+        for (const labels::Run& r : lines.runs) {
+            if (r.count < 2) continue;
+            std::vector<std::array<double, 2>> pts;
+            pts.reserve(r.count);
+            for (std::uint32_t i = 0; i < r.count; ++i) {
+                const std::uint32_t v = r.first + i;
+                pts.push_back({lines.xy[2 * v] * labels::kUnit, lines.xy[2 * v + 1] * labels::kUnit});
+            }
+            for (size_t i = 1; i < pts.size(); ++i) {
+                const auto& a = pts[i - 1];
+                const auto& b = pts[i];
+                const int x0 = static_cast<int>(std::floor(std::min(a[0], b[0]) * 10.0)), x1 = static_cast<int>(std::floor(std::max(a[0], b[0]) * 10.0));
+                const int y0 = static_cast<int>(std::floor(std::min(a[1], b[1]) * 10.0)), y1 = static_cast<int>(std::floor(std::max(a[1], b[1]) * 10.0));
+                for (int y = y0; y <= y1; ++y)
+                    for (int x = x0; x <= x1; ++x) cc.buckets[(y + 900) * 3600 + (x + 1800)].push_back({a[0], a[1], b[0], b[1]});
+            }
+            if (r.level == labels::Level::County) cc.runs.push_back(std::move(pts));
+        }
+    }
+    while (countyCells_.size() >= 24) {
+        auto oldest = countyCells_.begin();
+        for (auto o = countyCells_.begin(); o != countyCells_.end(); ++o)
+            if (o->second.used < oldest->second.used) oldest = o;
+        countyCells_.erase(oldest);
+    }
+    return &(countyCells_[cell] = std::move(cc));
+}
+
+bool LabelLayer::crossesBorder(double lat0, double lon0, double lat1, double lon1) {
+    auto orient = [](double ax, double ay, double bx, double by, double cx, double cy) {
+        const double v = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+        return v > 0.0 ? 1 : v < 0.0 ? -1 : 0;
+    };
+    const double west = std::min(lon0, lon1), east = std::max(lon0, lon1), south = std::min(lat0, lat1), north = std::max(lat0, lat1);
+    const int c0 = std::clamp(static_cast<int>(std::floor((west + 180.0) / labels::kFineCell)), 0, labels::kFineCols - 1);
+    const int c1 = std::clamp(static_cast<int>(std::floor((east + 180.0) / labels::kFineCell)), 0, labels::kFineCols - 1);
+    const int r0 = std::clamp(static_cast<int>(std::floor((south + 90.0) / labels::kFineCell)), 0, labels::kFineRows - 1);
+    const int r1 = std::clamp(static_cast<int>(std::floor((north + 90.0) / labels::kFineCell)), 0, labels::kFineRows - 1);
+    const int bx0 = static_cast<int>(std::floor(west * 10.0)), bx1 = static_cast<int>(std::floor(east * 10.0));
+    const int by0 = static_cast<int>(std::floor(south * 10.0)), by1 = static_cast<int>(std::floor(north * 10.0));
+    for (int r = r0; r <= r1; ++r)
+        for (int c = c0; c <= c1; ++c) {
+            const CountyCell* cc = countyCell(r * labels::kFineCols + c);
+            for (int y = by0; y <= by1; ++y)
+                for (int x = bx0; x <= bx1; ++x) {
+                    auto b = cc->buckets.find((y + 900) * 3600 + (x + 1800));
+                    if (b == cc->buckets.end()) continue;
+                    for (const auto& s : b->second) {
+                        const int o1 = orient(lon0, lat0, lon1, lat1, s[0], s[1]), o2 = orient(lon0, lat0, lon1, lat1, s[2], s[3]);
+                        const int o3 = orient(s[0], s[1], s[2], s[3], lon0, lat0), o4 = orient(s[0], s[1], s[2], s[3], lon1, lat1);
+                        if (o1 * o2 < 0 && o3 * o4 < 0) return true;
+                    }
+                }
+        }
+    return false;
+}
+
+int LabelLayer::countyAt(double lat, double lon) {
+    const labels::Dataset& d = labels::Dataset::get();
+    const auto& places = d.places();
+    const double coslat = std::max(std::cos(lat * kDegToRad), 0.05);
+    const int pc = static_cast<int>(std::floor((lon + 180.0) / labels::kPlaceCell));
+    const int pr = static_cast<int>(std::floor((lat + 90.0) / labels::kPlaceCell));
+    std::vector<std::pair<double, int>> near;
+    for (int dr = -1; dr <= 1; ++dr)
+        for (int dc = -1; dc <= 1; ++dc) {
+            const int row = pr + dr;
+            if (row < 0 || row >= labels::kPlaceRows) continue;
+            const int col = ((pc + dc) % labels::kPlaceCols + labels::kPlaceCols) % labels::kPlaceCols;
+            const int cell = row * labels::kPlaceCols + col;
+            for (std::uint32_t i = d.cellBegin(cell); i < d.cellEnd(cell); ++i) {
+                const labels::Place& p = places[i];
+                if (p.kind != labels::Kind::County) continue;
+                const double dist = std::hypot((p.lon - lon) * coslat, p.lat - lat);
+                if (dist < 1.6) near.push_back({dist, static_cast<int>(i)});
+            }
+        }
+    std::sort(near.begin(), near.end());
+    for (size_t k = 0; k < near.size() && k < 10; ++k) {
+        const labels::Place& p = places[static_cast<size_t>(near[k].second)];
+        if (!crossesBorder(lat, lon, p.lat, p.lon)) return near[k].second;
+    }
+    return -1;
+}
+
 LabelLayer::Batch* LabelLayer::batch(int tier, int cell, bool load) {
     const int id = tier * 100000 + cell;
     auto it = batches_.find(id);
@@ -1361,6 +1460,107 @@ void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dp
                 candidates.push_back(c);
             }
         }
+        borderMarks_.clear();
+        if (bundled && data && cam.gsd <= kCountyMeters * 0.6) {
+            const TextStyle bs = markStyle(TileMark{MarkType::Border}, dpi);
+            const int band = static_cast<int>(std::lround(std::log2(std::max(560.0 * dpi * cam.gsd, 1.0))));
+            const double spacing = std::ldexp(1.0, band);
+            std::vector<int> fineCells;
+            for (const GeoRect& r : visible) {
+                const int c0 = std::clamp(static_cast<int>(std::floor((r.west + 180.0) / labels::kFineCell)), 0, labels::kFineCols - 1);
+                const int c1 = std::clamp(static_cast<int>(std::floor((r.east + 180.0) / labels::kFineCell)), 0, labels::kFineCols - 1);
+                const int r0 = std::clamp(static_cast<int>(std::floor((r.south + 90.0) / labels::kFineCell)), 0, labels::kFineRows - 1);
+                const int r1 = std::clamp(static_cast<int>(std::floor((r.north + 90.0) / labels::kFineCell)), 0, labels::kFineRows - 1);
+                for (int rr = r0; rr <= r1; ++rr)
+                    for (int cc = c0; cc <= c1; ++cc) fineCells.push_back(rr * labels::kFineCols + cc);
+            }
+            std::sort(fineCells.begin(), fineCells.end());
+            fineCells.erase(std::unique(fineCells.begin(), fineCells.end()), fineCells.end());
+            if (countySides_.size() > 200000) countySides_.clear();
+            struct Pending {
+                std::uint64_t key;
+                double lat, lon;
+            };
+            std::vector<Pending> pending;
+            int lookups = 0;
+            for (int fc : fineCells) {
+                const CountyCell* cc = countyCell(fc);
+                for (size_t ri = 0; ri < cc->runs.size(); ++ri) {
+                    const auto& run = cc->runs[ri];
+                    double acc = 0.0, next = spacing * 0.5;
+                    std::uint64_t k = 0;
+                    for (size_t i = 1; i < run.size(); ++i) {
+                        const auto& a = run[i - 1];
+                        const auto& b = run[i];
+                        const double coslat = std::max(std::cos(a[1] * kDegToRad), 0.05);
+                        const double dx = (b[0] - a[0]) * 111320.0 * coslat, dy = (b[1] - a[1]) * 110574.0;
+                        const double len = std::hypot(dx, dy);
+                        while (len > 0.0 && acc + len >= next) {
+                            const double t = (next - acc) / len;
+                            const double lon = a[0] + (b[0] - a[0]) * t, lat = a[1] + (b[1] - a[1]) * t;
+                            const double ux = dx / len, uy = dy / len;
+                            next += spacing;
+                            ++k;
+                            const Vec3 pe = geodeticToEcef(lat, lon, 0.0);
+                            double sx, sy;
+                            if (dot(normalize(pe), eye - pe) <= 0.0 || !project(pe, sx, sy) || sx < -120 || sy < -120 || sx > W + 120 || sy > H + 120)
+                                continue;
+                            const double mpp = cam.pixelSizeAt(std::max(length(pe - eye), 1.0));
+                            for (int side = -1; side <= 1; side += 2) {
+                                std::uint64_t key = 1469598103934665603ull;
+                                for (std::uint64_t v : {static_cast<std::uint64_t>(fc), static_cast<std::uint64_t>(ri), k,
+                                                        static_cast<std::uint64_t>(band + 64), static_cast<std::uint64_t>(side + 2)})
+                                    key = (key ^ v) * 1099511628211ull;
+                                key &= 0x7FFFFFFFFFFFFFFFull;
+                                int idx = -1;
+                                auto found = countySides_.find(key);
+                                if (found != countySides_.end()) {
+                                    idx = found->second;
+                                } else {
+                                    if (lookups >= 48) continue;
+                                    ++lookups;
+                                    const double qlon = lon + side * -uy * 120.0 / (111320.0 * coslat);
+                                    const double qlat = lat + side * ux * 120.0 / 110574.0;
+                                    idx = countyAt(qlat, qlon);
+                                    countySides_[key] = idx;
+                                }
+                                if (idx < 0) continue;
+                                TileMark m;
+                                m.type = MarkType::Border;
+                                m.text = std::string(data->name(data->places()[static_cast<size_t>(idx)]));
+                                const double half = (glyphs.width(m.text, bs) * 0.5 + 6.0 * dpi) * mpp;
+                                const double off = bs.size * 0.95 * mpp * side;
+                                const double cx = -uy * off, cy = ux * off;
+                                for (int p = -1; p <= 1; ++p) {
+                                    const double ex = cx + ux * half * p, ny = cy + uy * half * p;
+                                    m.points.push_back({lon + ex / (111320.0 * coslat), lat + ny / 110574.0});
+                                }
+                                pending.push_back({key, m.points[1][1], m.points[1][0]});
+                                borderMarks_.push_back(std::move(m));
+                            }
+                        }
+                        acc += len;
+                    }
+                }
+            }
+            for (size_t i = 0; i < borderMarks_.size() && candidates.size() < kMaxCandidates; ++i) {
+                const Pending& pd = pending[i];
+                const bool held = recent(pd.key);
+                const double h = height(pd.key, pd.lat, pd.lon);
+                double sx, sy;
+                if (!project(geodeticToEcef(pd.lat, pd.lon, h), sx, sy)) continue;
+                Candidate c;
+                c.mark = &borderMarks_[i];
+                c.key = pd.key;
+                c.height = h;
+                c.x = static_cast<float>(sx);
+                c.y = static_cast<float>(sy);
+                c.zoom = static_cast<float>(zoomAt(pd.lat, cam.range()));
+                c.priority = markBase(borderMarks_[i]) - (held ? 1.5f : 0.0f);
+                c.held = held;
+                candidates.push_back(c);
+            }
+        }
         std::sort(candidates.begin(), candidates.end(), [](const Candidate& a, const Candidate& b) {
             return a.priority != b.priority ? a.priority < b.priority : a.key < b.key;
         });
@@ -1439,8 +1639,9 @@ void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dp
             item.key = c.key;
             item.style = s;
 
-            if (m && (m->type == MarkType::Road || m->type == MarkType::Waterway || m->type == MarkType::Contour)) {
-                if (repeated(m->text, c.x, c.y, (m->type == MarkType::Contour ? 220.0f : 260.0f) * static_cast<float>(dpi))) continue;
+            if (m && (m->type == MarkType::Road || m->type == MarkType::Waterway || m->type == MarkType::Contour || m->type == MarkType::Border)) {
+                const float spacingPx = m->type == MarkType::Contour ? 220.0f : m->type == MarkType::Border ? 380.0f : 260.0f;
+                if (repeated(m->text, c.x, c.y, spacingPx * static_cast<float>(dpi))) continue;
                 screen.clear();
                 bool ok = true;
                 for (const auto& p : m->points) {
@@ -1557,6 +1758,7 @@ void LabelLayer::drawLabels(const Camera& cam, const GroundFn& ground, double dp
                 if (repeated(text, c.x, c.y, 500.0f * static_cast<float>(dpi))) continue;
             } else {
                 text = std::string(data->name(*c.place));
+                if (c.place->kind == labels::Kind::County && placedText.count(text)) continue;
             }
             splitLines(text, lines);
             float w = 0.0f;
