@@ -1592,7 +1592,6 @@ sapp_desc sokol_main(int argc, char* argv[]) {
     state = new ViewerState();
     state->startView.lat = 30.0;
     state->startView.lon = -100.0;
-    state->startView.gsd = 25000.0;
     parseArgs(argc, argv);
     sapp_desc d{};
     d.init_cb = init;
