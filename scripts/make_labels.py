@@ -665,29 +665,31 @@ def main():
 
     lines, adm0, adm1, adm2 = boundaries(args.cgaz)
     fine, coarse = [], []
-    for level, p, imp in lines:
+    for level, p, imp, side in lines:
         keep = imp >= TOLERANCE[level]
         fp, fi = densify(p[keep], imp[keep], 0.5)
         if len(fp) >= 2:
-            fine.append((level, fp, fi))
+            fine.append((level, fp, fi, side))
         if level < 3:
             keep = imp >= COARSE_TOLERANCE
             cp, ci = densify(p[keep], imp[keep], 2.0)
             if len(cp) >= 2:
-                coarse.append((level, cp, ci))
+                coarse.append((level, cp, ci, side))
     log('fine vertices', sum(len(t[1]) for t in fine), 'coarse vertices', sum(len(t[1]) for t in coarse))
 
     blocks = []
-    body = encode_places(places(args, adm0, adm1, adm2, cmap))
+    items, county_items = places(args, adm0, adm1, adm2, cmap)
+    body, rank = encode_places(items)
     blocks.append((1, 0, body))
+    place_of = {poly: rank[item] for poly, item in county_items.items()}
     for key, items in sorted(grid_runs(coarse, COARSE).items()):
         body, _ = encode_lines(items, True)
         blocks.append((2, key, body))
     for key, items in sorted(grid_runs(fine, FINE).items()):
-        body, _ = encode_lines(items, False)
+        body, _ = encode_lines(items, False, place_of)
         blocks.append((3, key, body))
 
-    header = b'OTKL' + struct.pack('<II', 1, len(blocks))
+    header = b'OTKL' + struct.pack('<II', 2, len(blocks))
     table_size = len(blocks) * 20
     offset = len(header) + table_size
     table, data = bytearray(), bytearray()
