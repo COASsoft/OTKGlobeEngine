@@ -624,7 +624,11 @@ def encode_places(items):
         qy = int((t[2] + 90) / 0.01) & 0xFFFF
         return (cell(t[2], t[3]), min(max(int(round(t[4] * 10)), 0), 250) // 10, morton(qx, qy))
 
-    items = sorted(items, key=key)
+    order = sorted(range(len(items)), key=lambda k: key(items[k]))
+    rank = [0] * len(items)
+    for final, k in enumerate(order):
+        rank[k] = final
+    items = [items[k] for k in order]
     starts = [0] * (ncols * nrows + 1)
     for t in items:
         starts[cell(t[2], t[3]) + 1] += 1
