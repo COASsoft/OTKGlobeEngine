@@ -39,6 +39,8 @@ struct Run {
     Level level = Level::Country;
     std::uint32_t first = 0;
     std::uint32_t count = 0;
+    std::int32_t left = -1;
+    std::int32_t right = -1;
 };
 
 struct Lines {
@@ -78,6 +80,7 @@ private:
     std::vector<Place> places_;
     std::vector<std::uint32_t> starts_;
     std::string names_;
+    std::uint32_t version_ = 0;
     bool available_ = false;
 };
 
