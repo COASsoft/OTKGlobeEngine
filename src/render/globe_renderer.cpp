@@ -1317,7 +1317,6 @@ bool GlobeRenderer::presentIdle(Camera& cam, const sg_swapchain& swapchain) {
     snapshot_params_t p{};
     p.params[0] = 1.0f;
     p.params[1] = flipSurface_ ? 1.0f : 0.0f;
-    p.h0[0] = p.h1[1] = p.h2[2] = 1.0f;
     sg_apply_uniforms(UB_snapshot_params, SG_RANGE(p));
     sg_draw(0, 3, 1);
     sg_end_pass();
@@ -1338,7 +1337,7 @@ void GlobeRenderer::dropSnapshotTarget() {
     snapshotShown_ = false;
 }
 
-void GlobeRenderer::drawSnapshot(float alpha, const float* warp) {
+void GlobeRenderer::drawSnapshot(float alpha, const Camera* now) {
     if (!snapshotTexture_.id || alpha <= 0.0f) return;
     sg_apply_pipeline(snapshotPipeline_);
     sg_bindings b{};
@@ -1349,69 +1348,28 @@ void GlobeRenderer::drawSnapshot(float alpha, const float* warp) {
     snapshot_params_t p{};
     p.params[0] = alpha;
     p.params[1] = flipSurface_ ? 1.0f : 0.0f;
-    if (warp) {
-        std::memcpy(p.h0, warp, 4 * sizeof(float));
-        std::memcpy(p.h1, warp + 4, 4 * sizeof(float));
-        std::memcpy(p.h2, warp + 8, 4 * sizeof(float));
-    } else {
-        p.h0[0] = p.h1[1] = p.h2[2] = 1.0f;
+    if (now) {
+        p.params[2] = 1.0f;
+        toFloat(now->invViewProjRel(), p.inv_new);
+        toFloat(snapshotCam_.viewProjRel(), p.vp_old);
+        const Vec3 d = now->eye() - snapshotCam_.eye();
+        p.delta[0] = static_cast<float>(d.x);
+        p.delta[1] = static_cast<float>(d.y);
+        p.delta[2] = static_cast<float>(d.z);
+        const double scale = kWgs84A / kWgs84B;
+        const Vec3 e = now->eye();
+        const Vec3 es{e.x, e.y, e.z * scale};
+        const double r = length(es);
+        p.up[0] = static_cast<float>(es.x / r);
+        p.up[1] = static_cast<float>(es.y / r);
+        p.up[2] = static_cast<float>(es.z / r);
+        p.up[3] = static_cast<float>(r);
+        p.shape[0] = static_cast<float>(kWgs84A);
+        p.shape[1] = static_cast<float>(scale);
+        p.shape[2] = static_cast<float>(r - kWgs84A);
     }
     sg_apply_uniforms(UB_snapshot_params, SG_RANGE(p));
     sg_draw(0, 3, 1);
-}
-
-bool GlobeRenderer::snapshotWarp(const Camera& cam, float out[12]) const {
-    const Vec3 focus = geodeticToEcef(snapshotCam_.focus);
-    const Vec3 up = normalize(focus);
-    const double za = snapshotCam_.zeroToOneDepth ? 0.1 : -0.8;
-    const double zb = snapshotCam_.zeroToOneDepth ? 0.9 : 0.8;
-    const double corner[4][2] = {{-0.6, -0.7}, {0.6, -0.7}, {0.6, 0.1}, {-0.6, 0.1}};
-    double a[8][9] = {};
-    for (int i = 0; i < 4; ++i) {
-        const double sx = corner[i][0], sy = corner[i][1];
-        Vec4 qa = snapshotCam_.invViewProjRel() * Vec4{sx, sy, za, 1.0};
-        Vec4 qb = snapshotCam_.invViewProjRel() * Vec4{sx, sy, zb, 1.0};
-        if (std::abs(qa.w) < 1e-12 || std::abs(qb.w) < 1e-12) return false;
-        const Vec3 pa{qa.x / qa.w, qa.y / qa.w, qa.z / qa.w};
-        const Vec3 pb{qb.x / qb.w, qb.y / qb.w, qb.z / qb.w};
-        const Vec3 dir = normalize(pb - pa);
-        const Vec3 origin = snapshotCam_.eye() + pa;
-        const double denom = dot(dir, up);
-        if (denom > -1e-6) return false;
-        const double t = dot(focus - origin, up) / denom;
-        if (t <= 0.0) return false;
-        const Vec3 ground = origin + dir * t;
-        const Vec3 rel = ground - cam.eye();
-        const Vec4 clip = cam.viewProjRel() * Vec4{rel.x, rel.y, rel.z, 1.0};
-        if (clip.w <= 1e-9) return false;
-        const double cx = clip.x / clip.w, cy = clip.y / clip.w;
-        double* r0 = a[2 * i];
-        double* r1 = a[2 * i + 1];
-        const double row0[9] = {cx, cy, 1.0, 0.0, 0.0, 0.0, -cx * sx, -cy * sx, sx};
-        const double row1[9] = {0.0, 0.0, 0.0, cx, cy, 1.0, -cx * sy, -cy * sy, sy};
-        std::copy(row0, row0 + 9, r0);
-        std::copy(row1, row1 + 9, r1);
-    }
-    for (int c = 0; c < 8; ++c) {
-        int pivot = c;
-        for (int r = c + 1; r < 8; ++r)
-            if (std::abs(a[r][c]) > std::abs(a[pivot][c])) pivot = r;
-        if (std::abs(a[pivot][c]) < 1e-12) return false;
-        if (pivot != c)
-            for (int k = 0; k < 9; ++k) std::swap(a[c][k], a[pivot][k]);
-        for (int r = 0; r < 8; ++r) {
-            if (r == c) continue;
-            const double f = a[r][c] / a[c][c];
-            for (int k = c; k < 9; ++k) a[r][k] -= f * a[c][k];
-        }
-    }
-    double h[8];
-    for (int c = 0; c < 8; ++c) h[c] = a[c][8] / a[c][c];
-    const float m[12] = {static_cast<float>(h[0]), static_cast<float>(h[1]), static_cast<float>(h[2]), 0.0f,
-                         static_cast<float>(h[3]), static_cast<float>(h[4]), static_cast<float>(h[5]), 0.0f,
-                         static_cast<float>(h[6]), static_cast<float>(h[7]), 1.0f, 0.0f};
-    std::copy(m, m + 12, out);
-    return true;
 }
 
 GlobeRenderer::NodeInfo GlobeRenderer::info(const Camera& cam, const QuadKey& k) const {
@@ -3508,9 +3466,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     }
     if (snapshotShown_ && settleSnapshot_) {
         const bool resized = width != snapshotWidth_ || height != snapshotHeight_;
-        float warp[12];
         const bool moved = lastMotion_ > snapshotStart_;
-        if (moved && !resized && snapshotWarp(cam, warp)) {
+        if (moved && !resized) {
             if (snapshotFade_ < 0.0) {
                 snapshotFade_ = tnow;
                 snapshotFadeLength_ = settleMoveFade_;
@@ -4379,12 +4336,9 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     if (!xray) drawObjects();
     auto drawSettle = [&]() {
         if (capture || !snapshotShown_ || !settleSnapshot_) return;
-        float warp[12];
         bool steered = false;
         for (int i = 0; i < 5; ++i) steered = steered || std::abs(motionKey_[i] - snapshotKey_[i]) > 1.0e-9;
-        if (!steered) drawSnapshot(snapshotAlpha());
-        else if (snapshotWarp(dc, warp)) drawSnapshot(snapshotAlpha(), warp);
-        else snapshotShown_ = false;
+        drawSnapshot(snapshotAlpha(), steered ? &dc : nullptr);
     };
     profileSub(0);
     std::vector<FeatureLayer::ExternalLabel> vectorLabels;
