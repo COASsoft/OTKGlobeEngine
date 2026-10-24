@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.1.3
+
+### Opening view
+- The globe opens fully zoomed out, showing the whole Earth, on any window or screen size. This is the default for the engine (`View` and the camera start at the farthest zoom), the viewer and the web example. Before, the start zoom was a fixed size per pixel, so a small window or web page opened zoomed in with the globe cut off.
 
 ### Loading
 - When the map stops moving, it no longer sharpens piece by piece:
