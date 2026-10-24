@@ -107,16 +107,20 @@ def chains(seg, tag=None):
             cur = o
         return path
 
+    starts = []
     for s in range(len(nodes)):
         if deg[s] != 2:
             for k in range(first[s], first[s + 1]):
                 if not used[edge[k]]:
+                    starts.append((edge[k], s == lo_node[edge[k]]))
                     out.append(walk(s, edge[k], other[k]))
     for s in range(len(nodes)):
         for k in range(first[s], first[s + 1]):
             if not used[edge[k]]:
+                starts.append((edge[k], s == lo_node[edge[k]]))
                 out.append(walk(s, edge[k], other[k]))
-    return [nodes[np.array(p)].astype(np.float64) / Q for p in out]
+    paths = [nodes[np.array(p)][:, :2].astype(np.float64) / Q for p in out]
+    return paths if tag is None else (paths, starts)
 
 
 def importance(pts):
