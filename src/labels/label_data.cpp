@@ -73,7 +73,8 @@ Dataset::Dataset() {
 #endif
     if (!data_ || size_ < 12 || std::memcmp(data_, "OTKL", 4) != 0) return;
     Cursor c{data_ + 4, data_ + size_};
-    if (c.u32() != 1) return;
+    version_ = c.u32();
+    if (version_ < 1 || version_ > 2) return;
     std::uint32_t count = c.u32();
     if (!c.ok() || count > 100000) return;
     blocks_.resize(count);
@@ -133,6 +134,13 @@ bool Dataset::decodeLines(const Block& b, bool importance, Lines& out) const {
         r.level = static_cast<Level>(std::min<std::uint8_t>(*level, 3));
         r.first = static_cast<std::uint32_t>(total);
         r.count = static_cast<std::uint32_t>(n);
+        r.left = r.right = -1;
+        if (version_ >= 2 && *level == 3) {
+            const std::uint64_t left = c.varint(), right = c.varint();
+            if (!c.ok()) return false;
+            if (left > 0 && left <= places_.size()) r.left = static_cast<std::int32_t>(left - 1);
+            if (right > 0 && right <= places_.size()) r.right = static_cast<std::int32_t>(right - 1);
+        }
         total += n;
     }
     const size_t n = static_cast<size_t>(total);
