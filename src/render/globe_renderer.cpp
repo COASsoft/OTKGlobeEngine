@@ -3649,6 +3649,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         } else {
             zCap = target;
         }
+        capBehind = zCap < 99 && available < 99 && available > zCap;
         if (visualLog_ && zCap != uniformZ_)
             std::fprintf(visualLog_, "zcap frame %llu t %.3f z %d -> %d available %d tiles %zu\n", static_cast<unsigned long long>(frame_), tnow, uniformZ_,
                          zCap, available, tiles.size());
