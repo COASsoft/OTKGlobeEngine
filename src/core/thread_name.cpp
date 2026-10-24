@@ -15,6 +15,9 @@
 #else
 #include <pthread.h>
 #include <cstring>
+#if defined(__OpenBSD__)
+#include <pthread_np.h>
+#endif
 #endif
 
 namespace otk {
