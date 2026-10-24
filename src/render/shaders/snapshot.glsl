@@ -38,12 +38,15 @@ void main() {
         float cc = shape.z * (2.0 * shape.x + shape.z);
         float disc = bb * bb - cc;
         float hit = disc >= 0.0 ? -bb - sqrt(disc) : -1.0;
-        vec4 clip;
+        vec4 clip = vec4(0.0, 0.0, 0.0, 1.0);
         if (hit > 0.0) {
             vec3 rel = vec3(ds.xy * hit, ds.z * hit / shape.y);
             clip = vp_old * vec4(rel + delta.xyz, 1.0);
+            vec3 normal = up.xyz * up.w + ds * hit;
+            vec3 toOld = vec3(-delta.xy, -delta.z * shape.y) - ds * hit;
+            if (dot(normal, toOld) <= 0.0) inside = 0.0;
         } else {
-            clip = vp_old * vec4(dir, 0.0);
+            inside = 0.0;
         }
         if (clip.w <= 0.0) inside = 0.0;
         t = clip.xy / max(abs(clip.w), 1.0e-9) * 0.5 + 0.5;
