@@ -6,7 +6,7 @@
 - When the map stops moving, it no longer sharpens piece by piece:
   - The engine keeps showing the picture you were looking at, loads and composes everything behind it, then fades the whole screen to the finished view in one 0.35 s dissolve.
   - It waits at most 3 s (`OTK_SETTLE_WAIT`). Labels and live features stay live above the held picture.
-  - If you start moving again during the hold or the dissolve, the held picture moves with the map and fades out, so there is no jump. Each pixel of the held picture is projected onto the Earth's shape and back into the new view, so it stays aligned at every zoom: the whole globe, a tilted mountain view or a street. Before, it was moved as if the ground were flat, which at globe level shifted the whole globe sideways for a moment.
+  - If you start moving again during the hold or the dissolve, the held picture moves with the map and fades out, so there is no jump. Each pixel of the held picture is projected onto the Earth's shape and back into the new view, so it stays aligned at every zoom: the whole globe, a tilted mountain view or a street. Only ground the held picture actually showed is drawn from it; space and ground it never saw show the new view straight away. Before, it was moved as if the ground were flat, and at globe level a second, ghost globe slid off the side of the screen while it faded.
   - `OTK_SETTLE=0` turns this off.
 - A flat or slightly tilted view uses one detail level for the whole screen, like a 2D map, at every scale from the whole globe down to street level:
   - Tiles at the edges no longer use a coarser level than tiles in the middle. With Esri imagery that mix showed as a patchwork of dark and pale squares, because Esri switches photo sources between zoom 11 and 12.
