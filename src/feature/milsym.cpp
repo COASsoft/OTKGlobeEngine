@@ -160,7 +160,7 @@ public:
                 float acc[4] = {0, 0, 0, 0};
                 for (int j = 0; j < ss_; ++j)
                     for (int i = 0; i < ss_; ++i) {
-                        const float* p = &px_[(static_cast<size_t>(y * ss_ + j) * w_ + x * ss_ + i) * 4];
+                        const float* p = &px_[((static_cast<size_t>(y) * ss_ + j) * w_ + static_cast<size_t>(x) * ss_ + i) * 4];
                         for (int k = 0; k < 4; ++k) acc[k] += p[k];
                     }
                 float a = acc[3] * inv;
