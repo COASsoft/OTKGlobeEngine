@@ -31,6 +31,7 @@
   - `OTK_LINES3D=0` goes back to painted lines.
 - Where a sharp tile meets one that is still loading, the edge between them is blended, so loading areas no longer show as hard-edged rectangles.
 - Place and street names keep their position and fade state when more detailed map data replaces less detailed data, instead of fading out and back in.
+- County names are written along the county lines, repeated along each line, with each county's name on its own side. They appear once zoomed in to about 300 m per pixel. A county's name in the middle of its area only shows when none of its borders is on screen.
 - Labels are placed ten times a second while the map moves instead of every frame, and right away when the map turns or tilts or new data arrives.
 
 ### Battery and data
