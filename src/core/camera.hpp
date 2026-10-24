@@ -12,7 +12,7 @@ namespace otk {
 class Camera {
 public:
     GeoPoint focus{20.0, -40.0, 0.0};
-    double gsd = 20000.0;
+    double gsd = 1.0e9;
     double azimuth = 0.0;
     double tilt = 0.0;
     int width = 1;
