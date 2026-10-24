@@ -4643,11 +4643,12 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                              visibleDeferred, levelMixText().c_str());
         }
     } else if (settleFreeze_ && !settleBroken_ && !views && !snapshotShown_ && terrainAlpha_ >= 0.999f && tnow - lastMotion_ >= 0.15 &&
-               (heldNow > 0 || mergeActive_ || fading || frame_ <= 2)) {
+               (heldNow > 0 || mergeActive_ || fading || capBehind || frame_ <= 2)) {
         settleWanted_ = true;
         if (visualLog_)
-            std::fprintf(visualLog_, "settle frame %llu t %.3f want held %d merging %d fades %d edges %d morphs %d\n", static_cast<unsigned long long>(frame_),
-                         tnow, heldNow, mergeActive_ ? 1 : 0, fadeKinds[0], fadeKinds[1], fadeKinds[2]);
+            std::fprintf(visualLog_, "settle frame %llu t %.3f want held %d merging %d fades %d edges %d morphs %d cap %d\n",
+                         static_cast<unsigned long long>(frame_), tnow, heldNow, mergeActive_ ? 1 : 0, fadeKinds[0], fadeKinds[1], fadeKinds[2],
+                         capBehind ? 1 : 0);
     }
     busy_ = settleWanted_ || stepWanted_ || !bordersReady_ || !roadBuildQueue_.empty() || fading || mergeActive_ || snapshotShown_ || tilesBusy || renders > 0 || builds > 0 || deferred > 0 || loadsTaken > 0 || elevationChanged ||
             ((labelsOn_ || contours_) && labels_.animating()) || (buildingsOn_ && buildings_.busy());
