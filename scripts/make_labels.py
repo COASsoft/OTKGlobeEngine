@@ -601,7 +601,7 @@ def places(args, adm0, adm1, adm2, cmap):
         out.append((kind, flags, c[2], c[3], minz, 99.0, p, name))
         towns += 1
     log('towns', towns)
-    return out
+    return out, county_items
 
 
 def morton(x, y):
