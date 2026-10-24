@@ -2805,6 +2805,9 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     }
     std::sort(tiles.begin(), tiles.end(), [](const DrawTile& a, const DrawTile& b) { return a.distance < b.distance; });
 
+    int baseSurfaceLevel = 3;
+    while (baseSurfaceLevel > 0 && static_cast<size_t>(2 * ((1 << (2 * (baseSurfaceLevel + 1))) - 1) / 3) > surfaceCapacity_ / 4) --baseSurfaceLevel;
+    const double baseSurfaces = static_cast<double>(2 * ((1 << (2 * (baseSurfaceLevel + 1))) - 1) / 3);
     if (overviewReused_ && !admittedCache_.empty()) {
         needs_.insert(needs_.end(), admittedCache_.begin(), admittedCache_.end());
         stats_.prefetched = static_cast<int>(admittedCache_.size());
@@ -2830,7 +2833,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         for (const auto& [id, t] : imagery_)
             if (t.used + 1 >= frame_) ++activeImagery;
         double imageryRoom = static_cast<double>(imageryLimit()) * 0.85 - static_cast<double>(activeImagery);
-        double surfaceRoom = std::min(static_cast<double>(surfaceCapacity_) * 0.92 - static_cast<double>(seen.size()),
+        double surfaceRoom = std::min(static_cast<double>(surfaceCapacity_) * 0.85 - static_cast<double>(seen.size()) - baseSurfaces,
                                       2.5 * static_cast<double>(seen.size()) + 64.0);
         int freshBudget = imageryRoom < 8.0 ? 0 : std::clamp(static_cast<int>(imageryRoom / 2.0), 4, urgentPrefetch_ ? 96 : 32);
         int fresh = 0;
@@ -2851,8 +2854,6 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         stats_.prefetched = static_cast<int>(admitted);
         admittedCache_.assign(needs_.begin() + static_cast<std::ptrdiff_t>(firstAdmitted), needs_.end());
     }
-    int baseSurfaceLevel = 3;
-    while (baseSurfaceLevel > 0 && static_cast<size_t>(2 * ((1 << (2 * (baseSurfaceLevel + 1))) - 1) / 3) > surfaceCapacity_ / 4) --baseSurfaceLevel;
     for (int level = 0; level <= baseSurfaceLevel; ++level)
         for (int y = 0; y < (1 << level); ++y)
             for (int x = 0; x < (2 << level); ++x) {
@@ -4066,7 +4067,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                 const float span = std::max(mine - static_cast<float>(got.level), 0.25f);
                 for (int e = 0; e < 4; ++e) edgeTarget[e] = std::clamp(deficit[e] / span, 0.0f, 1.0f);
                 tr.edgeUp = dt.key.level - got.level;
-                morphing = morphBlend && got.level == want.level && (ancestor->second.complete || ancestor->second.presentable);
+                morphing = morphBlend && got.level <= want.level && (ancestor->second.complete || ancestor->second.presentable);
                 spatial = true;
             } else {
                 for (float& e : tr.edge) e = 0.0f;
