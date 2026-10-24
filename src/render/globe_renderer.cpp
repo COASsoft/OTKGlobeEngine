@@ -755,8 +755,15 @@ void GlobeRenderer::setLayerList(const std::vector<ImageryLayer>& layers) {
     ++imageryVersion_;
     if (!same) {
         switchVersion_ = imageryVersion_;
-        if (fadeUpgrades_ && !snapshotShown_) snapshotWanted_ = true;
-        else if (snapshotShown_ && snapshotFade_ < 0.0) snapshotStart_ = now();
+        switchAt_ = now();
+        if (snapshotShown_ && settleSnapshot_) {
+            snapshotStart_ = now();
+            snapshotFade_ = -1.0;
+            settleQuiet_ = 0;
+            switchHold_ = true;
+        } else if (fadeUpgrades_) {
+            switchWanted_ = true;
+        }
     }
     busy_ = true;
 }
@@ -2588,17 +2595,17 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     labels_.beginFrame();
     settleFrozen_ = snapshotShown_ && settleSnapshot_ && snapshotFade_ < 0.0;
     stepInstant_ = snapshotShown_ && (stepSnapshot_ || (settleSnapshot_ && snapshotFade_ >= 0.0));
-    const bool switchCapture = snapshotWanted_ && !views && lastIncompleteFraction_ < 0.3 && ensureSnapshotTarget(width, height);
     bool settleCapture = false;
-    if (!switchCapture && (settleWanted_ || stepWanted_) && !views && !snapshotShown_) {
+    if ((settleWanted_ || stepWanted_ || switchWanted_) && !views && !snapshotShown_) {
         settleCapture = ensureSnapshotTarget(width, height);
         if (!settleCapture) settleBroken_ = true;
     }
-    const bool stepCapture = settleCapture && !settleWanted_;
-    const bool capture = switchCapture || settleCapture;
-    snapshotWanted_ = false;
+    const bool switchCapture = settleCapture && switchWanted_;
+    const bool stepCapture = settleCapture && !settleWanted_ && !switchWanted_;
+    const bool capture = settleCapture;
     settleWanted_ = false;
     stepWanted_ = false;
+    switchWanted_ = false;
     if (std::uint64_t epoch = net::reachabilityEpoch(); epoch != netEpoch_) {
         netEpoch_ = epoch;
         retryUnavailable();
@@ -2748,7 +2755,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         zoomGsd_ = cam.gsd;
         bool zoomingOut = zoomRate_ > 0.3;
         urgentPrefetch_ = zoomingOut;
-        overviewReused_ = !(moved || frame_ % 8 == 0 || overviewCache_.empty());
+        overviewReused_ = !(moved || frame_ % 8 == 0 || overviewCache_.empty() || now() - switchAt_ < 3.0);
         if (!overviewReused_) {
             double margin = marginPrefetch_ > 0 ? marginPrefetch_ : (budgetMb_ >= 512 ? 2.0 : 1.5);
             if (!zoomingOut && margin > 1.0) overview(1.0, 2.0, margin);
@@ -2756,6 +2763,10 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
             overview(4.0, zoomingOut ? 2.0 : 6.0, 1.0);
             if (hasLookahead_) overview(1.0, lookaheadPriority_, 1.2, &lookahead_);
             if (zoomingOut) overview(8.0, zoomRate_ > 1.5 ? 3.0 : 4.0, 1.0);
+            if (now() - switchAt_ < 3.0) {
+                overview(4.0, 1.5, 2.0);
+                overview(8.0, 1.5, 3.0);
+            }
 
             overviewCache_.assign(prefetch_.begin() + static_cast<std::ptrdiff_t>(own), prefetch_.end());
             for (int i = 0; i < 6; ++i) lastOverviewKey_[i] = camKey[i];
@@ -3338,34 +3349,6 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
              ss == surface_.end() ? -1 : ss->second.sourceZ, failed_.size(), imagery_.size());
     }
     for (auto& dt : tiles) drawn_[dt.key] = frame_;
-    if (snapshotShown_ && snapshotFade_ < 0.0 && !settleSnapshot_) {
-        bool ready = true;
-        size_t covered = 0;
-        size_t owned = 0;
-        for (const auto& dt : tiles) {
-            auto s = surface_.find(dt.key);
-            const bool own = s != surface_.end() && s->second.version >= switchVersion_ && (s->second.complete || s->second.presentable);
-            if (own) ++owned;
-            else ready = false;
-            bool current = s != surface_.end() && s->second.version >= switchVersion_;
-            for (int up = 1; !current && up <= dt.key.level; ++up) {
-                auto a = surface_.find(QuadKey{dt.key.level - up, dt.key.x >> up, dt.key.y >> up});
-                current = a != surface_.end() && a->second.version >= switchVersion_;
-            }
-            if (current) ++covered;
-        }
-        const bool moved = length(cam.eye() - snapshotEye_) > std::max(0.05, cam.gsd * 0.5) ||
-                           std::abs(cam.azimuth - snapshotAzimuth_) > 0.01 || std::abs(cam.tilt - snapshotTilt_) > 0.01 ||
-                           width != snapshotWidth_ || height != snapshotHeight_;
-        const double held = tnow - snapshotStart_;
-        if (moved) {
-            snapshotShown_ = false;
-        } else if (ready || (held > 1.0 && covered == tiles.size() && owned * 20 >= tiles.size() * 17) ||
-                   (held > 3.0 && covered == tiles.size()) || held > 5.0) {
-            snapshotFade_ = tnow;
-            snapshotFadeLength_ = 0.4;
-        }
-    }
     {
         auto refLess = [](const FadeRef& a, const FadeRef& b) {
             if (a.key.level != b.key.level) return a.key.level < b.key.level;
@@ -3596,6 +3579,8 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     if (uniformMix_ >= 0.5 && uniformShare_ > 0.0) {
         int available = 99;
         int ideal = -1;
+        std::vector<int> tileZ;
+        tileZ.reserve(tiles.size());
         const bool reveal = frozenNow || (revealOpen_ && !stepping) || uniformZ_ >= 99;
         for (const DrawTile& d : tiles) {
             int z = idealImageryZ(d.key);
@@ -3614,11 +3599,20 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
                     if (hz >= 0) z = std::min(z, hz);
                 }
             }
-            if (z >= 0) available = std::min(available, z);
+            if (z >= 0) {
+                available = std::min(available, z);
+                tileZ.push_back(z);
+            }
+        }
+        int floorZ = ideal >= 0 ? ideal - kMaxUniformDrop : -1;
+        if (floorZ >= 0) {
+            size_t below = 0;
+            for (int z : tileZ) below += z < floorZ ? 1 : 0;
+            if (below * 4 > tileZ.size()) floorZ = -1;
         }
         if (pendingMergeZ_ < 99) available = std::min(available, pendingMergeZ_);
-        if (available < 99 && ideal >= 0) available = std::max(available, ideal - kMaxUniformDrop);
-        int target = available >= 99 ? 99 : reveal ? available : std::max(std::min(uniformZ_, available), ideal - kMaxUniformDrop);
+        if (available < 99 && floorZ >= 0) available = std::max(available, floorZ);
+        int target = available >= 99 ? 99 : reveal ? available : std::min(uniformZ_, available);
         if (target < uniformZ_ && target < 99 && uniformZ_ < 99) {
             bool reachable = true;
             for (const DrawTile& d : tiles) {
@@ -4466,7 +4460,6 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     drawSettle();
     auto drawTop = [&]() { features_.drawOverlay(dc, ground, dpiScale_, flipSurface_, &vectorLabels); };
     if (!settleCapture) drawTop();
-    if (!capture && snapshotShown_ && !settleSnapshot_) drawSnapshot(snapshotAlpha());
     if (!capture && !views && overlay_) overlay_(width, height);
     profileSub(2);
     sg_end_pass();
@@ -4485,6 +4478,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         snapshotShown_ = true;
         settleSnapshot_ = settleCapture;
         stepSnapshot_ = stepCapture;
+        switchHold_ = switchCapture;
         settleQuiet_ = 0;
         snapshotStart_ = tnow;
         snapshotFade_ = -1.0;
@@ -4496,9 +4490,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         if (visualLog_ && settleCapture)
             std::fprintf(visualLog_, "settle frame %llu t %.3f capture held %d waiting %d tiles%s\n", static_cast<unsigned long long>(frame_), tnow,
                          heldPrev_, waitingPrev_, levelMixText().c_str());
-        snapshotEye_ = cam.eye();
-        snapshotAzimuth_ = cam.azimuth;
-        snapshotTilt_ = cam.tilt;
+        if (visualLog_ && switchCapture) std::fprintf(visualLog_, "settle frame %llu t %.3f switch capture\n", static_cast<unsigned long long>(frame_), tnow);
         snapshotCam_ = cam;
         std::copy(motionKey_, motionKey_ + 5, snapshotKey_);
     }
@@ -4576,7 +4568,6 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
     stats_.pendingRequests = stats_.imageryPending + stats_.elevationPending;
     stats_.maxLevel = maxLevel;
     stats_.incompleteTiles = incomplete;
-    lastIncompleteFraction_ = tiles.empty() ? 1.0 : static_cast<double>(incomplete) / static_cast<double>(tiles.size());
     stats_.blankTiles = blank;
     stats_.popArea = visPop;
     stats_.mergeArea = visMerge;
@@ -4641,7 +4632,7 @@ void GlobeRenderer::render(Camera& cam, const sg_swapchain* swapchain, const sg_
         const bool quiet = heldNow == 0 && waitingNow == 0 && !fading && !mergeActive_ && visibleRenders == 0 && visibleDeferred == 0 && builds == 0 &&
                            bordersReady_ && roadBuildQueue_.empty();
         settleQuiet_ = quiet ? settleQuiet_ + 1 : 0;
-        if (settleQuiet_ >= 2 || tnow - snapshotStart_ >= settleWait_) {
+        if (settleQuiet_ >= 2 || tnow - snapshotStart_ >= (switchHold_ ? std::max(settleWait_, switchWait_) : settleWait_)) {
             snapshotFade_ = tnow;
             snapshotFadeLength_ = settleFade_;
             if (visualLog_)
