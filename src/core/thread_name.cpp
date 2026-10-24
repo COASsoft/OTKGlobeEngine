@@ -38,7 +38,13 @@ void setThreadName(const char* name) {
 #else
     char shortName[16] = {};
     std::strncpy(shortName, name, sizeof(shortName) - 1);
+#if defined(__OpenBSD__)
+    pthread_set_name_np(pthread_self(), shortName);
+#elif defined(__NetBSD__)
+    pthread_setname_np(pthread_self(), "%s", static_cast<void*>(shortName));
+#else
     pthread_setname_np(pthread_self(), shortName);
+#endif
 #endif
 }
 
