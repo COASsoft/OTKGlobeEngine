@@ -50,26 +50,37 @@ def shared_segments(geoms, sides=False):
     keep = ~np.all(lo == hi, axis=1)
     key = np.concatenate([lo, hi], axis=1)[keep]
     poly = poly[keep]
+    swap = swap[keep]
     order = np.lexsort((key[:, 3], key[:, 2], key[:, 1], key[:, 0]))
     key = key[order]
     poly = poly[order]
+    swap = swap[order]
     diff = np.any(key[1:] != key[:-1], axis=1)
     start = np.concatenate([[0], np.nonzero(diff)[0] + 1])
     counts = np.diff(np.concatenate([start, [len(key)]]))
     sel = start[counts == 2]
     pa, pb = poly[sel], poly[sel + 1]
     ok = pa != pb
-    return key[sel][ok], pa[ok], pb[ok]
+    if not sides:
+        return key[sel][ok], pa[ok], pb[ok]
+    sa, sb = swap[sel], swap[sel + 1]
+    left = np.where(sa == sb, -1, np.where(sa, pb, pa))
+    return key[sel][ok], pa[ok], pb[ok], left[ok]
 
 
-def chains(seg):
+def chains(seg, tag=None):
     if len(seg) == 0:
-        return []
-    ends = np.concatenate([seg[:, :2], seg[:, 2:]])
+        return [] if tag is None else ([], [])
+    n = len(seg)
+    if tag is None:
+        ends = np.concatenate([seg[:, :2], seg[:, 2:]])
+    else:
+        t = np.asarray(tag, dtype=np.int64)[:, None]
+        ends = np.concatenate([np.hstack([seg[:, :2], t]), np.hstack([seg[:, 2:], t])])
     nodes, inv = np.unique(ends, axis=0, return_inverse=True)
     inv = inv.ravel()
-    n = len(seg)
     u, v = inv[:n], inv[n:]
+    lo_node = u.tolist()
     deg = np.bincount(np.concatenate([u, v]), minlength=len(nodes))
     order = np.argsort(np.concatenate([u, v]), kind='stable')
     other = np.concatenate([v, u])[order].tolist()
