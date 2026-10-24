@@ -519,6 +519,7 @@ def places(args, adm0, adm1, adm2, cmap):
         maxz = size_zoom(ly, size, 1500.0)
         if maxz <= minz:
             continue
+        county_items[i] = len(out)
         out.append((COUNTY, 0, ly, lx, minz, maxz, int(area), wrap(name, 16)))
         counties += 1
     log('counties', counties)
